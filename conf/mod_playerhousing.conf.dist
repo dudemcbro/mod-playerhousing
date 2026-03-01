@@ -1,0 +1,91 @@
+#
+# mod-playerhousing configuration
+#
+
+###############################################################################
+# PlayerHousing.Enable
+#    Enables or disables the entire housing module.
+#    Default: 1 (enabled)
+###############################################################################
+PlayerHousing.Enable = 1
+
+###############################################################################
+# PlayerHousing.AutoProvisionOnLogin
+#    Creates the starter house the first time a player logs in after install.
+#    Default: 1 (enabled)
+###############################################################################
+PlayerHousing.AutoProvisionOnLogin = 1
+
+###############################################################################
+# PlayerHousing.GmBypassPrivate
+#    If enabled, GMs can visit private houses without invite.
+#    Default: 0 (disabled)
+###############################################################################
+PlayerHousing.GmBypassPrivate = 0
+
+###############################################################################
+# PlayerHousing.DefaultPrivate
+#    Default privacy for newly-created houses.
+#    1 = private, 0 = public
+#    Default: 1
+###############################################################################
+PlayerHousing.DefaultPrivate = 1
+
+###############################################################################
+# PlayerHousing.MapId
+#    Fallback instance map id used if a style has map_id = 0.
+#    Must be a dungeon-style instance map (not battleground/arena).
+#    Recommended/default: 658 (Pit of Saron).
+#    Default: 658
+###############################################################################
+PlayerHousing.MapId = 658
+
+###############################################################################
+# PlayerHousing.StewardEntry
+#    Creature entry for the housing steward NPC.
+#    Default: 900200
+###############################################################################
+PlayerHousing.StewardEntry = 900200
+
+###############################################################################
+# PlayerHousing.StewardDisplayId
+#    Display id forced on all housing stewards (city + instanced).
+#    Default: 25384 (Wolvar orphan)
+###############################################################################
+PlayerHousing.StewardDisplayId = 25384
+
+###############################################################################
+# PlayerHousing.DefaultStyle
+#    Initial style code for new houses.
+#    Supported by base SQL: human, gnome, tauren, undead
+#    Default: human
+###############################################################################
+PlayerHousing.DefaultStyle = "human"
+
+###############################################################################
+# PlayerHousing.Placement.MaxSlopeDegrees
+#    Maximum terrain slope allowed for furniture placement.
+#    Default: 35
+###############################################################################
+PlayerHousing.Placement.MaxSlopeDegrees = 35
+
+###############################################################################
+# PlayerHousing.Placement.SlopeSampleDistance
+#    Distance used to sample terrain slope around target.
+#    Default: 0.75
+###############################################################################
+PlayerHousing.Placement.SlopeSampleDistance = 0.75
+
+###############################################################################
+# PlayerHousing.Placement.DefaultMinDistance
+#    Default min-distance buffer for catalog-based placements.
+#    Default: 1.5
+###############################################################################
+PlayerHousing.Placement.DefaultMinDistance = 1.5
+
+###############################################################################
+# PlayerHousing.Placement.DefaultCollisionRadius
+#    Default collision radius for catalog-based placements.
+#    Default: 1.0
+###############################################################################
+PlayerHousing.Placement.DefaultCollisionRadius = 1.0
