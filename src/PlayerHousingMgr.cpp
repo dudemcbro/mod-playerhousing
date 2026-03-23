@@ -1212,10 +1212,30 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     }
 
     Position center;
-    if (!GetHouseCenter(map, session.styleId, center))
+    StyleDefinition const& style = styleItr->second;
+    if (!ResolveSafeGroundPosition(map, style.spawnX, style.spawnY, style.spawnZ, style.spawnO, center))
     {
-        reason = "Could not resolve a safe spawn point for this house style.";
-        return false;
+        if (AreaTriggerTeleport const* entrance = sObjectMgr->GetMapEntranceTrigger(map->GetId()))
+        {
+            if (!ResolveSafeGroundPosition(map,
+                entrance->target_X,
+                entrance->target_Y,
+                entrance->target_Z,
+                entrance->target_Orientation,
+                center))
+            {
+                center.Relocate(
+                    entrance->target_X,
+                    entrance->target_Y,
+                    entrance->target_Z + 0.35f,
+                    entrance->target_Orientation);
+            }
+        }
+        else
+        {
+            reason = "Could not resolve a safe spawn point for this house style.";
+            return false;
+        }
     }
 
     auto styleObjectItr = _styleObjects.find(session.styleId);
@@ -1488,7 +1508,7 @@ bool PlayerHousingMgr::EnterHouseByOwnerGuid(Player* player, ObjectGuid::LowType
         return false;
     }
 
-    if (!player->TeleportTo(houseMapId, center.GetPositionX(), center.GetPositionY(), center.GetPositionZ(), center.GetOrientation(), 0, nullptr, true))
+    if (!player->TeleportTo(houseMapId, center.GetPositionX(), center.GetPositionY(), center.GetPositionZ(), center.GetOrientation(), TELE_TO_GM_MODE, nullptr, true))
     {
         reason = "Teleport to house failed.";
         return false;
