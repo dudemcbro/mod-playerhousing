@@ -390,6 +390,11 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
 
     if (IsHousingMap(player->GetMapId()) || legacyEvac)
     {
+        // Logging in inside a still-loaded house re-binds the player to it, and nothing tracks
+        // them yet to unbind on the way out; drop it so the real dungeon is not replaced.
+        if (IsHousingMap(player->GetMapId()))
+            sInstanceSaveMgr->PlayerUnbindInstance(player->GetGUID(), player->GetMapId(), Difficulty(0), true, player);
+
         player->TeleportToEntryPoint();
     }
 }
@@ -604,7 +609,9 @@ bool PlayerHousingMgr::CreateStarterHouse(ObjectGuid::LowType ownerGuid, std::st
             styleId = _stylesById.begin()->first;
     }
 
-    CharacterDatabase.Execute(
+    // Synchronous so the GetHouseRecord read below sees the row; an async Execute raced it and
+    // skipped GrantStarterUnlocks on first login.
+    CharacterDatabase.DirectExecute(
         "INSERT IGNORE INTO mod_playerhousing_house (owner_guid, style_id, stage, is_private) VALUES ({}, {}, 0, {})",
         ownerGuid, styleId, _defaultPrivate ? 1 : 0);
 
@@ -1588,29 +1595,33 @@ void PlayerHousingMgr::RefreshSessionFromHouse(HouseRecord const& house)
     uint32 styleMapId = 0;
     GetStyleMapId(house.styleId, styleMapId);
 
-    std::lock_guard<std::mutex> guard(_lock);
-
-    auto sessionItr = _sessionsByOwner.find(house.ownerGuid);
-    if (sessionItr == _sessionsByOwner.end())
-        return;
-
-    Session& session = sessionItr->second;
-    session.stage = house.stage;
-    session.styleId = house.styleId;
-    session.initialized = false;
-
-    if (styleMapId != 0 && styleMapId != session.mapId)
     {
-        if (Map* map = sMapMgr->FindMap(session.mapId, session.instanceId))
-            DespawnSessionObjects(session, map);
+        std::lock_guard<std::mutex> guard(_lock);
 
-        _ownerByInstance.erase(session.instanceId);
-        _sessionsByOwner.erase(sessionItr);
-        return;
+        auto sessionItr = _sessionsByOwner.find(house.ownerGuid);
+        if (sessionItr == _sessionsByOwner.end())
+            return;
+
+        Session& session = sessionItr->second;
+        session.stage = house.stage;
+        session.styleId = house.styleId;
+        session.initialized = false;
+
+        if (styleMapId != 0 && styleMapId != session.mapId)
+        {
+            if (Map* map = sMapMgr->FindMap(session.mapId, session.instanceId))
+                DespawnSessionObjects(session, map);
+
+            _ownerByInstance.erase(session.instanceId);
+            _sessionsByOwner.erase(sessionItr);
+            return;
+        }
     }
 
-    if (Map* map = sMapMgr->FindMap(session.mapId, session.instanceId))
-        DespawnSessionObjects(session, map);
+    // Respawn right away so anyone inside is not left in an empty house until they re-enter.
+    // InitializeSession despawns the old objects itself and does nothing if the map is unloaded.
+    std::string reason;
+    InitializeSession(house.ownerGuid, reason);
 }
 
 bool PlayerHousingMgr::UpgradeHouse(Player* player, std::string& reason)
@@ -2241,6 +2252,19 @@ bool PlayerHousingMgr::HandlePlacementSpellCast(Player* player, Spell* spell, st
         destination->GetPositionY(),
         destination->GetPositionZ(),
         player->GetOrientation());
+
+    // This hook runs inside Spell::_cast, which reads m_CastItem again afterwards. Placing
+    // the furniture may destroy the kit that is casting (a freshly bought item is deleted
+    // immediately), so detach it from the spell the same way Spell::TakeCastItem does.
+    if (pending.consumeOnPlace && pending.sourceItemEntry != 0 && spell->m_CastItem &&
+        spell->m_CastItem->GetEntry() == pending.sourceItemEntry)
+    {
+        if (spell->m_targets.GetItemTarget() == spell->m_CastItem)
+            spell->m_targets.SetItemTarget(nullptr);
+
+        spell->m_CastItem = nullptr;
+        spell->m_castItemGUID.Clear();
+    }
 
     if (PlaceFurnitureResolved(
             player,

@@ -205,6 +205,16 @@ public:
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
     }
 
+    // Upgrades and style changes respawn the house, including an in-house steward, so keeping
+    // this menu open would leave it pointing at a creature that is being removed.
+    void AfterHouseRebuild(Player* player, Creature* creature, bool rebuilt) const
+    {
+        if (rebuilt && sPlayerHousingMgr->IsHousingMap(creature->GetMapId()))
+            CloseGossipMenuFor(player);
+        else
+            BuildMainMenu(player, creature);
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         EnsureStewardAppearance(creature);
@@ -249,12 +259,12 @@ public:
                 BuildMainMenu(player, creature);
                 return true;
             case ACTION_UPGRADE:
-                if (!sPlayerHousingMgr->UpgradeHouse(player, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
+            {
+                bool upgraded = sPlayerHousingMgr->UpgradeHouse(player, reason);
+                SendResult(player, reason);
+                AfterHouseRebuild(player, creature, upgraded);
                 return true;
+            }
             case ACTION_PRIVACY_MENU:
                 BuildPrivacyMenu(player, creature);
                 return true;
@@ -276,33 +286,33 @@ public:
                 BuildStyleMenu(player, creature);
                 return true;
             case ACTION_STYLE_HUMAN:
-                if (!sPlayerHousingMgr->SetStyle(player, "human", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
+            {
+                bool restyled = sPlayerHousingMgr->SetStyle(player, "human", reason);
+                SendResult(player, reason);
+                AfterHouseRebuild(player, creature, restyled);
                 return true;
+            }
             case ACTION_STYLE_GNOME:
-                if (!sPlayerHousingMgr->SetStyle(player, "gnome", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
+            {
+                bool restyled = sPlayerHousingMgr->SetStyle(player, "gnome", reason);
+                SendResult(player, reason);
+                AfterHouseRebuild(player, creature, restyled);
                 return true;
+            }
             case ACTION_STYLE_TAUREN:
-                if (!sPlayerHousingMgr->SetStyle(player, "tauren", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
+            {
+                bool restyled = sPlayerHousingMgr->SetStyle(player, "tauren", reason);
+                SendResult(player, reason);
+                AfterHouseRebuild(player, creature, restyled);
                 return true;
+            }
             case ACTION_STYLE_UNDEAD:
-                if (!sPlayerHousingMgr->SetStyle(player, "undead", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
+            {
+                bool restyled = sPlayerHousingMgr->SetStyle(player, "undead", reason);
+                SendResult(player, reason);
+                AfterHouseRebuild(player, creature, restyled);
                 return true;
+            }
             case ACTION_GUEST_MENU:
                 BuildGuestMenu(player, creature);
                 return true;
