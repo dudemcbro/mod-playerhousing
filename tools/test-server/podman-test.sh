@@ -6,6 +6,9 @@
 #   IMAGE   image to use     (default: ghcr.io/dudemcbro/acore-test-server:latest)
 #   ENGINE  podman or docker (default: podman)
 #   KEEP=1  leave the container running afterwards, with ports 3724 and 8085 published
+#   SELINUX_LABEL  label option for the module mount (default Z). Set it empty for a checkout
+#                  on a drive without SELinux labels (NTFS, exFAT); labeling is then
+#                  switched off for the container instead.
 #
 # Extra arguments go to housing_smoke.py, e.g. --verbose.
 set -euo pipefail
@@ -16,14 +19,22 @@ IMAGE="${IMAGE:-ghcr.io/dudemcbro/acore-test-server:latest}"
 ENGINE="${ENGINE:-podman}"
 NAME="housing-test-$$"
 
-ports=()
+options=()
 if [ "${KEEP:-0}" = 1 ]; then
-    ports=(-p 3724:3724 -p 8085:8085)
+    options+=(-p 3724:3724 -p 8085:8085)
 fi
 
-"$ENGINE" run -d --name "$NAME" "${ports[@]}" \
+LABEL="${SELINUX_LABEL-Z}"
+volume="$MODULE_DIR:/opt/acore/modules/mod-playerhousing"
+if [ -n "$LABEL" ]; then
+    volume="$volume:$LABEL"
+else
+    options+=(--security-opt label=disable)
+fi
+
+"$ENGINE" run -d --name "$NAME" "${options[@]}" \
     -e ACORE_ACCOUNTS="houseowner:houseowner houseguest:houseguest admin:admin:3" \
-    -v "$MODULE_DIR:/opt/acore/modules/mod-playerhousing:Z" \
+    -v "$volume" \
     "$IMAGE" >/dev/null
 if [ "${KEEP:-0}" != 1 ]; then
     trap '"$ENGINE" rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
