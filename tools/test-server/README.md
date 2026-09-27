@@ -20,8 +20,9 @@ podman login ghcr.io -u dudemcbro      # once; token with read:packages
 tools/test-server/podman-test.sh           # add --verbose for every chat line
 ```
 
-It starts a throwaway container with this checkout mounted (`:Z`, for Bluefin's SELinux),
-waits for the worldserver, runs `housing_smoke.py` inside and removes the container.
+It starts a throwaway container with this checkout mounted (`:Z`, for Bluefin's SELinux;
+on an NTFS or exFAT drive it turns labeling off for the container instead), waits for the
+worldserver, runs `housing_smoke.py` inside and removes the container.
 `KEEP=1` leaves it running with ports 3724/8085 published, so you can log in with a client or attach to the console
 (`podman exec -it <name> tmux attach -t acore`).
 
