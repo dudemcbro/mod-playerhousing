@@ -84,7 +84,8 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 - style changes, reconnecting and relogging inside the house, normal phase afterwards,
   persistence
 
-Add `--verbose` to see every chat line. Exit code is 0 only if every check passes.
+Add `--verbose` to see every chat line, and `--layout cleared` when the server runs the
+cleared-island variant (`tools/gm-island-cleared`). Exit code is 0 only if every check passes.
 
 ## Not covered by the test
 

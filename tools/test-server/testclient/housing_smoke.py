@@ -14,18 +14,38 @@ import time
 from wowclient import (INVENTORY_SLOT_BAG_0, TYPEID_GAMEOBJECT, TYPEID_UNIT, WorldClient, auth_login)
 
 STEWARD_ENTRY = 900200
-# Houses are phased copies of the GM Island guild house (Kalimdor).
+# Houses are phased copies on GM Island (Kalimdor), in one of two layouts.
 HOUSING_MAP = 1
-FLOOR_Z = 13.18
-STARTER_STYLE_OBJECTS = {193684, 181302, 179977}  # lantern, bedroll, crate
 HUMAN_STAGE1_OBJECT = 180334                       # Stormwind Rug
 GNOME_STAGE1_OBJECT = 193586                       # Gnome Maintenance Light
 ISLAND_DB_GAMEOBJECTS = set(range(101766, 101780)) | {178934}  # GM Island's own chairs (phase 1)
 ISLAND_DB_CREATURES = {6491}                                    # its Spirit Healer
-# Open ground-floor spots in the hall with line of sight from HALL_STAND (from the vmap mesh).
-HALL_STAND = (16235.0, 16297.0)
-PLACE_TARGETS = [(16239.0, 16300.0), (16230.0, 16299.0), (16240.0, 16294.0)]
-MOVE_SPOT = (16247.0, 16298.0)
+LAYOUTS = {
+    # Inside the guild house: open ground-floor hall spots with line of sight from the
+    # stand point (measured from the house's collision mesh).
+    "guildhouse": dict(
+        floor_z=13.18,
+        starter=frozenset({193684, 181302, 179977}),   # lantern, bedroll, crate
+        stand=(16235.0, 16297.0),
+        targets=[(16239.0, 16300.0), (16230.0, 16299.0), (16240.0, 16294.0)],
+        move=(16247.0, 16298.0),
+        through_walls=None),
+    # House removed (tools/gm-island-cleared): a campsite on the plateau where it stood.
+    "cleared": dict(
+        floor_z=13.0,
+        starter=frozenset({184592, 1798, 193684, 181302, 179977}),  # campsite
+        stand=(16246.0, 16288.0),
+        targets=[(16252.0, 16292.0), (16232.0, 16290.0), (16250.0, 16282.0)],
+        move=(16236.0, 16284.0),
+        # From the old hall to where the entry room's back wall stood.
+        through_walls=((16245.0, 16298.0), (16222.0, 16290.0))),
+}
+LAYOUT = LAYOUTS["guildhouse"]
+FLOOR_Z = LAYOUT["floor_z"]
+STARTER_STYLE_OBJECTS = LAYOUT["starter"]
+HALL_STAND = LAYOUT["stand"]
+PLACE_TARGETS = LAYOUT["targets"]
+MOVE_SPOT = LAYOUT["move"]
 FLARE = 1543
 ITEM_CAMPFIRE = 901101
 ITEM_CHAIR = 901105
@@ -184,8 +204,18 @@ def main():
     ap.add_argument("--guest", default="houseguest:houseguest")
     ap.add_argument("--owner-char", default="Krookowner")
     ap.add_argument("--guest-char", default="Krookguest")
+    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="guildhouse",
+                    help="which SQL layout the server runs (sql/layouts)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+
+    global LAYOUT, FLOOR_Z, STARTER_STYLE_OBJECTS, HALL_STAND, PLACE_TARGETS, MOVE_SPOT
+    LAYOUT = LAYOUTS[args.layout]
+    FLOOR_Z = LAYOUT["floor_z"]
+    STARTER_STYLE_OBJECTS = LAYOUT["starter"]
+    HALL_STAND = LAYOUT["stand"]
+    PLACE_TARGETS = LAYOUT["targets"]
+    MOVE_SPOT = LAYOUT["move"]
 
     owner_acc, owner_pw = args.owner.split(":")
     guest_acc, guest_pw = args.guest.split(":")
@@ -337,6 +367,16 @@ def main():
         owner.pump(1.0)
         check("stage 1 furniture accepted after upgrade", len(placements(owner_guid)) == len(before) + 1, " | ".join(msgs))
 
+    if LAYOUT["through_walls"]:
+        stand, target = LAYOUT["through_walls"]
+        walk_to(owner, stand)
+        before = placements(owner_guid)
+        owner.command(".krook add 1002")
+        msgs = owner.cast_at(FLARE, target[0], target[1], FLOOR_Z)
+        owner.pump(1.0)
+        check("server has no house left: placement across its old walls works", len(placements(owner_guid)) == len(before) + 1,
+              " | ".join(msgs))
+
     rows = placements(owner_guid)
     open_steward(owner, house_steward)
     owner.gossip_select("Furniture tools")
@@ -375,7 +415,7 @@ def main():
             guest.pump(1.0)
             check("houses are private: the guest does not see the owner", not sees(guest, owner))
             check("houses are private: the owner does not see the guest", not sees(owner, guest))
-            leaked = go_entries(guest) & owner_furniture
+            leaked = (go_entries(guest) & owner_furniture) - STARTER_STYLE_OBJECTS
             check("houses are private: the owner's furniture is not in the guest's house", not leaked, "leaked=%s" % sorted(leaked))
             guest.command(".krook leave", wait=1.0)
             check("guest leaves their own house", wait_for_map(guest, start_map), "map=%s" % guest.map_id)

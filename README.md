@@ -90,6 +90,9 @@ All houses are the guild house on GM Island (Kalimdor, map 1, entry room at
   login. A dropped connection that reconnects puts you back in the house.
 - Housing furniture has server-side collision turned off: collision still compares
   phases bit by bit, so houses would otherwise block each other's placement checks.
+- `tools/gm-island-cleared` can remove the guild house instead (client patch, server
+  collision/pathing data and `sql/layouts/gm_island_cleared.sql`), leaving a campsite on
+  open ground. The guild house is the default.
 - Older installs used Pit of Saron instances. The world hotfix SQL moves styles to
   GM Island; furniture placed on the old maps stays in the database but is not shown.
 

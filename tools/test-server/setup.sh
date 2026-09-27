@@ -8,6 +8,8 @@
 #   SERVER_DIR  install prefix, data, logs, configs  (default: ~/acore-test-server)
 #   BUILD_DIR   CMake build directory                (default: $SERVER_DIR/build)
 #   JOBS        parallel compile jobs                (default: nproc)
+#   TOOLS_BUILD none, or maps-only for the map/vmap/mmap tools that
+#               tools/gm-island-cleared needs            (default: none)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +18,7 @@ CORE_DIR="${CORE_DIR:-$HOME/azerothcore-wotlk-playerbots-custom}"
 SERVER_DIR="${SERVER_DIR:-$HOME/acore-test-server}"
 BUILD_DIR="${BUILD_DIR:-$SERVER_DIR/build}"
 JOBS="${JOBS:-$(nproc)}"
+TOOLS_BUILD="${TOOLS_BUILD:-none}"
 CLIENT_DATA_VERSION="${CLIENT_DATA_VERSION:-v19}"
 SUDO=$([ "$(id -u)" -ne 0 ] && echo sudo || true)
 MYSQL=(mysql -uacore -pacore)
@@ -60,7 +63,7 @@ fi
 step "Building into $SERVER_DIR (the first build takes a while)"
 CC=clang CXX=clang++ cmake -S "$CORE_DIR" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_INSTALL_PREFIX="$SERVER_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-    -DSCRIPTS=static -DMODULES=static -DTOOLS_BUILD=none \
+    -DSCRIPTS=static -DMODULES=static -DTOOLS_BUILD="$TOOLS_BUILD" \
     -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache >/dev/null
 ninja -C "$BUILD_DIR" -j"$JOBS" install | { grep -vE "^-- (Installing|Up-to-date|Set non-toolchain)" || true; }
 
