@@ -8,21 +8,69 @@ SET @PH_ITEM_CHAIR := 901105;
 SET @PH_ITEM_TABLE := 901106;
 SET @PH_FURNITURE_ITEM_DISPLAY := COALESCE((SELECT `displayid` FROM `item_template` WHERE `entry` = 6948 LIMIT 1), 6291);
 
-UPDATE `mod_playerhousing_style`
-SET
-  `map_id` = 658,
-  `spawn_x` = 435.743,
-  `spawn_y` = 212.413,
-  `spawn_z` = 528.709,
-  `spawn_o` = 6.25646
-WHERE `style_id` IN (1, 2, 3, 4);
+-- Houses moved from Pit of Saron instances to phased copies of the GM Island guild house.
+-- Re-running this file also switches back from the cleared-island layout.
+-- Furniture placed on the old instance maps stays in the characters DB but is no longer shown.
 
-UPDATE `mod_playerhousing_style_object`
-SET `offset_x` = 9.0
-WHERE `style_id` IN (1, 2, 3, 4)
-  AND `min_stage` = 0
-  AND `object_index` = 1
-  AND `gameobject_entry` = 1798;
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_style` ADD COLUMN `steward_offset_x` float NOT NULL DEFAULT 7 AFTER `spawn_o`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_style' AND column_name = 'steward_offset_x'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_style` ADD COLUMN `steward_offset_y` float NOT NULL DEFAULT 2 AFTER `steward_offset_x`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_style' AND column_name = 'steward_offset_y'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+-- Every house is the guild house on GM Island (map 1). Owners get their own copy through a
+-- per-owner phase, so all styles can share the spot. Players arrive in the ground-floor entry
+-- room facing into the house; the steward stands 3 yd ahead and 2.5 yd to the left.
+DELETE FROM `mod_playerhousing_style`;
+INSERT INTO `mod_playerhousing_style` (`style_id`, `style_code`, `display_name`, `map_id`, `spawn_x`, `spawn_y`, `spawn_z`, `spawn_o`, `steward_offset_x`, `steward_offset_y`) VALUES
+(1, 'human',  'Human Cottage',  1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
+(2, 'gnome',  'Gnome Workshop', 1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
+(3, 'tauren', 'Tauren Lodge',   1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
+(4, 'undead', 'Undead Crypt',   1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5);
+
+-- Offsets are relative to the style spawn point: offset_x along its facing, offset_y to the
+-- left of it, offset_z picks the floor (a height hint). The spots are open ground-floor space
+-- in the guild house: the hall runs 12-14 yd ahead of the entry room.
+-- Stage 0 moving-in props: lantern at the hall door, bedroll at the far end, a crate between.
+-- Stage 1 style piece in the middle of the hall; stage 2/3 piece by the front door.
+DELETE FROM `mod_playerhousing_style_object`;
+INSERT INTO `mod_playerhousing_style_object` (`style_id`, `min_stage`, `object_index`, `gameobject_entry`, `offset_x`, `offset_y`, `offset_z`, `orientation_offset`) VALUES
+(1, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(1, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(1, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(1, 1, 3, 180334, 13.5, -14.5, 0.0,  0.0),
+(1, 2, 4, 192252, -3.5,   2.0, 0.0, -1.5708),
+(2, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(2, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(2, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(2, 1, 3, 193586, 13.5, -14.5, 0.0,  0.0),
+(2, 3, 4, 190227, -3.5,   2.0, 0.0, -1.5708),
+(3, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(3, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(3, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(3, 1, 3, 188346, 13.5, -14.5, 0.0,  0.0),
+(3, 2, 4,  50523, -3.5,   2.0, 0.0, -1.5708),
+(4, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(4, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(4, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(4, 1, 3,  19425, 13.5, -14.5, 0.0,  0.0),
+(4, 2, 4, 180432, -3.5,   2.0, 0.0, -1.5708);
 
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_furniture_item` (
   `item_entry` int unsigned NOT NULL,

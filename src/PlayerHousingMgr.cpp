@@ -8,7 +8,7 @@
 #include "DBCEnums.h"
 #include "DBCStores.h"
 #include "GameObject.h"
-#include "InstanceSaveMgr.h"
+#include "Group.h"
 #include "Item.h"
 #include "Log.h"
 #include "Map.h"
@@ -29,13 +29,20 @@
 namespace
 {
     constexpr float INVALID_HEIGHT_SENTINEL = -50000.0f;
-    constexpr uint32 DEFAULT_HOUSING_MAP_ID = 658;
+    constexpr uint32 DEFAULT_HOUSING_MAP_ID = 1; // Kalimdor (GM Island)
     constexpr uint32 STEWARD_DISPLAY_ID = 25384; // Wolvar orphan
     constexpr uint32 PLACEMENT_TARGET_SPELL_ID = 1543; // Flare, used as placement ground-target spell
     constexpr std::time_t PLACEMENT_PENDING_TIMEOUT_SECONDS = 300;
-    constexpr uint32 LEGACY_HOUSING_MAPS[] = { 309, 531, 534, 568 };
+    constexpr uint32 LEGACY_HOUSING_MAPS[] = { 309, 531, 534, 568, 658 }; // earlier instanced house maps
     constexpr uint8 FURNITURE_SPAWN_TYPE_GAMEOBJECT = 0;
     constexpr uint8 FURNITURE_SPAWN_TYPE_CREATURE = 1;
+    // House phases carry this bit and never bit 0 (PHASEMASK_NORMAL), so nothing in the normal
+    // world shares a bit with them.
+    constexpr uint32 HOUSING_PHASE_FLAG = 0x80000000;
+    constexpr float HOUSING_AREA_RADIUS = 250.0f;
+    // Ground probes start this far above the hint so multi-storey interiors snap to the floor
+    // the hint is on instead of the roof.
+    constexpr float GROUND_PROBE_ABOVE = 2.0f;
     constexpr float PI_F = 3.14159265358979323846f;
     constexpr float TWO_PI_F = 6.28318530717958647692f;
 
@@ -103,25 +110,22 @@ void PlayerHousingMgr::LoadConfig()
 
 bool PlayerHousingMgr::IsSupportedHousingMap(uint32 mapId) const
 {
+    // Houses are phased copies on an open-world map; instanced maps would bring back the
+    // group and player-count limits of dungeons.
     MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-    if (!mapEntry)
-        return false;
-
-    if (!mapEntry->IsDungeon() || mapEntry->IsBattlegroundOrArena())
-        return false;
-
-    return sObjectMgr->GetInstanceTemplate(mapId) != nullptr;
+    return mapEntry && !mapEntry->Instanceable();
 }
 
 bool PlayerHousingMgr::ResolveHousingMaps(std::string& reason)
 {
     if (!IsSupportedHousingMap(_defaultHousingMapId))
     {
-        reason = Acore::StringFormat("Default housing map {} is invalid or not instanceable.", _defaultHousingMapId);
+        reason = Acore::StringFormat("Default housing map {} is invalid or is an instanced map.", _defaultHousingMapId);
         return false;
     }
 
     _housingMapIds.clear();
+    _housingAnchors.clear();
     for (auto& [styleId, style] : _stylesById)
     {
         uint32 mapId = style.mapId != 0 ? style.mapId : _defaultHousingMapId;
@@ -135,6 +139,7 @@ bool PlayerHousingMgr::ResolveHousingMaps(std::string& reason)
 
         style.mapId = mapId;
         _housingMapIds.insert(mapId);
+        _housingAnchors.emplace_back(mapId, style.spawnX, style.spawnY, style.spawnZ, style.spawnO);
     }
 
     return true;
@@ -154,8 +159,16 @@ bool PlayerHousingMgr::LoadDefinitions()
     _styleObjects.clear();
 
     QueryResult styleResult = WorldDatabase.Query(
-        "SELECT style_id, style_code, display_name, map_id, spawn_x, spawn_y, spawn_z, spawn_o "
+        "SELECT style_id, style_code, display_name, map_id, spawn_x, spawn_y, spawn_z, spawn_o, steward_offset_x, steward_offset_y "
         "FROM mod_playerhousing_style ORDER BY style_id");
+    bool hasStewardOffsets = styleResult != nullptr;
+    if (!styleResult)
+    {
+        LOG_WARN("module", "mod-playerhousing: mod_playerhousing_style has no steward offset columns; apply the world hotfix SQL.");
+        styleResult = WorldDatabase.Query(
+            "SELECT style_id, style_code, display_name, map_id, spawn_x, spawn_y, spawn_z, spawn_o "
+            "FROM mod_playerhousing_style ORDER BY style_id");
+    }
     if (!styleResult)
     {
         LOG_ERROR("module", "mod-playerhousing: Unable to load styles. Did you apply db_world SQL?");
@@ -177,6 +190,11 @@ bool PlayerHousingMgr::LoadDefinitions()
         style.spawnY = fields[5].Get<float>();
         style.spawnZ = fields[6].Get<float>();
         style.spawnO = fields[7].Get<float>();
+        if (hasStewardOffsets)
+        {
+            style.stewardOffsetX = fields[8].Get<float>();
+            style.stewardOffsetY = fields[9].Get<float>();
+        }
 
         _styleIdByCode[style.styleCode] = style.styleId;
         _stylesById[style.styleId] = style;
@@ -385,18 +403,13 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
 
     bool legacyEvac = false;
     for (uint32 legacyMapId : LEGACY_HOUSING_MAPS)
-        if (player->GetMapId() == legacyMapId)
+        if (player->GetMapId() == legacyMapId && !IsHousingMap(legacyMapId))
             legacyEvac = true;
 
-    if (IsHousingMap(player->GetMapId()) || legacyEvac)
-    {
-        // Logging in inside a still-loaded house re-binds the player to it, and nothing tracks
-        // them yet to unbind on the way out; drop it so the real dungeon is not replaced.
-        if (IsHousingMap(player->GetMapId()))
-            sInstanceSaveMgr->PlayerUnbindInstance(player->GetGUID(), player->GetMapId(), Difficulty(0), true, player);
-
+    // Nobody is tracked in a house right after login, so whoever logged out inside one goes
+    // back to where they entered from (SetEntryPoint is stored with the character).
+    if (legacyEvac || IsInHousingArea(player))
         player->TeleportToEntryPoint();
-    }
 }
 
 void PlayerHousingMgr::OnPlayerLogout(Player* player)
@@ -405,7 +418,7 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         return;
 
     ClearPendingPlacement(player->GetGUID(), player);
-    RemovePlayerTracking(player->GetGUID(), player, true, true);
+    EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
 }
 
 void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
@@ -415,44 +428,83 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
 
     CleanupExpiredPendingPlacement(player);
 
-    if (!IsHousingMap(player->GetMapId()))
+    // Mid-teleport the position still belongs to where the player came from.
+    if (player->IsBeingTeleported())
         return;
 
-    uint8 styleId = 0;
-    uint8 stageId = 0;
+    bool tracked = false;
+    ObjectGuid::LowType ownerGuid = 0;
+    uint32 sessionPhase = 0;
     uint32 sessionMapId = 0;
-    uint32 sessionInstanceId = 0;
-
+    bool needsInit = false;
+    Position center;
+    uint8 stageId = 0;
     {
         std::lock_guard<std::mutex> guard(_lock);
         auto playerItr = _playerOwnerByGuid.find(player->GetGUID());
-        if (playerItr == _playerOwnerByGuid.end())
-            return;
-
-        auto sessionItr = _sessionsByOwner.find(playerItr->second);
-        if (sessionItr == _sessionsByOwner.end())
-            return;
-
-        Session const& session = sessionItr->second;
-        styleId = session.styleId;
-        stageId = session.stage;
-        sessionMapId = session.mapId;
-        sessionInstanceId = session.instanceId;
+        if (playerItr != _playerOwnerByGuid.end())
+        {
+            auto sessionItr = _sessionsByOwner.find(playerItr->second);
+            if (sessionItr != _sessionsByOwner.end())
+            {
+                tracked = true;
+                ownerGuid = playerItr->second;
+                sessionPhase = sessionItr->second.phaseMask;
+                sessionMapId = sessionItr->second.mapId;
+                needsInit = !sessionItr->second.initialized;
+                center = sessionItr->second.center;
+                stageId = sessionItr->second.stage;
+            }
+        }
     }
 
-    if (player->GetMapId() != sessionMapId || player->GetInstanceId() != sessionInstanceId)
-        return;
+    bool inArea = IsInHousingArea(player);
 
-    Map* map = player->GetMap();
-    if (!map)
+    if (tracked && (player->GetMapId() != sessionMapId || !inArea))
+    {
+        // Left without LeaveHouse (hearthstone, summon, death). Only the housing map's own
+        // thread may despawn the house; from anywhere else the next visit respawns it.
+        ObjectGuid::LowType leftOwner = RemovePlayerTracking(player->GetGUID(), true);
+        if (player->GetMapId() == sessionMapId)
+            EndSessionIfEmpty(leftOwner);
+        RestoreNormalPhase(player);
         return;
+    }
+
+    if (!tracked)
+    {
+        if (IsHousingPhase(player->GetPhaseMask()))
+            RestoreNormalPhase(player);
+
+        if (!inArea || player->IsGameMaster() || player->GetSession()->GetSecurity() > SEC_PLAYER)
+            return;
+
+        if (player->GetSession()->IsBot() && TryAdmitGroupBot(player))
+            return;
+
+        // Only people let in through a steward belong on the housing island.
+        player->TeleportToEntryPoint();
+        return;
+    }
+
+    // Phase auras and GM mode reset the phase mask; put the player back into the house.
+    if (player->GetPhaseMask() != sessionPhase && !player->IsGameMaster())
+        ApplyHousePhase(player, sessionPhase);
+
+    if (needsInit)
+    {
+        std::string reason;
+        if (!InitializeSession(ownerGuid, reason))
+            LOG_WARN("module", "mod-playerhousing: Could not set up house of owner {}: {}", ownerGuid, reason);
+        return;
+    }
 
     StageDefinition stageDef;
     if (!GetStageDefinition(stageId, stageDef) || stageDef.placeRadius <= 0.0f)
         return;
 
-    Position center;
-    if (!GetHouseCenter(map, styleId, center))
+    Map* map = player->GetMap();
+    if (!map)
         return;
 
     if (player->GetPositionZ() < center.GetPositionZ() - 80.0f)
@@ -476,7 +528,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
     float factor = snapRadius / dist;
     float snapX = center.GetPositionX() + dx * factor;
     float snapY = center.GetPositionY() + dy * factor;
-    float snapZ = SnapToGround(map, snapX, snapY, center.GetPositionZ());
+    float snapZ = SnapToGround(map, snapX, snapY, player->GetPositionZ());
     player->NearTeleportTo(snapX, snapY, snapZ, player->GetOrientation());
 }
 
@@ -488,30 +540,32 @@ void PlayerHousingMgr::OnPlayerMapChanged(Player* player)
     if (!IsHousingMap(player->GetMapId()))
         ClearPendingPlacement(player->GetGUID(), player);
 
-    ObjectGuid::LowType ownerGuid = 0;
-    uint32 instanceId = 0;
-    uint32 mapId = 0;
-
+    uint32 sessionMapId = 0;
+    bool tracked = false;
     {
         std::lock_guard<std::mutex> guard(_lock);
         auto playerItr = _playerOwnerByGuid.find(player->GetGUID());
-        if (playerItr == _playerOwnerByGuid.end())
-            return;
-
-        ownerGuid = playerItr->second;
-        auto sessionItr = _sessionsByOwner.find(ownerGuid);
-        if (sessionItr != _sessionsByOwner.end())
+        if (playerItr != _playerOwnerByGuid.end())
         {
-            instanceId = sessionItr->second.instanceId;
-            mapId = sessionItr->second.mapId;
+            auto sessionItr = _sessionsByOwner.find(playerItr->second);
+            if (sessionItr != _sessionsByOwner.end())
+            {
+                tracked = true;
+                sessionMapId = sessionItr->second.mapId;
+            }
         }
     }
 
-    if (player->GetMapId() == mapId && player->GetInstanceId() == instanceId)
+    // Arriving at the house from another map.
+    if (tracked && player->GetMapId() == sessionMapId && IsInHousingArea(player))
         return;
 
-    bool eraseReturn = (!IsHousingMap(player->GetMapId()));
-    RemovePlayerTracking(player->GetGUID(), player, eraseReturn, true);
+    // Runs on the world thread, so the house left behind can be despawned here.
+    if (tracked)
+        EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
+
+    if (IsHousingPhase(player->GetPhaseMask()))
+        RestoreNormalPhase(player);
 }
 
 void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
@@ -522,46 +576,36 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     ObjectGuid::LowType guidLow = guid.GetCounter();
 
     ClearPendingPlacement(guid, nullptr);
-    RemovePlayerTracking(guid, nullptr, true, true);
+    RemovePlayerTracking(guid, true);
 
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} OR guest_guid={}", guidLow, guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_unlock WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_placement WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);
 
+    // Guests still inside are moved out by OnPlayerUpdate once the session is gone.
     std::lock_guard<std::mutex> guard(_lock);
     auto sessionItr = _sessionsByOwner.find(guidLow);
     if (sessionItr != _sessionsByOwner.end())
     {
-        _ownerByInstance.erase(sessionItr->second.instanceId);
+        if (Map* map = GetHousingMap(sessionItr->second.mapId))
+            DespawnSessionObjects(sessionItr->second, map);
+
+        for (ObjectGuid const& occupant : sessionItr->second.occupants)
+            _playerOwnerByGuid.erase(occupant);
+
         _sessionsByOwner.erase(sessionItr);
     }
 }
 
-void PlayerHousingMgr::OnDestroyMap(Map* map)
+void PlayerHousingMgr::OnBeforeSetPhaseMask(uint32 oldPhaseMask, uint32 newPhaseMask, bool& useCombinedPhases) const
 {
-    if (!_enabled || !map || !IsHousingMap(map->GetId()))
-        return;
-
-    std::lock_guard<std::mutex> guard(_lock);
-    auto ownerItr = _ownerByInstance.find(map->GetInstanceId());
-    if (ownerItr == _ownerByInstance.end())
-        return;
-
-    ObjectGuid::LowType ownerGuid = ownerItr->second;
-    _ownerByInstance.erase(ownerItr);
-
-    auto sessionItr = _sessionsByOwner.find(ownerGuid);
-    if (sessionItr != _sessionsByOwner.end())
-    {
-        for (ObjectGuid const& playerGuid : sessionItr->second.occupants)
-        {
-            _playerOwnerByGuid.erase(playerGuid);
-            _returnLocations.erase(playerGuid);
-        }
-
-        _sessionsByOwner.erase(sessionItr);
-    }
+    // A house phase is an ID, not a set of bits: objects in one only see the exact same value,
+    // which gives every owner a private copy of the house.
+    if (IsHousingPhase(newPhaseMask))
+        useCombinedPhases = false;
+    else if (IsHousingPhase(oldPhaseMask))
+        useCombinedPhases = true;
 }
 
 bool PlayerHousingMgr::ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const
@@ -770,7 +814,9 @@ bool PlayerHousingMgr::IsPlacementPointValid(Player* player, Map* map, Position 
     auto sampleGround = [&](float sampleX, float sampleY, float zHint, float& outZ) -> bool
     {
         float zTop = map->GetHeight(player->GetPhaseMask(), sampleX, sampleY, zHint + 20.0f, true, 200.0f);
-        float zMid = map->GetHeight(player->GetPhaseMask(), sampleX, sampleY, zHint, true, 200.0f);
+        // A Flare target lies exactly on the surface, and a probe starting there can miss a
+        // building floor and return the ground under it; start just above instead.
+        float zMid = map->GetHeight(player->GetPhaseMask(), sampleX, sampleY, zHint + GROUND_PROBE_ABOVE, true, 200.0f);
         float zLow = map->GetHeight(player->GetPhaseMask(), sampleX, sampleY, zHint - 20.0f, true, 200.0f);
 
         float best = INVALID_HEIGHT_SENTINEL;
@@ -882,7 +928,7 @@ bool PlayerHousingMgr::IsPlacementPointValid(Player* player, Map* map, Position 
 
     QueryResult overlapResult = CharacterDatabase.Query(
         "SELECT placement_id, pos_x, pos_y, pos_z, collision_radius, min_distance "
-        "FROM mod_playerhousing_placement WHERE owner_guid={} AND (map_id=0 OR map_id={})",
+        "FROM mod_playerhousing_placement WHERE owner_guid={} AND map_id={}",
         player->GetGUID().GetCounter(), map->GetId());
     if (overlapResult)
     {
@@ -923,7 +969,11 @@ bool PlayerHousingMgr::ResolveSafeGroundPosition(Map* map, float seedX, float se
 
     auto tryPoint = [&](float x, float y, float zHint) -> bool
     {
-        float height = map->GetHeight(PHASEMASK_NORMAL, x, y, zHint + 25.0f, true, 500.0f);
+        // Probe from just above the hint first so an indoor spawn point lands on its own
+        // floor rather than on the roof or an upper storey.
+        float height = map->GetHeight(PHASEMASK_NORMAL, x, y, zHint + GROUND_PROBE_ABOVE, true, 50.0f);
+        if (!std::isfinite(height) || height <= INVALID_HEIGHT_SENTINEL)
+            height = map->GetHeight(PHASEMASK_NORMAL, x, y, zHint + 25.0f, true, 500.0f);
         if (!std::isfinite(height))
             return false;
 
@@ -967,7 +1017,9 @@ float PlayerHousingMgr::SnapToGround(Map* map, float x, float y, float z) const
     if (!map)
         return z;
 
-    float height = map->GetHeight(PHASEMASK_NORMAL, x, y, z + 25.0f, true, 500.0f);
+    float height = map->GetHeight(PHASEMASK_NORMAL, x, y, z + GROUND_PROBE_ABOVE, true, 50.0f);
+    if (height <= INVALID_HEIGHT_SENTINEL)
+        height = map->GetHeight(PHASEMASK_NORMAL, x, y, z + 25.0f, true, 500.0f);
     return (height > INVALID_HEIGHT_SENTINEL) ? height : z;
 }
 
@@ -1018,43 +1070,29 @@ bool PlayerHousingMgr::GetStyleMapId(uint8 styleId, uint32& mapId) const
 
 bool PlayerHousingMgr::EnsureSession(HouseRecord const& house, uint32 mapId, std::string& reason)
 {
-    std::lock_guard<std::mutex> guard(_lock);
-
-    auto sessionItr = _sessionsByOwner.find(house.ownerGuid);
-    if (sessionItr != _sessionsByOwner.end())
+    if (!GetHousingMap(mapId))
     {
-        if (sessionItr->second.mapId == mapId && sInstanceSaveMgr->GetInstanceSave(sessionItr->second.instanceId))
-        {
-            if (sessionItr->second.styleId != house.styleId || sessionItr->second.stage != house.stage)
-            {
-                sessionItr->second.styleId = house.styleId;
-                sessionItr->second.stage = house.stage;
-                sessionItr->second.initialized = false;
-            }
-            return true;
-        }
-
-        _ownerByInstance.erase(sessionItr->second.instanceId);
-        _sessionsByOwner.erase(sessionItr);
-    }
-
-    uint32 instanceId = sMapMgr->GenerateInstanceId();
-    if (!sInstanceSaveMgr->AddInstanceSave(mapId, instanceId, Difficulty(0)))
-    {
-        reason = "Could not allocate a new housing instance.";
+        reason = Acore::StringFormat("Housing map {} is not available.", mapId);
         return false;
     }
 
-    Session session;
-    session.ownerGuid = house.ownerGuid;
-    session.instanceId = instanceId;
+    std::lock_guard<std::mutex> guard(_lock);
+
+    Session& session = _sessionsByOwner[house.ownerGuid];
+    if (session.ownerGuid == 0)
+    {
+        session.ownerGuid = house.ownerGuid;
+        session.phaseMask = GetHousePhase(house.ownerGuid);
+    }
+
+    // An empty session may still hold objects from an earlier visit, or none at all if the
+    // grid unloaded meanwhile; respawn everything when someone arrives.
+    if (session.occupants.empty() || session.mapId != mapId || session.styleId != house.styleId || session.stage != house.stage)
+        session.initialized = false;
+
     session.mapId = mapId;
     session.styleId = house.styleId;
     session.stage = house.stage;
-    session.initialized = false;
-
-    _ownerByInstance[instanceId] = house.ownerGuid;
-    _sessionsByOwner[house.ownerGuid] = session;
     return true;
 }
 
@@ -1070,13 +1108,18 @@ bool PlayerHousingMgr::SpawnStyleObject(Session& session, Map* map, StyleObjectD
 
     float x = anchor.GetPositionX() + rotatedX;
     float y = anchor.GetPositionY() + rotatedY;
-    float z = SnapToGround(map, x, y, anchor.GetPositionZ()) + objectDef.offsetZ;
+    // offset_z picks the floor to stand on (a height hint), the object then sits on that floor.
+    float z = SnapToGround(map, x, y, anchor.GetPositionZ() + objectDef.offsetZ);
     float o = anchor.GetOrientation() + objectDef.orientationOffset;
 
     GameObject* object = map->SummonGameObject(objectDef.gameobjectEntry, x, y, z, o, 0.0f, 0.0f, 0.0f, 0.0f, 0, false);
     if (!object)
         return false;
 
+    object->SetPhaseMask(session.phaseMask, true);
+    // Server-side collision still compares phases bit by bit, so every house would collide
+    // with every other house's objects; clients collide with what they see anyway.
+    object->EnableCollision(false);
     object->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE | GO_FLAG_INTERACT_COND);
     object->ReplaceAllDynamicFlags(GO_DYNFLAG_LO_NO_INTERACT);
     session.spawnedStyleObjects.push_back(object->GetGUID());
@@ -1104,6 +1147,7 @@ bool PlayerHousingMgr::SpawnFurnitureObject(Session& session, Map* map, uint32 p
         if (!creature)
             return false;
 
+        creature->SetPhaseMask(session.phaseMask, true);
         if (displayId != 0)
         {
             creature->SetDisplayId(displayId);
@@ -1123,6 +1167,8 @@ bool PlayerHousingMgr::SpawnFurnitureObject(Session& session, Map* map, uint32 p
         if (!object)
             return false;
 
+        object->SetPhaseMask(session.phaseMask, true);
+        object->EnableCollision(false);
         object->SetObjectScale(std::max(0.1f, scale));
         object->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE | GO_FLAG_INTERACT_COND);
         object->ReplaceAllDynamicFlags(GO_DYNFLAG_LO_NO_INTERACT);
@@ -1165,6 +1211,23 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
     session.stewardGuid.Clear();
 }
 
+void PlayerHousingMgr::EndSessionIfEmpty(ObjectGuid::LowType ownerGuid)
+{
+    if (!ownerGuid)
+        return;
+
+    std::lock_guard<std::mutex> guard(_lock);
+
+    auto sessionItr = _sessionsByOwner.find(ownerGuid);
+    if (sessionItr == _sessionsByOwner.end() || !sessionItr->second.occupants.empty())
+        return;
+
+    if (Map* map = GetHousingMap(sessionItr->second.mapId))
+        DespawnSessionObjects(sessionItr->second, map);
+
+    _sessionsByOwner.erase(sessionItr);
+}
+
 bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason)
 {
     std::lock_guard<std::mutex> guard(_lock);
@@ -1177,37 +1240,15 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     }
 
     Session& session = sessionItr->second;
-    Map* map = sMapMgr->FindMap(session.mapId, session.instanceId);
+    Map* map = GetHousingMap(session.mapId);
     if (!map)
     {
-        reason = "Could not load housing instance map.";
+        reason = "Could not load housing map.";
         return false;
     }
 
     if (session.initialized)
         return true;
-
-    // Housing must never contain hostile dungeon spawns. Any DB-spawned creatures/gameobjects
-    // are removed on session init so maps can be swapped without risking "bad guys".
-    {
-        std::vector<Creature*> toRemoveCreatures;
-        toRemoveCreatures.reserve(map->GetCreatureBySpawnIdStore().size());
-        for (auto const& pair : map->GetCreatureBySpawnIdStore())
-            if (pair.second)
-                toRemoveCreatures.push_back(pair.second);
-
-        for (Creature* creature : toRemoveCreatures)
-            creature->AddObjectToRemoveList();
-
-        std::vector<GameObject*> toRemoveGameObjects;
-        toRemoveGameObjects.reserve(map->GetGameObjectBySpawnIdStore().size());
-        for (auto const& pair : map->GetGameObjectBySpawnIdStore())
-            if (pair.second)
-                toRemoveGameObjects.push_back(pair.second);
-
-        for (GameObject* gameobject : toRemoveGameObjects)
-            gameobject->AddObjectToRemoveList();
-    }
 
     DespawnSessionObjects(session, map);
 
@@ -1218,32 +1259,15 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
         return false;
     }
 
-    Position center;
     StyleDefinition const& style = styleItr->second;
+    Position center;
     if (!ResolveSafeGroundPosition(map, style.spawnX, style.spawnY, style.spawnZ, style.spawnO, center))
     {
-        if (AreaTriggerTeleport const* entrance = sObjectMgr->GetMapEntranceTrigger(map->GetId()))
-        {
-            if (!ResolveSafeGroundPosition(map,
-                entrance->target_X,
-                entrance->target_Y,
-                entrance->target_Z,
-                entrance->target_Orientation,
-                center))
-            {
-                center.Relocate(
-                    entrance->target_X,
-                    entrance->target_Y,
-                    entrance->target_Z + 0.35f,
-                    entrance->target_Orientation);
-            }
-        }
-        else
-        {
-            reason = "Could not resolve a safe spawn point for this house style.";
-            return false;
-        }
+        reason = "Could not resolve a safe spawn point for this house style.";
+        return false;
     }
+
+    session.center = center;
 
     auto styleObjectItr = _styleObjects.find(session.styleId);
     if (styleObjectItr != _styleObjects.end())
@@ -1262,14 +1286,16 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     float rightX = -forwardY;
     float rightY = forwardX;
 
-    float stewardX = center.GetPositionX() + (forwardX * 7.0f) + (rightX * 2.0f);
-    float stewardY = center.GetPositionY() + (forwardY * 7.0f) + (rightY * 2.0f);
+    float stewardX = center.GetPositionX() + (forwardX * style.stewardOffsetX) + (rightX * style.stewardOffsetY);
+    float stewardY = center.GetPositionY() + (forwardY * style.stewardOffsetX) + (rightY * style.stewardOffsetY);
     float stewardZ = SnapToGround(map, stewardX, stewardY, center.GetPositionZ()) + 0.35f;
+    float stewardO = NormalizeAngle(std::atan2(center.GetPositionY() - stewardY, center.GetPositionX() - stewardX));
     Position stewardPosition;
-    stewardPosition.Relocate(stewardX, stewardY, stewardZ, center.GetOrientation());
+    stewardPosition.Relocate(stewardX, stewardY, stewardZ, stewardO);
 
     if (TempSummon* steward = map->SummonCreature(_stewardEntry, stewardPosition))
     {
+        steward->SetPhaseMask(session.phaseMask, true);
         session.stewardGuid = steward->GetGUID();
         steward->SetDisplayId(_stewardDisplayId);
         steward->SetNativeDisplayId(_stewardDisplayId);
@@ -1282,7 +1308,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
 
     QueryResult furnitureResult = CharacterDatabase.Query(
         "SELECT placement_id, catalog_id, spawn_type, spawn_entry, display_id, scale, collision_radius, pos_x, pos_y, pos_z, orientation "
-        "FROM mod_playerhousing_placement WHERE owner_guid={} AND (map_id=0 OR map_id={}) ORDER BY placement_id",
+        "FROM mod_playerhousing_placement WHERE owner_guid={} AND map_id={} ORDER BY placement_id",
         ownerGuid, session.mapId);
     if (furnitureResult)
     {
@@ -1325,12 +1351,13 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     return true;
 }
 
-void PlayerHousingMgr::RemovePlayerTrackingLocked(ObjectGuid playerGuid, bool eraseReturnLocation)
+ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTrackingLocked(ObjectGuid playerGuid, bool eraseReturnLocation)
 {
+    ObjectGuid::LowType ownerGuid = 0;
     auto playerItr = _playerOwnerByGuid.find(playerGuid);
     if (playerItr != _playerOwnerByGuid.end())
     {
-        ObjectGuid::LowType ownerGuid = playerItr->second;
+        ownerGuid = playerItr->second;
         auto sessionItr = _sessionsByOwner.find(ownerGuid);
         if (sessionItr != _sessionsByOwner.end())
             sessionItr->second.occupants.erase(playerGuid);
@@ -1340,25 +1367,90 @@ void PlayerHousingMgr::RemovePlayerTrackingLocked(ObjectGuid playerGuid, bool er
 
     if (eraseReturnLocation)
         _returnLocations.erase(playerGuid);
+
+    return ownerGuid;
 }
 
-void PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid, Player* player, bool eraseReturnLocation, bool unbind)
+ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid, bool eraseReturnLocation)
 {
-    uint32 mapId = 0;
+    std::lock_guard<std::mutex> guard(_lock);
+    return RemovePlayerTrackingLocked(playerGuid, eraseReturnLocation);
+}
+
+bool PlayerHousingMgr::TryAdmitGroupBot(Player* bot)
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
+        return false;
+
+    uint32 phaseMask = 0;
     {
         std::lock_guard<std::mutex> guard(_lock);
-        auto playerItr = _playerOwnerByGuid.find(playerGuid);
-        if (playerItr != _playerOwnerByGuid.end())
+
+        // Bots follow their party into whichever house a party member is in.
+        ObjectGuid::LowType ownerGuid = 0;
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
         {
-            auto sessionItr = _sessionsByOwner.find(playerItr->second);
-            if (sessionItr != _sessionsByOwner.end())
-                mapId = sessionItr->second.mapId;
+            if (slot.guid == bot->GetGUID())
+                continue;
+
+            auto memberItr = _playerOwnerByGuid.find(slot.guid);
+            if (memberItr != _playerOwnerByGuid.end())
+            {
+                ownerGuid = memberItr->second;
+                break;
+            }
         }
-        RemovePlayerTrackingLocked(playerGuid, eraseReturnLocation);
+
+        auto sessionItr = ownerGuid ? _sessionsByOwner.find(ownerGuid) : _sessionsByOwner.end();
+        if (sessionItr == _sessionsByOwner.end() || bot->GetMapId() != sessionItr->second.mapId)
+            return false;
+
+        sessionItr->second.occupants.insert(bot->GetGUID());
+        _playerOwnerByGuid[bot->GetGUID()] = ownerGuid;
+        phaseMask = sessionItr->second.phaseMask;
     }
 
-    if (unbind && mapId != 0)
-        sInstanceSaveMgr->PlayerUnbindInstance(playerGuid, mapId, Difficulty(0), true, player);
+    ApplyHousePhase(bot, phaseMask);
+    return true;
+}
+
+void PlayerHousingMgr::ApplyHousePhase(Player* player, uint32 phaseMask) const
+{
+    // Unit::SetPhaseMask carries pets, guardians and other summons along.
+    player->SetPhaseMask(phaseMask, true);
+}
+
+void PlayerHousingMgr::RestoreNormalPhase(Player* player) const
+{
+    if (!IsHousingPhase(player->GetPhaseMask()))
+        return;
+
+    uint32 phaseMask = player->GetPhaseByAuras();
+    if (!phaseMask)
+        phaseMask = PHASEMASK_NORMAL;
+    if (player->IsGameMaster())
+        phaseMask = PHASEMASK_ANYWHERE;
+
+    player->SetPhaseMask(phaseMask, true);
+}
+
+bool PlayerHousingMgr::IsInHousingArea(WorldObject const* object) const
+{
+    if (!object || !IsHousingMap(object->GetMapId()))
+        return false;
+
+    for (WorldLocation const& anchor : _housingAnchors)
+        if (anchor.GetMapId() == object->GetMapId() &&
+            object->GetExactDist2dSq(anchor.GetPositionX(), anchor.GetPositionY()) <= HOUSING_AREA_RADIUS * HOUSING_AREA_RADIUS)
+            return true;
+
+    return false;
+}
+
+Map* PlayerHousingMgr::GetHousingMap(uint32 mapId) const
+{
+    return sMapMgr->FindBaseNonInstanceMap(mapId);
 }
 
 void PlayerHousingMgr::ClearPendingPlacement(ObjectGuid playerGuid, Player* player)
@@ -1456,10 +1548,19 @@ bool PlayerHousingMgr::EnterHouseByOwnerGuid(Player* player, ObjectGuid::LowType
         return false;
     }
 
+    StyleDefinition style;
+    if (!GetStyleDefinition(house.styleId, style))
+    {
+        reason = "House style definition not found.";
+        return false;
+    }
+
     if (!EnsureSession(house, houseMapId, reason))
         return false;
 
-    uint32 instanceId = 0;
+    bool wasInHouse = IsInsideManagedHouse(player);
+    ObjectGuid::LowType previousOwner = 0;
+    uint32 phaseMask = 0;
     {
         std::lock_guard<std::mutex> guard(_lock);
         auto sessionItr = _sessionsByOwner.find(ownerGuid);
@@ -1469,9 +1570,9 @@ bool PlayerHousingMgr::EnterHouseByOwnerGuid(Player* player, ObjectGuid::LowType
             return false;
         }
 
-        RemovePlayerTrackingLocked(player->GetGUID(), false);
+        previousOwner = RemovePlayerTrackingLocked(player->GetGUID(), false);
 
-        if (_returnLocations.find(player->GetGUID()) == _returnLocations.end() || !IsHousingMap(player->GetMapId()))
+        if (!wasInHouse)
         {
             _returnLocations[player->GetGUID()] = WorldLocation(
                 player->GetMapId(),
@@ -1482,41 +1583,24 @@ bool PlayerHousingMgr::EnterHouseByOwnerGuid(Player* player, ObjectGuid::LowType
         }
 
         sessionItr->second.occupants.insert(player->GetGUID());
-        sessionItr->second.styleId = house.styleId;
-        sessionItr->second.stage = house.stage;
         _playerOwnerByGuid[player->GetGUID()] = ownerGuid;
-        instanceId = sessionItr->second.instanceId;
+        phaseMask = sessionItr->second.phaseMask;
     }
 
-    InstanceSave* save = sInstanceSaveMgr->GetInstanceSave(instanceId);
-    if (!save)
+    if (previousOwner != ownerGuid)
+        EndSessionIfEmpty(previousOwner);
+
+    // Stored with the character, so logging out inside the house returns them here.
+    if (!wasInHouse)
+        player->SetEntryPoint();
+
+    ApplyHousePhase(player, phaseMask);
+
+    // The house itself is spawned by the first occupant's update once they are on the map.
+    if (!player->TeleportTo(houseMapId, style.spawnX, style.spawnY, style.spawnZ + 0.35f, style.spawnO))
     {
-        reason = "Housing session instance was lost.";
-        return false;
-    }
-
-    sInstanceSaveMgr->PlayerCreateBoundInstancesMaps(player->GetGUID());
-    sInstanceSaveMgr->PlayerBindToInstance(player->GetGUID(), save, false, player);
-
-    Map* map = sMapMgr->CreateMap(houseMapId, player);
-    if (!map)
-    {
-        reason = Acore::StringFormat("Could not create housing map {}.", houseMapId);
-        return false;
-    }
-
-    if (!InitializeSession(ownerGuid, reason))
-        return false;
-
-    Position center;
-    if (!GetHouseCenter(map, house.styleId, center))
-    {
-        reason = "Could not resolve house location.";
-        return false;
-    }
-
-    if (!player->TeleportTo(houseMapId, center.GetPositionX(), center.GetPositionY(), center.GetPositionZ(), center.GetOrientation(), TELE_TO_GM_MODE, nullptr, true))
-    {
+        EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), !wasInHouse));
+        RestoreNormalPhase(player);
         reason = "Teleport to house failed.";
         return false;
     }
@@ -1562,7 +1646,7 @@ bool PlayerHousingMgr::LeaveHouse(Player* player, std::string& reason)
         return false;
     }
 
-    if (!IsHousingMap(player->GetMapId()))
+    if (!IsInsideManagedHouse(player))
     {
         reason = "You are not currently in a house.";
         return false;
@@ -1580,6 +1664,9 @@ bool PlayerHousingMgr::LeaveHouse(Player* player, std::string& reason)
         }
     }
 
+    EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
+    RestoreNormalPhase(player);
+
     bool teleportOk = hasReturn ? player->TeleportTo(returnLocation) : player->TeleportToEntryPoint();
     if (!teleportOk)
     {
@@ -1592,36 +1679,18 @@ bool PlayerHousingMgr::LeaveHouse(Player* player, std::string& reason)
 
 void PlayerHousingMgr::RefreshSessionFromHouse(HouseRecord const& house)
 {
-    uint32 styleMapId = 0;
-    GetStyleMapId(house.styleId, styleMapId);
+    std::lock_guard<std::mutex> guard(_lock);
 
-    {
-        std::lock_guard<std::mutex> guard(_lock);
+    auto sessionItr = _sessionsByOwner.find(house.ownerGuid);
+    if (sessionItr == _sessionsByOwner.end())
+        return;
 
-        auto sessionItr = _sessionsByOwner.find(house.ownerGuid);
-        if (sessionItr == _sessionsByOwner.end())
-            return;
-
-        Session& session = sessionItr->second;
-        session.stage = house.stage;
-        session.styleId = house.styleId;
-        session.initialized = false;
-
-        if (styleMapId != 0 && styleMapId != session.mapId)
-        {
-            if (Map* map = sMapMgr->FindMap(session.mapId, session.instanceId))
-                DespawnSessionObjects(session, map);
-
-            _ownerByInstance.erase(session.instanceId);
-            _sessionsByOwner.erase(sessionItr);
-            return;
-        }
-    }
-
-    // Respawn right away so anyone inside is not left in an empty house until they re-enter.
-    // InitializeSession despawns the old objects itself and does nothing if the map is unloaded.
-    std::string reason;
-    InitializeSession(house.ownerGuid, reason);
+    // Only flag it: this can run on any map's thread, so the respawn happens in the next
+    // update of someone standing in the house.
+    Session& session = sessionItr->second;
+    session.stage = house.stage;
+    session.styleId = house.styleId;
+    session.initialized = false;
 }
 
 bool PlayerHousingMgr::UpgradeHouse(Player* player, std::string& reason)
@@ -1795,7 +1864,7 @@ bool PlayerHousingMgr::RemoveGuest(Player* player, std::string const& guestName,
 uint32 PlayerHousingMgr::GetPlacedFurnitureCount(ObjectGuid::LowType ownerGuid) const
 {
     QueryResult result = CharacterDatabase.Query(
-        "SELECT COUNT(*) FROM mod_playerhousing_placement WHERE owner_guid={}", ownerGuid);
+        "SELECT COUNT(*) FROM mod_playerhousing_placement WHERE owner_guid={} AND map_id IN ({})", ownerGuid, HousingMapList());
     if (!result)
         return 0;
 
@@ -1863,7 +1932,7 @@ bool PlayerHousingMgr::EnsureOwnerEditingContext(Player* player, HouseRecord& ho
         return false;
     }
 
-    if (!IsHousingMap(player->GetMapId()))
+    if (!IsInsideManagedHouse(player))
     {
         reason = "You must be inside your house.";
         return false;
@@ -1876,7 +1945,7 @@ bool PlayerHousingMgr::EnsureOwnerEditingContext(Player* player, HouseRecord& ho
     }
 
     map = player->GetMap();
-    if (!map || !IsHousingMap(map->GetId()))
+    if (!map)
     {
         reason = "House map context is unavailable.";
         return false;
@@ -1901,12 +1970,6 @@ bool PlayerHousingMgr::EnsureOwnerEditingContext(Player* player, HouseRecord& ho
     if (sessionItr == _sessionsByOwner.end())
     {
         reason = "House session was not found.";
-        return false;
-    }
-
-    if (sessionItr->second.instanceId != map->GetInstanceId() || sessionItr->second.mapId != map->GetId())
-    {
-        reason = "You are not in your active house session.";
         return false;
     }
 
@@ -2726,8 +2789,8 @@ bool PlayerHousingMgr::ListFurniture(Player* player, std::vector<std::string>& l
 
     QueryResult result = CharacterDatabase.Query(
         "SELECT p.placement_id, p.catalog_id, p.source_item_entry, p.pos_x, p.pos_y, p.pos_z "
-        "FROM mod_playerhousing_placement p WHERE p.owner_guid={} ORDER BY p.placement_id",
-        house.ownerGuid);
+        "FROM mod_playerhousing_placement p WHERE p.owner_guid={} AND p.map_id IN ({}) ORDER BY p.placement_id",
+        house.ownerGuid, HousingMapList());
     if (!result)
     {
         lines.emplace_back("No furniture placed yet.");
@@ -2873,7 +2936,7 @@ bool PlayerHousingMgr::IsHousingMap(uint32 mapId) const
 
 bool PlayerHousingMgr::IsInsideManagedHouse(Player const* player) const
 {
-    if (!_enabled || !player || !IsHousingMap(player->GetMapId()))
+    if (!_enabled || !player || !IsInHousingArea(player))
         return false;
 
     std::lock_guard<std::mutex> guard(_lock);
@@ -2882,10 +2945,25 @@ bool PlayerHousingMgr::IsInsideManagedHouse(Player const* player) const
         return false;
 
     auto sessionItr = _sessionsByOwner.find(playerItr->second);
-    if (sessionItr == _sessionsByOwner.end())
-        return false;
+    return sessionItr != _sessionsByOwner.end() && sessionItr->second.mapId == player->GetMapId();
+}
 
-    return sessionItr->second.instanceId == player->GetInstanceId() && sessionItr->second.mapId == player->GetMapId();
+bool PlayerHousingMgr::IsHousingPhase(uint32 phaseMask)
+{
+    return (phaseMask & HOUSING_PHASE_FLAG) && !(phaseMask & PHASEMASK_NORMAL);
+}
+
+uint32 PlayerHousingMgr::GetHousePhase(ObjectGuid::LowType ownerGuid)
+{
+    return HOUSING_PHASE_FLAG | ((ownerGuid & 0x3FFFFFFF) << 1);
+}
+
+std::string PlayerHousingMgr::HousingMapList() const
+{
+    std::string list;
+    for (uint32 mapId : _housingMapIds)
+        list += (list.empty() ? "" : ",") + std::to_string(mapId);
+    return list.empty() ? std::to_string(_defaultHousingMapId) : list;
 }
 
 bool PlayerHousingMgr::IsStewardEntry(uint32 entry) const

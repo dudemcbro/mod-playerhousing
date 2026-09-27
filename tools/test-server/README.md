@@ -75,25 +75,24 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 - starter house and starter unlocks on first login
 - `.krook`, `.krook status`, `.krook leave`, `.krook add`, `.krook add <id>`
 - steward gossip menus in the city and inside the house
-- entering the house (map 658), campsite style objects, no dungeon creatures
-- buying kits from Krook's Cranny and placing them with Flare targeting
+- entering the GM Island guild house, moving-in props, the island's own spawns hidden
+- buying kits from Krook's Cranny and placing them with Flare targeting inside the house
 - stage gating, upgrading, catalog placement, list, move and remove furniture
-- privacy, invites, guest visits, guests blocked from editing
-- style changes, relogging inside the house, instance binds, persistence
+- two houses at the same spot staying invisible to each other
+- privacy, invites, guest visits with the owner home, the owner coming home with a
+  guest inside, guests blocked from editing
+- style changes, reconnecting and relogging inside the house, normal phase afterwards,
+  persistence
 
 Add `--verbose` to see every chat line. Exit code is 0 only if every check passes.
 
-## Known issues the test still reports
+## Not covered by the test
 
-- **Guests cannot enter while someone ungrouped is inside.** Houses are Pit of
-  Saron instances. When a player arrives, `InstanceMap::CannotEnter` rejects
-  anyone who is not grouped with the players already inside. The module's
-  `TELE_TO_GM_MODE` only skips the check made before the teleport. A guest
-  visiting while the owner is home (or the owner coming home while a guest is
-  inside) gets sent to their hearthstone location instead. Visits are also
-  capped at 5 players, because it is a 5-player dungeon.
+- **Party bots following into a house.** The test server is built without
+  mod-playerbots, so there are no bots to try it with.
 - **`.krook add` is open to every player** and summons a steward that never
-  despawns, so players can spawn as many as they like, anywhere.
+  despawns, so players can spawn as many as they like, anywhere. This is a design
+  question, not something the test checks.
 
 ## Troubleshooting
 

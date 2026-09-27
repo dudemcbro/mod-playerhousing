@@ -33,12 +33,13 @@ PlayerHousing.DefaultPrivate = 1
 
 ###############################################################################
 # PlayerHousing.MapId
-#    Fallback instance map id used if a style has map_id = 0.
-#    Must be a dungeon-style instance map (not battleground/arena).
-#    Recommended/default: 658 (Pit of Saron).
-#    Default: 658
+#    Fallback map id used if a style has map_id = 0.
+#    Must be an open-world map: houses are phased copies (one phase per owner),
+#    not dungeon instances. Players standing near a style's spawn point on this
+#    map without a house are sent back to where they came from.
+#    Default: 1 (Kalimdor, GM Island)
 ###############################################################################
-PlayerHousing.MapId = 658
+PlayerHousing.MapId = 1
 
 ###############################################################################
 # PlayerHousing.StewardEntry

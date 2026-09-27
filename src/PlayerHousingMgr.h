@@ -18,6 +18,7 @@ class Player;
 class Spell;
 class Creature;
 class Item;
+class WorldObject;
 
 class PlayerHousingMgr
 {
@@ -38,7 +39,7 @@ public:
     void OnPlayerUpdate(Player* player, uint32 diffMs);
     void OnPlayerMapChanged(Player* player);
     void OnPlayerDelete(ObjectGuid guid);
-    void OnDestroyMap(Map* map);
+    void OnBeforeSetPhaseMask(uint32 oldPhaseMask, uint32 newPhaseMask, bool& useCombinedPhases) const;
 
     bool EnsureStarterHouse(Player* player, bool announce, std::string& reason);
     bool EnterOwnHouse(Player* player, std::string& reason);
@@ -64,6 +65,7 @@ public:
 
     bool IsHousingMap(uint32 mapId) const;
     bool IsInsideManagedHouse(Player const* player) const;
+    static bool IsHousingPhase(uint32 phaseMask);
     bool IsStewardEntry(uint32 entry) const;
     uint32 GetStewardEntry() const;
     uint32 GetStewardDisplayId() const;
@@ -79,6 +81,8 @@ private:
         float spawnY{0.0f};
         float spawnZ{0.0f};
         float spawnO{0.0f};
+        float stewardOffsetX{7.0f};  // along the spawn orientation
+        float stewardOffsetY{2.0f};  // sideways, same axis as style object offset_y (left)
     };
 
     struct StageDefinition
@@ -140,14 +144,17 @@ private:
         float collisionRadius{1.0f};
     };
 
+    // One per occupied house. Houses share a spot on an open-world map and are kept apart by
+    // giving each owner its own exact phase (see IsHousingPhase).
     struct Session
     {
         ObjectGuid::LowType ownerGuid{0};
-        uint32 instanceId{0};
+        uint32 phaseMask{0};
         uint32 mapId{0};
         uint8 styleId{1};
         uint8 stage{0};
         bool initialized{false};
+        Position center;
         std::unordered_set<ObjectGuid> occupants;
         std::unordered_map<uint32, SpawnedFurnitureRef> spawnedFurniture;
         std::vector<ObjectGuid> spawnedStyleObjects;
@@ -190,6 +197,12 @@ private:
     bool EnsureSession(HouseRecord const& house, uint32 mapId, std::string& reason);
     bool InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason);
     void DespawnSessionObjects(Session& session, Map* map);
+    void EndSessionIfEmpty(ObjectGuid::LowType ownerGuid);
+    bool TryAdmitGroupBot(Player* bot);
+    void ApplyHousePhase(Player* player, uint32 phaseMask) const;
+    void RestoreNormalPhase(Player* player) const;
+    bool IsInHousingArea(WorldObject const* object) const;
+    Map* GetHousingMap(uint32 mapId) const;
     bool SpawnStyleObject(Session& session, Map* map, StyleObjectDefinition const& objectDef, Position const& anchor);
     bool SpawnFurnitureObject(Session& session, Map* map, uint32 placementId, uint8 spawnType, uint32 spawnEntry, uint32 displayId, float scale, float collisionRadius, float x, float y, float z, float o);
     bool PlaceFurnitureAt(Player* player, uint32 catalogId, Position const& target, std::string& reason);
@@ -215,13 +228,15 @@ private:
     std::unordered_set<uint32> LoadUnlockedCatalogSet(ObjectGuid::LowType ownerGuid) const;
     uint32 GetNextPlacementId(ObjectGuid::LowType ownerGuid) const;
 
-    void RemovePlayerTrackingLocked(ObjectGuid playerGuid, bool eraseReturnLocation);
-    void RemovePlayerTracking(ObjectGuid playerGuid, Player* player, bool eraseReturnLocation, bool unbind);
+    ObjectGuid::LowType RemovePlayerTrackingLocked(ObjectGuid playerGuid, bool eraseReturnLocation);
+    ObjectGuid::LowType RemovePlayerTracking(ObjectGuid playerGuid, bool eraseReturnLocation);
     void ClearPendingPlacement(ObjectGuid playerGuid, Player* player);
     void CleanupExpiredPendingPlacement(Player* player);
     void RefreshSessionFromHouse(HouseRecord const& house);
 
     static uint32 GetStyleMaskFor(uint8 styleId);
+    static uint32 GetHousePhase(ObjectGuid::LowType ownerGuid);
+    std::string HousingMapList() const;
     static std::string ToLower(std::string value);
     static std::string FormatMoney(uint64 copper);
 
@@ -232,8 +247,9 @@ private:
     bool _autoProvisionOnLogin{true};
     bool _gmVisitBypass{true};
     bool _defaultPrivate{true};
-    uint32 _defaultHousingMapId{169};
+    uint32 _defaultHousingMapId{1};
     std::unordered_set<uint32> _housingMapIds;
+    std::vector<WorldLocation> _housingAnchors;  // style spawn points; the housing area surrounds them
     uint32 _stewardEntry{900200};
     uint32 _stewardDisplayId{25384};
     std::string _defaultStyleCode{"human"};
@@ -248,7 +264,6 @@ private:
     std::unordered_map<uint8, std::vector<StyleObjectDefinition>> _styleObjects;
 
     std::unordered_map<ObjectGuid::LowType, Session> _sessionsByOwner;
-    std::unordered_map<uint32, ObjectGuid::LowType> _ownerByInstance;
     std::unordered_map<ObjectGuid, ObjectGuid::LowType> _playerOwnerByGuid;
     std::unordered_map<ObjectGuid, WorldLocation> _returnLocations;
     std::unordered_map<ObjectGuid, PendingPlacement> _pendingPlacementByPlayer;

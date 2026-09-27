@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_style` (
   `spawn_y` float NOT NULL,
   `spawn_z` float NOT NULL,
   `spawn_o` float NOT NULL DEFAULT 0,
+  `steward_offset_x` float NOT NULL DEFAULT 7,
+  `steward_offset_y` float NOT NULL DEFAULT 2,
   PRIMARY KEY (`style_id`),
   UNIQUE KEY `uq_mod_playerhousing_style_code` (`style_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -83,12 +85,15 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_furniture_item` (
   KEY `idx_mod_playerhousing_furniture_item_active` (`active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Every house is the guild house on GM Island (map 1). Owners get their own copy through a
+-- per-owner phase, so all styles can share the spot. Players arrive in the ground-floor entry
+-- room facing into the house; the steward stands 3 yd ahead and 2.5 yd to the left.
 DELETE FROM `mod_playerhousing_style`;
-INSERT INTO `mod_playerhousing_style` (`style_id`, `style_code`, `display_name`, `map_id`, `spawn_x`, `spawn_y`, `spawn_z`, `spawn_o`) VALUES
-(1, 'human', 'Human Cottage',  658, 435.743, 212.413, 528.709, 6.25646),
-(2, 'gnome', 'Gnome Workshop', 658, 435.743, 212.413, 528.709, 6.25646),
-(3, 'tauren', 'Tauren Lodge',  658, 435.743, 212.413, 528.709, 6.25646),
-(4, 'undead', 'Undead Crypt',  658, 435.743, 212.413, 528.709, 6.25646);
+INSERT INTO `mod_playerhousing_style` (`style_id`, `style_code`, `display_name`, `map_id`, `spawn_x`, `spawn_y`, `spawn_z`, `spawn_o`, `steward_offset_x`, `steward_offset_y`) VALUES
+(1, 'human',  'Human Cottage',  1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
+(2, 'gnome',  'Gnome Workshop', 1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
+(3, 'tauren', 'Tauren Lodge',   1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
+(4, 'undead', 'Undead Crypt',   1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5);
 
 DELETE FROM `mod_playerhousing_stage`;
 INSERT INTO `mod_playerhousing_stage` (`stage`, `upgrade_cost_copper`, `max_items`, `place_radius`) VALUES
@@ -131,36 +136,33 @@ INSERT INTO `mod_playerhousing_style_default_unlock` (`style_id`, `catalog_id`) 
 (3, 1301),
 (4, 1401);
 
+-- Offsets are relative to the style spawn point: offset_x along its facing, offset_y to the
+-- left of it, offset_z picks the floor (a height hint). The spots are open ground-floor space
+-- in the guild house: the hall runs 12-14 yd ahead of the entry room.
+-- Stage 0 moving-in props: lantern at the hall door, bedroll at the far end, a crate between.
+-- Stage 1 style piece in the middle of the hall; stage 2/3 piece by the front door.
 DELETE FROM `mod_playerhousing_style_object`;
 INSERT INTO `mod_playerhousing_style_object` (`style_id`, `min_stage`, `object_index`, `gameobject_entry`, `offset_x`, `offset_y`, `offset_z`, `orientation_offset`) VALUES
-(1, 0, 0, 184592,  0.0,  0.0, 0.0, 0.0),
-(1, 0, 1,   1798,  9.0,  0.0, 0.0, 0.0),
-(1, 0, 2, 193684,  0.3, -0.7, 0.0, 0.0),
-(1, 0, 3, 181302, -0.8,  0.6, 0.0, 0.0),
-(1, 0, 4, 179977, -0.1,  0.0, 0.0, 0.0),
-(1, 1, 1, 180334,  0.0,  0.0, 0.0, 0.0),
-(1, 2, 2, 192252,  3.0,  0.0, 0.0, 0.0),
-(2, 0, 0, 184592,  0.0,  0.0, 0.0, 0.0),
-(2, 0, 1,   1798,  9.0,  0.0, 0.0, 0.0),
-(2, 0, 2, 193684,  0.3, -0.7, 0.0, 0.0),
-(2, 0, 3, 181302, -0.8,  0.6, 0.0, 0.0),
-(2, 0, 4, 179977, -0.1,  0.0, 0.0, 0.0),
-(2, 1, 1, 193586,  0.0,  0.0, 0.0, 0.0),
-(2, 3, 2, 190227,  3.0,  0.0, 0.0, 0.0),
-(3, 0, 0, 184592,  0.0,  0.0, 0.0, 0.0),
-(3, 0, 1,   1798,  9.0,  0.0, 0.0, 0.0),
-(3, 0, 2, 193684,  0.3, -0.7, 0.0, 0.0),
-(3, 0, 3, 181302, -0.8,  0.6, 0.0, 0.0),
-(3, 0, 4, 179977, -0.1,  0.0, 0.0, 0.0),
-(3, 1, 1, 188346,  0.0,  0.0, 0.0, 0.0),
-(3, 2, 2,  50523,  3.0,  0.0, 0.0, 0.0),
-(4, 0, 0, 184592,  0.0,  0.0, 0.0, 0.0),
-(4, 0, 1,   1798,  9.0,  0.0, 0.0, 0.0),
-(4, 0, 2, 193684,  0.3, -0.7, 0.0, 0.0),
-(4, 0, 3, 181302, -0.8,  0.6, 0.0, 0.0),
-(4, 0, 4, 179977, -0.1,  0.0, 0.0, 0.0),
-(4, 1, 1,  19425,  0.5,  0.0, 0.0, 0.0),
-(4, 2, 2, 180432,  3.0,  0.0, 0.0, 0.0);
+(1, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(1, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(1, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(1, 1, 3, 180334, 13.5, -14.5, 0.0,  0.0),
+(1, 2, 4, 192252, -3.5,   2.0, 0.0, -1.5708),
+(2, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(2, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(2, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(2, 1, 3, 193586, 13.5, -14.5, 0.0,  0.0),
+(2, 3, 4, 190227, -3.5,   2.0, 0.0, -1.5708),
+(3, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(3, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(3, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(3, 1, 3, 188346, 13.5, -14.5, 0.0,  0.0),
+(3, 2, 4,  50523, -3.5,   2.0, 0.0, -1.5708),
+(4, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
+(4, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
+(4, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
+(4, 1, 3,  19425, 13.5, -14.5, 0.0,  0.0),
+(4, 2, 4, 180432, -3.5,   2.0, 0.0, -1.5708);
 
 DELETE FROM `mod_playerhousing_furniture_item`;
 INSERT INTO `mod_playerhousing_furniture_item`

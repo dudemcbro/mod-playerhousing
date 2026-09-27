@@ -1,9 +1,9 @@
 #include "PlayerHousingMgr.h"
 
-#include "AllMapScript.h"
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Creature.h"
+#include "GlobalScript.h"
 #include "ItemScript.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -209,7 +209,7 @@ public:
     // this menu open would leave it pointing at a creature that is being removed.
     void AfterHouseRebuild(Player* player, Creature* creature, bool rebuilt) const
     {
-        if (rebuilt && sPlayerHousingMgr->IsHousingMap(creature->GetMapId()))
+        if (rebuilt && PlayerHousingMgr::IsHousingPhase(creature->GetPhaseMask()))
             CloseGossipMenuFor(player);
         else
             BuildMainMenu(player, creature);
@@ -664,14 +664,14 @@ public:
 
 };
 
-class mod_playerhousing_allmapscript : public AllMapScript
+class mod_playerhousing_globalscript : public GlobalScript
 {
 public:
-    mod_playerhousing_allmapscript() : AllMapScript("mod_playerhousing_allmapscript") { }
+    mod_playerhousing_globalscript() : GlobalScript("mod_playerhousing_globalscript", { GLOBALHOOK_ON_BEFORE_WORLDOBJECT_SET_PHASEMASK }) { }
 
-    void OnDestroyMap(Map* map) override
+    void OnBeforeWorldObjectSetPhaseMask(WorldObject const* /*worldObject*/, uint32& oldPhaseMask, uint32& newPhaseMask, bool& useCombinedPhases, bool& /*update*/) override
     {
-        sPlayerHousingMgr->OnDestroyMap(map);
+        sPlayerHousingMgr->OnBeforeSetPhaseMask(oldPhaseMask, newPhaseMask, useCombinedPhases);
     }
 };
 
@@ -681,6 +681,6 @@ void Addmod_playerhousingScripts()
     new mod_playerhousing_commandscript();
     new mod_playerhousing_worldscript();
     new mod_playerhousing_playerscript();
-    new mod_playerhousing_allmapscript();
+    new mod_playerhousing_globalscript();
     new npc_playerhousing_steward();
 }
