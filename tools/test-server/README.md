@@ -8,7 +8,24 @@ Everything installs under `~/acore-test-server` and uses its own MySQL databases
 (`acore_auth`, `acore_characters`, `acore_world`), so keep it away from a MySQL
 that already hosts a live server.
 
-## Quick start on Bluefin
+## Fastest: the prebuilt image (Podman)
+
+The core fork publishes a test server image with the core already compiled, the client
+data and populated databases inside (`apps/test-server-image` in
+azerothcore-wotlk-playerbots-custom). With it, a full test run is one command and only
+this module gets compiled:
+
+```bash
+podman login ghcr.io -u dudemcbro      # once; token with read:packages
+tools/test-server/podman-test.sh           # add --verbose for every chat line
+```
+
+It starts a throwaway container with this checkout mounted (`:Z`, for Bluefin's SELinux),
+waits for the worldserver, runs `housing_smoke.py` inside and removes the container.
+`KEEP=1` leaves it running with ports 3724/8085 published, so you can log in with a client or attach to the console
+(`podman exec -it <name> tmux attach -t acore`).
+
+## Quick start on Bluefin (building everything locally)
 
 Bluefin's base image is immutable, so build inside a distrobox. It shares your
 home directory and network with the host.
