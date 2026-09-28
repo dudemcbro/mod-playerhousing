@@ -1,27 +1,12 @@
-SET @PH_STEWARD_ENTRY := 900200;
-SET @PH_ITEM_TENT := 901100;
-SET @PH_ITEM_CAMPFIRE := 901101;
-SET @PH_ITEM_BEDROLL := 901102;
-SET @PH_ITEM_CRATE := 901103;
-SET @PH_ITEM_LANTERN := 901104;
-SET @PH_ITEM_CHAIR := 901105;
-SET @PH_ITEM_TABLE := 901106;
-
-DELETE FROM `creature` WHERE `id1` = @PH_STEWARD_ENTRY;
-DELETE FROM `creature_template_model` WHERE `CreatureID` = @PH_STEWARD_ENTRY;
-DELETE FROM `creature_template` WHERE `entry` = @PH_STEWARD_ENTRY;
-
-DELETE FROM `npc_vendor`
-WHERE `entry` = @PH_STEWARD_ENTRY
-  AND `item` IN (@PH_ITEM_TENT, @PH_ITEM_CAMPFIRE, @PH_ITEM_BEDROLL, @PH_ITEM_CRATE, @PH_ITEM_LANTERN, @PH_ITEM_CHAIR, @PH_ITEM_TABLE);
-
-DELETE FROM `item_template`
-WHERE `entry` IN (@PH_ITEM_TENT, @PH_ITEM_CAMPFIRE, @PH_ITEM_BEDROLL, @PH_ITEM_CRATE, @PH_ITEM_LANTERN, @PH_ITEM_CHAIR, @PH_ITEM_TABLE);
-
-DROP TABLE IF EXISTS `mod_playerhousing_furniture_item`;
-
-DROP TABLE IF EXISTS `mod_playerhousing_style_object`;
-DROP TABLE IF EXISTS `mod_playerhousing_style_default_unlock`;
-DROP TABLE IF EXISTS `mod_playerhousing_catalog`;
-DROP TABLE IF EXISTS `mod_playerhousing_stage`;
-DROP TABLE IF EXISTS `mod_playerhousing_style`;
+-- Removes everything mod-playerhousing added to the world database.
+DELETE FROM `creature` WHERE `id1` = 900200;
+DELETE FROM `creature_template_model` WHERE `CreatureID` = 900200;
+DELETE FROM `creature_template` WHERE `entry` = 900200;
+DELETE FROM `npc_vendor` WHERE `entry` = 900200;
+DELETE FROM `item_template` WHERE `entry` BETWEEN 901100 AND 901199 OR `entry` BETWEEN 902000 AND 902999;
+DELETE FROM `gameobject_template` WHERE `entry` = 903990 OR `entry` BETWEEN 911100 AND 922999;
+DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900309;
+DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_place', 'spell_playerhousing_key');
+DROP TABLE IF EXISTS `mod_playerhousing_piece_rule`;
+DROP TABLE IF EXISTS `mod_playerhousing_piece`;
+DROP TABLE IF EXISTS `mod_playerhousing_layout`;

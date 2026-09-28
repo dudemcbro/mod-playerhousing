@@ -1,215 +1,146 @@
-SET @PH_STEWARD_ENTRY := 900200;
-SET @PH_ITEM_TENT := 901100;
-SET @PH_ITEM_CAMPFIRE := 901101;
-SET @PH_ITEM_BEDROLL := 901102;
-SET @PH_ITEM_CRATE := 901103;
-SET @PH_ITEM_LANTERN := 901104;
-SET @PH_ITEM_CHAIR := 901105;
-SET @PH_ITEM_TABLE := 901106;
-SET @PH_FURNITURE_ITEM_DISPLAY := COALESCE((SELECT `displayid` FROM `item_template` WHERE `entry` = 6948 LIMIT 1), 6291);
+-- mod-playerhousing: world data.
+--
+-- The pieces themselves (furnishings and buildings, their items, objects and unlock rules)
+-- are generated into mod_playerhousing_world_content.sql by tools/content/build_content.py.
+-- Apply this file first, then the content file. Both can be re-applied at any time.
 
-CREATE TABLE IF NOT EXISTS `mod_playerhousing_style` (
-  `style_id` tinyint unsigned NOT NULL,
-  `style_code` varchar(16) NOT NULL,
-  `display_name` varchar(32) NOT NULL,
-  `map_id` int unsigned NOT NULL DEFAULT 0,
-  `spawn_x` float NOT NULL,
-  `spawn_y` float NOT NULL,
-  `spawn_z` float NOT NULL,
-  `spawn_o` float NOT NULL DEFAULT 0,
+SET @STEWARD := 900200;
+SET @HOUSE_KEY := 902000;
+SET @MARKER := 903990;
+
+-- Tables from before furnishings became items and house levels were removed.
+DROP TABLE IF EXISTS `mod_playerhousing_style_object`;
+DROP TABLE IF EXISTS `mod_playerhousing_style_default_unlock`;
+DROP TABLE IF EXISTS `mod_playerhousing_stage`;
+DROP TABLE IF EXISTS `mod_playerhousing_style`;
+DROP TABLE IF EXISTS `mod_playerhousing_furniture_item`;
+DROP TABLE IF EXISTS `mod_playerhousing_catalog`;
+
+-- Where players land on the island and where Krook stands, per island layout. The
+-- PlayerHousing.Layout setting picks one; the server data has to match (see
+-- tools/gm-island-cleared). center/radius: the private copy around the island.
+DROP TABLE IF EXISTS `mod_playerhousing_layout`;
+CREATE TABLE `mod_playerhousing_layout` (
+  `layout` varchar(16) NOT NULL,
+  `map_id` int unsigned NOT NULL,
+  `landing_x` float NOT NULL,
+  `landing_y` float NOT NULL,
+  `landing_z` float NOT NULL,
+  `landing_o` float NOT NULL,
   `steward_offset_x` float NOT NULL DEFAULT 7,
   `steward_offset_y` float NOT NULL DEFAULT 2,
-  PRIMARY KEY (`style_id`),
-  UNIQUE KEY `uq_mod_playerhousing_style_code` (`style_code`)
+  `center_x` float NOT NULL,
+  `center_y` float NOT NULL,
+  `radius` float NOT NULL DEFAULT 230,
+  `description` varchar(120) NOT NULL DEFAULT '',
+  PRIMARY KEY (`layout`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS `mod_playerhousing_stage` (
-  `stage` tinyint unsigned NOT NULL,
-  `upgrade_cost_copper` int unsigned NOT NULL DEFAULT 0,
-  `max_items` int unsigned NOT NULL DEFAULT 0,
-  `place_radius` float NOT NULL DEFAULT 0,
-  PRIMARY KEY (`stage`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landing_y`, `landing_z`, `landing_o`, `steward_offset_x`, `steward_offset_y`, `center_x`, `center_y`, `radius`, `description`) VALUES
+('cleared',    1, 16240.0, 16296.0, 12.92, 1.5708, 5.0, 3.0, 16250.0, 16334.0, 230.0, 'GM Island with the guild hall removed: land on the plateau where it stood'),
+('guildhouse', 1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5, 16250.0, 16334.0, 230.0, 'GM Island with its guild hall: land in the hall''s entry room');
 
-CREATE TABLE IF NOT EXISTS `mod_playerhousing_catalog` (
-  `catalog_id` int unsigned NOT NULL,
-  `display_name` varchar(80) NOT NULL,
-  `gameobject_entry` int unsigned NOT NULL,
-  `unlock_cost_copper` int unsigned NOT NULL DEFAULT 0,
-  `min_stage` tinyint unsigned NOT NULL DEFAULT 0,
-  `style_mask` int unsigned NOT NULL DEFAULT 0,
-  `is_default` tinyint unsigned NOT NULL DEFAULT 0,
-  `active` tinyint unsigned NOT NULL DEFAULT 1,
-  `sort_order` int unsigned NOT NULL DEFAULT 0,
-  PRIMARY KEY (`catalog_id`),
-  KEY `idx_mod_playerhousing_catalog_stage` (`min_stage`),
-  KEY `idx_mod_playerhousing_catalog_active` (`active`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS `mod_playerhousing_style_default_unlock` (
-  `style_id` tinyint unsigned NOT NULL,
-  `catalog_id` int unsigned NOT NULL,
-  PRIMARY KEY (`style_id`,`catalog_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS `mod_playerhousing_style_object` (
-  `style_id` tinyint unsigned NOT NULL,
-  `min_stage` tinyint unsigned NOT NULL DEFAULT 0,
-  `object_index` tinyint unsigned NOT NULL,
-  `gameobject_entry` int unsigned NOT NULL,
-  `offset_x` float NOT NULL DEFAULT 0,
-  `offset_y` float NOT NULL DEFAULT 0,
-  `offset_z` float NOT NULL DEFAULT 0,
-  `orientation_offset` float NOT NULL DEFAULT 0,
-  PRIMARY KEY (`style_id`,`min_stage`,`object_index`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS `mod_playerhousing_furniture_item` (
+-- Everything a player can place: one row per item.
+--   kind      0 furnishing, 1 building
+--   category  0 Starter, 1 Buildings, 2 Exploration, 3 Dungeons, 4 Raids, 5 Reputation,
+--             6 Professions, 7 Holidays, 8 Capstones
+--   go_entry  the object spawned normally; edit_go_entry a clickable copy used while
+--             decorating (only for pieces that work like the real thing: chairs, stations)
+--   footprint radius in yards (what counts as inside a building); height of the top surface
+--   flags     1 surface, 2 small, 4 unlock per character, 8 first-login gift, 16 starter wreckage
+DROP TABLE IF EXISTS `mod_playerhousing_piece`;
+CREATE TABLE `mod_playerhousing_piece` (
   `item_entry` int unsigned NOT NULL,
-  `catalog_id` int unsigned NOT NULL DEFAULT 0,
-  `display_name` varchar(80) NOT NULL,
-  `spawn_type` tinyint unsigned NOT NULL DEFAULT 0,
-  `spawn_entry` int unsigned NOT NULL,
-  `display_id` int unsigned NOT NULL DEFAULT 0,
+  `kind` tinyint unsigned NOT NULL DEFAULT 0,
+  `category` tinyint unsigned NOT NULL DEFAULT 0,
+  `name` varchar(80) NOT NULL,
+  `go_entry` int unsigned NOT NULL,
+  `edit_go_entry` int unsigned NOT NULL DEFAULT 0,
   `scale` float NOT NULL DEFAULT 1,
-  `collision_radius` float NOT NULL DEFAULT 1,
-  `min_distance` float NOT NULL DEFAULT 1.5,
-  `orientation_offset` float NOT NULL DEFAULT 0,
-  `required_stage` tinyint unsigned NOT NULL DEFAULT 0,
-  `style_mask` int unsigned NOT NULL DEFAULT 0,
-  `consume_on_place` tinyint unsigned NOT NULL DEFAULT 1,
-  `active` tinyint unsigned NOT NULL DEFAULT 1,
+  `footprint` float NOT NULL DEFAULT 1,
+  `height` float NOT NULL DEFAULT 1,
+  `flags` int unsigned NOT NULL DEFAULT 0,
+  `copy_cost` int unsigned NOT NULL DEFAULT 0,
   `sort_order` int unsigned NOT NULL DEFAULT 0,
-  PRIMARY KEY (`item_entry`),
-  KEY `idx_mod_playerhousing_furniture_item_stage` (`required_stage`),
-  KEY `idx_mod_playerhousing_furniture_item_active` (`active`)
+  `hint` varchar(160) NOT NULL DEFAULT '',
+  `legacy_catalog_id` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Every house is the guild house on GM Island (map 1). Owners get their own copy through a
--- per-owner phase, so all styles can share the spot. Players arrive in the ground-floor entry
--- room facing into the house; the steward stands 3 yd ahead and 2.5 yd to the left.
-DELETE FROM `mod_playerhousing_style`;
-INSERT INTO `mod_playerhousing_style` (`style_id`, `style_code`, `display_name`, `map_id`, `spawn_x`, `spawn_y`, `spawn_z`, `spawn_o`, `steward_offset_x`, `steward_offset_y`) VALUES
-(1, 'human',  'Human Cottage',  1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
-(2, 'gnome',  'Gnome Workshop', 1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
-(3, 'tauren', 'Tauren Lodge',   1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5),
-(4, 'undead', 'Undead Crypt',   1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5);
+-- What unlocks a piece. Rules in the same rule_group must all be met; any complete group
+-- unlocks the piece. No rules at all: everyone has it.
+--   rule_type 1 level (param1), 2 achievement (param1), 3 reputation (param1 faction,
+--             param2 rank, 7 = Exalted), 4 quest rewarded (param1), 5 kill (param1 creature),
+--             6 explore area or zone (param1), 7 skill (param1 skill, param2 value),
+--             8 never (GM or UnlockAll only)
+DROP TABLE IF EXISTS `mod_playerhousing_piece_rule`;
+CREATE TABLE `mod_playerhousing_piece_rule` (
+  `item_entry` int unsigned NOT NULL,
+  `rule_group` tinyint unsigned NOT NULL DEFAULT 0,
+  `rule_index` tinyint unsigned NOT NULL,
+  `rule_type` tinyint unsigned NOT NULL,
+  `param1` int unsigned NOT NULL DEFAULT 0,
+  `param2` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`item_entry`, `rule_group`, `rule_index`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-DELETE FROM `mod_playerhousing_stage`;
-INSERT INTO `mod_playerhousing_stage` (`stage`, `upgrade_cost_copper`, `max_items`, `place_radius`) VALUES
-(0,         0,  5, 50.0),
-(1,    500000, 10, 55.0),
-(2,   1500000, 18, 60.0),
-(3,   4500000, 28, 65.0),
-(4,  13500000, 40, 70.0),
-(5,  40500000, 55, 75.0),
-(6, 121500000, 72, 80.0);
-
-DELETE FROM `mod_playerhousing_catalog`;
-INSERT INTO `mod_playerhousing_catalog` (`catalog_id`, `display_name`, `gameobject_entry`, `unlock_cost_copper`, `min_stage`, `style_mask`, `is_default`, `active`, `sort_order`) VALUES
-(1001, 'Starter Chair',             180047,      0, 0, 0, 1, 1,  10),
-(1002, 'Starter Table',             180885,      0, 0, 0, 1, 1,  20),
-(1003, 'Starter Barrel',            180779,      0, 0, 0, 1, 1,  30),
-(1004, 'Starter Candle',            180338,      0, 0, 0, 1, 1,  40),
-(1101, 'Stormwind Rug',             180334,  75000, 1, 1, 0, 1, 100),
-(1102, 'Elven Wooden Table',        180879, 180000, 2, 1, 0, 1, 110),
-(1103, 'Alliance Banner',           192252, 360000, 3, 1, 0, 1, 120),
-(1201, 'Gnome Maintenance Light',   193586,  90000, 1, 2, 0, 1, 200),
-(1202, 'Dwarven Workshop Table',    180884, 210000, 2, 2, 0, 1, 210),
-(1203, 'Gnome Rocket Cart',         190227, 420000, 3, 2, 0, 1, 220),
-(1301, 'Tauren Rug',                188346,  90000, 1, 4, 0, 1, 300),
-(1302, 'Winterhoof Totem',           50523, 210000, 2, 4, 0, 1, 310),
-(1303, 'Magna Totem',               187890, 420000, 3, 4, 0, 1, 320),
-(1401, 'Forsaken Banner',           180432,  90000, 1, 8, 0, 1, 400),
-(1402, 'Skull Candle',              180425, 210000, 2, 8, 0, 1, 410),
-(1403, 'Coffin',                     19425, 540000, 4, 8, 0, 1, 420),
-(1501, 'Bookshelf',                 183268, 260000, 2, 0, 0, 1, 500),
-(1502, 'Hospital Bed',              178226, 360000, 3, 0, 0, 1, 510),
-(1503, 'Round Table',               186422, 480000, 4, 0, 0, 1, 520),
-(1504, 'Dark Brazier',              182014, 640000, 5, 0, 0, 1, 530),
-(1505, 'Musty Coffin',              190948, 960000, 6, 8, 0, 1, 540);
-
-DELETE FROM `mod_playerhousing_style_default_unlock`;
-INSERT INTO `mod_playerhousing_style_default_unlock` (`style_id`, `catalog_id`) VALUES
-(1, 1101),
-(2, 1201),
-(3, 1301),
-(4, 1401);
-
--- Offsets are relative to the style spawn point: offset_x along its facing, offset_y to the
--- left of it, offset_z picks the floor (a height hint). The spots are open ground-floor space
--- in the guild house: the hall runs 12-14 yd ahead of the entry room.
--- Stage 0 moving-in props: lantern at the hall door, bedroll at the far end, a crate between.
--- Stage 1 style piece in the middle of the hall; stage 2/3 piece by the front door.
-DELETE FROM `mod_playerhousing_style_object`;
-INSERT INTO `mod_playerhousing_style_object` (`style_id`, `min_stage`, `object_index`, `gameobject_entry`, `offset_x`, `offset_y`, `offset_z`, `orientation_offset`) VALUES
-(1, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
-(1, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
-(1, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
-(1, 1, 3, 180334, 13.5, -14.5, 0.0,  0.0),
-(1, 2, 4, 192252, -3.5,   2.0, 0.0, -1.5708),
-(2, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
-(2, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
-(2, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
-(2, 1, 3, 193586, 13.5, -14.5, 0.0,  0.0),
-(2, 3, 4, 190227, -3.5,   2.0, 0.0, -1.5708),
-(3, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
-(3, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
-(3, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
-(3, 1, 3, 188346, 13.5, -14.5, 0.0,  0.0),
-(3, 2, 4,  50523, -3.5,   2.0, 0.0, -1.5708),
-(4, 0, 0, 193684, 12.5,  -0.5, 0.0,  0.0),
-(4, 0, 1, 181302, 12.5, -27.5, 0.0,  0.0),
-(4, 0, 2, 179977, 13.5, -19.5, 0.0,  0.0),
-(4, 1, 3,  19425, 13.5, -14.5, 0.0,  0.0),
-(4, 2, 4, 180432, -3.5,   2.0, 0.0, -1.5708);
-
-DELETE FROM `mod_playerhousing_furniture_item`;
-INSERT INTO `mod_playerhousing_furniture_item`
-(`item_entry`, `catalog_id`, `display_name`, `spawn_type`, `spawn_entry`, `display_id`, `scale`, `collision_radius`, `min_distance`, `orientation_offset`, `required_stage`, `style_mask`, `consume_on_place`, `active`, `sort_order`) VALUES
-(@PH_ITEM_TENT,      0,    'Canvas Tent Kit',      0, 184592, 0, 1.00, 2.8, 3.0, 0.0, 0, 0, 1, 1, 10),
-(@PH_ITEM_CAMPFIRE,  0,    'Campfire Kit',         0,   1798, 0, 1.00, 1.4, 2.0, 0.0, 0, 0, 1, 1, 20),
-(@PH_ITEM_BEDROLL,   0,    'Bedroll Kit',          0, 181302, 0, 1.00, 0.8, 1.2, 0.0, 0, 0, 1, 1, 30),
-(@PH_ITEM_CRATE,     0,    'Supply Crate Kit',     0, 179977, 0, 1.00, 0.9, 1.2, 0.0, 0, 0, 1, 1, 40),
-(@PH_ITEM_LANTERN,   0,    'Hanging Lantern Kit',  0, 193684, 0, 1.00, 0.6, 1.0, 0.0, 0, 0, 1, 1, 50),
-(@PH_ITEM_CHAIR,  1001,    'Cozy Chair Kit',       0, 180047, 0, 1.00, 0.9, 1.4, 0.0, 1, 0, 1, 1, 60),
-(@PH_ITEM_TABLE,  1002,    'Cozy Table Kit',       0, 180885, 0, 1.00, 1.3, 1.8, 0.0, 1, 0, 1, 1, 70);
-
-DELETE FROM `creature` WHERE `id1` = @PH_STEWARD_ENTRY;
-DELETE FROM `creature_template_model` WHERE `CreatureID` = @PH_STEWARD_ENTRY;
-DELETE FROM `creature_template` WHERE `entry` = @PH_STEWARD_ENTRY;
+-- Krook, the housing steward. No vendor window any more: everything comes from the
+-- Collection.
+DELETE FROM `npc_vendor` WHERE `entry` = @STEWARD;
+DELETE FROM `creature` WHERE `id1` = @STEWARD;
+DELETE FROM `creature_template_model` WHERE `CreatureID` = @STEWARD;
+DELETE FROM `creature_template` WHERE `entry` = @STEWARD;
 
 INSERT INTO `creature_template`
 (`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `unit_class`, `type`, `AIName`, `MovementType`, `RegenHealth`, `ScriptName`, `VerifiedBuild`) VALUES
-(@PH_STEWARD_ENTRY, 'Housing Steward', 'Krook''s Cranny', 0, 80, 80, 35, 129, 1, 7, '', 0, 1, 'npc_playerhousing_steward', 0);
+(@STEWARD, 'Krook', 'Housing Steward', 0, 80, 80, 35, 1, 1, 7, '', 0, 1, 'npc_playerhousing_steward', 0);
 
 INSERT INTO `creature_template_model`
 (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
-(@PH_STEWARD_ENTRY, 0, 25384, 1.0, 1.0, 0);
+(@STEWARD, 0, 25384, 1.0, 1.0, 0);
 
-DELETE FROM `item_template`
-WHERE `entry` IN (@PH_ITEM_TENT, @PH_ITEM_CAMPFIRE, @PH_ITEM_BEDROLL, @PH_ITEM_CRATE, @PH_ITEM_LANTERN, @PH_ITEM_CHAIR, @PH_ITEM_TABLE);
+-- Krook in the capital cities, beside each innkeeper.
+SET @GUID := (SELECT COALESCE(MAX(`guid`), 0) FROM `creature`);
+INSERT INTO `creature` (`guid`, `id1`, `map`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `MovementType`, `Comment`) VALUES
+(@GUID + 1,  @STEWARD,   0, 1, 1, -8864.85,   672.40,   97.99, 5.201, 300, 0, 0, 'Krook: Stormwind'),
+(@GUID + 2,  @STEWARD,   0, 1, 1, -4838.30,  -859.25,  502.00, 4.869, 300, 0, 0, 'Krook: Ironforge'),
+(@GUID + 3,  @STEWARD,   1, 1, 1, 10124.80,  2225.58, 1328.81, 2.217, 300, 0, 0, 'Krook: Darnassus'),
+(@GUID + 4,  @STEWARD, 530, 1, 1, -3748.86, -11698.11, -105.77, 3.146, 300, 0, 0, 'Krook: Exodar'),
+(@GUID + 5,  @STEWARD,   1, 1, 1,  1630.92, -4440.29,   15.76, 2.758, 300, 0, 0, 'Krook: Orgrimmar'),
+(@GUID + 6,  @STEWARD,   1, 1, 1, -1299.22,    41.51,  129.29, 0.559, 300, 0, 0, 'Krook: Thunder Bluff'),
+(@GUID + 7,  @STEWARD,   0, 1, 1,  1632.42,   222.15,  -43.02, 2.845, 300, 0, 0, 'Krook: Undercity'),
+(@GUID + 8,  @STEWARD, 530, 1, 1,  9685.48, -7366.49,   12.01, 4.485, 300, 0, 0, 'Krook: Silvermoon'),
+(@GUID + 9,  @STEWARD, 530, 1, 1, -2185.12,  5402.64,   51.97, 1.239, 300, 0, 0, 'Krook: Shattrath'),
+(@GUID + 10, @STEWARD, 571, 1, 1,  5718.80,   683.71,  645.83, 6.231, 300, 0, 0, 'Krook: Dalaran');
 
+-- The House Key. Its spell does nothing by itself: using the key opens the Home menu.
+DELETE FROM `item_template` WHERE `entry` = @HOUSE_KEY;
 INSERT INTO `item_template`
 (`entry`, `class`, `subclass`, `SoundOverrideSubclass`, `name`, `displayid`, `Quality`, `Flags`, `FlagsExtra`, `BuyCount`, `BuyPrice`, `SellPrice`, `InventoryType`, `AllowableClass`, `AllowableRace`, `ItemLevel`, `RequiredLevel`, `maxcount`, `stackable`, `bonding`, `spellid_1`, `spelltrigger_1`, `spellcharges_1`, `spellcooldown_1`, `spellcategorycooldown_1`, `description`, `ScriptName`, `VerifiedBuild`) VALUES
-(@PH_ITEM_TENT,      15, 0, -1, 'Housing: Canvas Tent Kit',     @PH_FURNITURE_ITEM_DISPLAY, 1, 0, 0, 1, 50000, 12500, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0),
-(@PH_ITEM_CAMPFIRE,  15, 0, -1, 'Housing: Campfire Kit',        @PH_FURNITURE_ITEM_DISPLAY, 1, 0, 0, 1, 15000,  3750, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0),
-(@PH_ITEM_BEDROLL,   15, 0, -1, 'Housing: Bedroll Kit',         @PH_FURNITURE_ITEM_DISPLAY, 1, 0, 0, 1, 20000,  5000, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0),
-(@PH_ITEM_CRATE,     15, 0, -1, 'Housing: Supply Crate Kit',    @PH_FURNITURE_ITEM_DISPLAY, 1, 0, 0, 1, 12000,  3000, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0),
-(@PH_ITEM_LANTERN,   15, 0, -1, 'Housing: Hanging Lantern Kit', @PH_FURNITURE_ITEM_DISPLAY, 1, 0, 0, 1, 18000,  4500, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0),
-(@PH_ITEM_CHAIR,     15, 0, -1, 'Housing: Cozy Chair Kit',      @PH_FURNITURE_ITEM_DISPLAY, 2, 0, 0, 1, 30000,  7500, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0),
-(@PH_ITEM_TABLE,     15, 0, -1, 'Housing: Cozy Table Kit',      @PH_FURNITURE_ITEM_DISPLAY, 2, 0, 0, 1, 45000, 11250, 0, -1, -1, 1, 1, 0, 20, 1, 1543, 0, 0, -1, -1, 'Use: Select a location in your house to place this furniture.', 'item_playerhousing_furniture', 0);
+(@HOUSE_KEY, 15, 0, -1, 'House Key', 22071, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 18282, 0, 0, 0, -1,
+ 'Right-click: go home, visit an island, decorate, your Collection.', 'item_playerhousing_key', 0);
 
-DELETE FROM `npc_vendor`
-WHERE `entry` = @PH_STEWARD_ENTRY
-  AND `item` IN (@PH_ITEM_TENT, @PH_ITEM_CAMPFIRE, @PH_ITEM_BEDROLL, @PH_ITEM_CRATE, @PH_ITEM_LANTERN, @PH_ITEM_CHAIR, @PH_ITEM_TABLE);
+-- The key's spell and the targeting circle of every furnishing are caught before they cast.
+DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_place', 'spell_playerhousing_key');
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
+(1543, 'spell_playerhousing_place'),
+(18282, 'spell_playerhousing_key');
 
-INSERT INTO `npc_vendor`
-(`entry`, `slot`, `item`, `maxcount`, `incrtime`, `ExtendedCost`, `VerifiedBuild`) VALUES
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_TENT, 0, 0, 0, 0),
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_CAMPFIRE, 0, 0, 0, 0),
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_BEDROLL, 0, 0, 0, 0),
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_CRATE, 0, 0, 0, 0),
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_LANTERN, 0, 0, 0, 0),
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_CHAIR, 0, 0, 0, 0),
-(@PH_STEWARD_ENTRY, 0, @PH_ITEM_TABLE, 0, 0, 0, 0);
+-- The blue rune on tables and shelves while decorating: click it to put something on top.
+DELETE FROM `gameobject_template` WHERE `entry` = @MARKER;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
+(@MARKER, 10, 7658, 'Put something here', '', '', '', 0.35, 'go_playerhousing_piece', 0);
+
+-- Texts heading the menus.
+DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900309;
+INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
+(900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone.', '', 1),
+(900301, 'Everything you can own. Unlocked pieces give you a copy when clicked; the rest tell you how to earn them.', '', 1),
+(900302, 'What should happen to this piece?', '', 1),
+(900303, 'Whose island would you like to visit?', '', 1),
+(900304, 'Who can visit, and what they see when they arrive.', '', 1),
+(900305, 'Pieces that came back while your bags were full wait here.', '', 1),
+(900306, 'How housing works:$B$B1. Right-click a furnishing in your bags, then click where it should go. It turns to face you.$B$B2. House Key, Start decorating. Click any piece to turn it, nudge it, move it or pick it up. Blue runes on tables take small pieces.$B$B3. Made a mistake? House Key, Undo. Picked-up pieces go back to your bags (or House Storage when your bags are full). Nothing is ever lost.$B$B4. Your Collection grows as you explore, run dungeons and raids, earn reputation and level professions. Faction buildings need Exalted with their faction.$B$B5. Island settings: who can visit, your guest list and a greeting for visitors.', '', 1),
+(900307, 'What should go on top?', '', 1),
+(900308, 'Guests can always visit, whatever your privacy setting.', '', 1),
+(900309, 'Pieces near you, closest first.', '', 1);

@@ -34,6 +34,8 @@ SMSG_MESSAGECHAT = 0x096
 SMSG_UPDATE_OBJECT = 0x0A9
 SMSG_DESTROY_OBJECT = 0x0AA
 CMSG_USE_ITEM = 0x0AB
+CMSG_GAMEOBJ_USE = 0x0B1
+CMSG_SET_SELECTION = 0x13D
 MSG_MOVE_TELEPORT_ACK = 0x0C7
 MSG_MOVE_WORLDPORT_ACK = 0x0DC
 MSG_MOVE_HEARTBEAT = 0x0EE
@@ -808,6 +810,58 @@ class WorldClient:
         self.send(CMSG_USE_ITEM, body)
         self.pump(wait)
         return self.messages_since(mark)
+
+    # -------------------------------------------------------------- bags
+    # PLAYER_FIELD_INV_SLOT_HEAD: one 64-bit item guid per inventory slot; the backpack is
+    # slots 23-38. ITEM_FIELD_STACK_COUNT is field 14 of an item.
+    def backpack(self):
+        with self.objects_lock:
+            me = self.objects.get(self.player_guid)
+            fields = dict(me.fields) if me else {}
+            items = {g: o for g, o in self.objects.items() if o.type_id == TYPEID_ITEM}
+        slots = {}
+        for slot in range(23, 39):
+            low, high = fields.get(324 + 2 * slot, 0), fields.get(325 + 2 * slot, 0)
+            guid = low | (high << 32)
+            if guid and guid in items:
+                item = items[guid]
+                slots[slot] = (guid, item.entry, item.fields.get(14, 1))
+        return slots
+
+    def count_item(self, entry):
+        return sum(count for guid, e, count in self.backpack().values() if e == entry)
+
+    def find_item(self, entry):
+        for slot, (guid, e, count) in sorted(self.backpack().items()):
+            if e == entry:
+                return slot, guid
+        return None, None
+
+    def use_item(self, entry, spell_id, dest=None, wait=2.0):
+        """Uses the first backpack item with this entry, at dest (x, y, z) when given."""
+        slot, guid = self.find_item(entry)
+        if guid is None:
+            raise RuntimeError("item %d is not in the backpack: %r" % (entry, self.backpack()))
+        mark = self.message_mark()
+        self.last_gossip = None
+        if dest:
+            targets = struct.pack("<I", TARGET_FLAG_DEST_LOCATION) + b"\x00" + struct.pack("<fff", *dest)
+        else:
+            targets = struct.pack("<I", 0)
+        self.send(CMSG_USE_ITEM, struct.pack("<BBBIQIB", INVENTORY_SLOT_BAG_0, slot, 1, spell_id, guid, 0, 0) + targets)
+        self.pump(wait)
+        return self.messages_since(mark)
+
+    def use_gameobject(self, guid, wait=2.0):
+        mark = self.message_mark()
+        self.last_gossip = None
+        self.send(CMSG_GAMEOBJ_USE, struct.pack("<Q", guid))
+        self.pump(wait)
+        return self.last_gossip, self.messages_since(mark)
+
+    def select(self, guid):
+        self.send(CMSG_SET_SELECTION, struct.pack("<Q", guid))
+        self.pump(0.3)
 
     def cast_at(self, spell_id, x, y, z, wait=2.5):
         mark = self.message_mark()

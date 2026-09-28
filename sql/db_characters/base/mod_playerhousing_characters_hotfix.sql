@@ -1,3 +1,5 @@
+-- Brings databases created by older versions up to date. Safe to re-apply.
+
 SET @ph_stmt = (
   SELECT IF(COUNT(*) = 0,
     'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `source_item_entry` int unsigned NOT NULL DEFAULT 0 AFTER `catalog_id`',
@@ -81,6 +83,28 @@ SET @ph_stmt = (
     'SELECT 1')
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'min_distance'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `flags` int unsigned NOT NULL DEFAULT 0 AFTER `is_private`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'flags'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `greeting` varchar(255) NOT NULL DEFAULT \'\' AFTER `flags`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'greeting'
 );
 PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;

@@ -5,34 +5,218 @@
 #include "ObjectGuid.h"
 #include "Position.h"
 
-#include <mutex>
 #include <ctime>
+#include <deque>
+#include <map>
+#include <mutex>
+#include <optional>
+#include <set>
 #include <string>
-#include <utility>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+class GameObject;
+class Item;
 class Map;
 class Player;
-class Spell;
-class Creature;
-class Item;
 class WorldObject;
+
+namespace Housing
+{
+    // Items, objects and texts owned by the module (see sql/db_world).
+    constexpr uint32 HOUSE_KEY_ITEM = 902000;
+    constexpr uint32 PLACEMENT_SPELL = 1543;   // Flare: its targeting circle picks the spot
+    constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
+    constexpr uint32 HOOK_MARKER_GO = 903990;
+    constexpr uint32 PLAYER_MENU_ID = 900300;  // gossip menu id for menus opened by .house
+
+    constexpr uint32 TEXT_HOME = 900300;
+    constexpr uint32 TEXT_COLLECTION = 900301;
+    constexpr uint32 TEXT_PIECE = 900302;
+    constexpr uint32 TEXT_VISIT = 900303;
+    constexpr uint32 TEXT_SETTINGS = 900304;
+    constexpr uint32 TEXT_STORAGE = 900305;
+    constexpr uint32 TEXT_HELP = 900306;
+    constexpr uint32 TEXT_HOOK = 900307;
+    constexpr uint32 TEXT_GUESTS = 900308;
+    constexpr uint32 TEXT_NEARBY = 900309;
+
+    enum PieceKind : uint8
+    {
+        PIECE_FURNISHING = 0,
+        PIECE_BUILDING = 1
+    };
+
+    enum PieceFlags : uint32
+    {
+        PIECE_FLAG_SURFACE = 0x01,        // other pieces can be put on top
+        PIECE_FLAG_SMALL = 0x02,          // fits on a surface
+        PIECE_FLAG_PER_CHARACTER = 0x04,  // unlock belongs to the character, not the account
+        PIECE_FLAG_GIFT = 0x08,           // given on first login
+        PIECE_FLAG_WRECKAGE = 0x10        // standing on the island at the first visit
+    };
+
+    enum Category : uint8
+    {
+        CATEGORY_STARTER = 0,
+        CATEGORY_BUILDINGS,
+        CATEGORY_EXPLORATION,
+        CATEGORY_DUNGEONS,
+        CATEGORY_RAIDS,
+        CATEGORY_REPUTATION,
+        CATEGORY_PROFESSIONS,
+        CATEGORY_HOLIDAYS,
+        CATEGORY_CAPSTONES,
+        CATEGORY_COUNT
+    };
+
+    enum RuleType : uint8
+    {
+        RULE_LEVEL = 1,        // param1 level
+        RULE_ACHIEVEMENT = 2,  // param1 achievement id
+        RULE_REPUTATION = 3,   // param1 faction id, param2 rank (7 = Exalted)
+        RULE_QUEST = 4,        // param1 quest id (rewarded)
+        RULE_KILL = 5,         // param1 creature entry (killer and group members nearby)
+        RULE_EXPLORE = 6,      // param1 area or zone id
+        RULE_SKILL = 7,        // param1 skill id, param2 value
+        RULE_NEVER = 8         // only through a GM or UnlockAll
+    };
+
+    enum Privacy : uint8
+    {
+        PRIVACY_PUBLIC = 0,
+        PRIVACY_PRIVATE = 1,
+        PRIVACY_FRIENDS = 2
+    };
+
+    enum HouseFlags : uint32
+    {
+        HOUSE_FLAG_WRECKAGE_PLACED = 0x01,
+        HOUSE_FLAG_HALL_NOTICE = 0x02      // things from the old guild hall went to storage
+    };
+
+    enum CharacterFlags : uint32
+    {
+        CHAR_FLAG_KEY_GIVEN = 0x01,
+        CHAR_FLAG_VETERAN_DONE = 0x02,
+        CHAR_FLAG_GREETED = 0x04
+    };
+
+    enum Tip : uint32
+    {
+        TIP_FIRST_PLACE = 0x01,
+        TIP_FIRST_UNLOCK = 0x02,
+        TIP_FIRST_STORAGE = 0x04,
+        TIP_LIMIT = 0x08,
+        TIP_DECORATE = 0x10
+    };
+
+    enum MenuSourceType : uint8
+    {
+        SOURCE_PLAYER = 0,
+        SOURCE_ITEM,
+        SOURCE_CREATURE,
+        SOURCE_GAMEOBJECT
+    };
+
+    struct MenuSource
+    {
+        MenuSourceType type{SOURCE_PLAYER};
+        ObjectGuid guid;
+    };
+
+    // Rules in the same group must all be met; any complete group unlocks the piece (so a
+    // raid trophy can come from the 10-player or the 25-player achievement).
+    struct PieceRule
+    {
+        uint8 group{0};
+        uint8 type{0};
+        uint32 param1{0};
+        uint32 param2{0};
+    };
+
+    struct PieceDefinition
+    {
+        uint32 itemEntry{0};
+        uint8 kind{PIECE_FURNISHING};
+        uint8 category{CATEGORY_STARTER};
+        std::string name;
+        uint32 goEntry{0};
+        uint32 editGoEntry{0};
+        float scale{1.0f};
+        float footprint{1.0f};
+        float height{1.0f};
+        uint32 flags{0};
+        uint32 copyCost{0};
+        uint32 sortOrder{0};
+        std::string hint;
+        uint32 legacyCatalogId{0};
+        std::vector<PieceRule> rules;
+
+        bool IsBuilding() const { return kind == PIECE_BUILDING; }
+        bool HasFlag(uint32 flag) const { return (flags & flag) != 0; }
+    };
+
+    struct LayoutDefinition
+    {
+        std::string code;
+        uint32 mapId{1};
+        Position landing;
+        float stewardOffsetX{7.0f};
+        float stewardOffsetY{2.0f};
+        float centerX{0.0f};
+        float centerY{0.0f};
+        float radius{250.0f};
+    };
+
+    struct Placement
+    {
+        uint32 id{0};
+        uint32 itemEntry{0};
+        float x{0.0f};
+        float y{0.0f};
+        float z{0.0f};
+        float o{0.0f};
+        float scale{1.0f};
+    };
+
+    // One undoable step: every placement it touched, as it was before and after.
+    struct Change
+    {
+        uint32 placementId{0};
+        std::optional<Placement> before;
+        std::optional<Placement> after;
+    };
+
+    struct JournalEntry
+    {
+        std::string label;
+        std::vector<Change> changes;
+    };
+
+    struct HouseRecord
+    {
+        ObjectGuid::LowType ownerGuid{0};
+        uint8 privacy{PRIVACY_PRIVATE};
+        uint32 flags{0};
+        std::string greeting;
+    };
+
+    struct VisitEntry
+    {
+        ObjectGuid::LowType ownerGuid{0};
+        std::string ownerName;
+    };
+}
 
 class PlayerHousingMgr
 {
 public:
-    struct HouseRecord
-    {
-        ObjectGuid::LowType ownerGuid{0};
-        uint8 styleId{1};
-        uint8 stage{0};
-        bool isPrivate{true};
-    };
-
     static PlayerHousingMgr* instance();
 
+    // ---- lifecycle and player hooks (PlayerHousingMgr.cpp)
     void OnStartup();
     void OnPlayerLogin(Player* player);
     void OnPlayerLogout(Player* player);
@@ -41,237 +225,231 @@ public:
     void OnPlayerDelete(ObjectGuid guid);
     void OnBeforeSetPhaseMask(uint32 oldPhaseMask, uint32 newPhaseMask, bool& useCombinedPhases) const;
 
-    bool EnsureStarterHouse(Player* player, bool announce, std::string& reason);
-    bool EnterOwnHouse(Player* player, std::string& reason);
-    bool VisitHouse(Player* player, std::string const& ownerName, std::string& reason);
-    bool LeaveHouse(Player* player, std::string& reason);
-    bool UpgradeHouse(Player* player, std::string& reason);
-    bool SetPrivacy(Player* player, bool isPrivate, std::string& reason);
-    bool SetStyle(Player* player, std::string const& styleCode, std::string& reason);
-    bool InviteGuest(Player* player, std::string const& guestName, std::string& reason);
-    bool RemoveGuest(Player* player, std::string const& guestName, std::string& reason);
-    bool UnlockCatalog(Player* player, uint32 catalogId, std::string& reason);
-    bool PlaceFurniture(Player* player, uint32 catalogId, std::string& reason);
-    bool BeginSpellPlacement(Player* player, uint32 catalogId, std::string& reason);
-    bool BeginItemPlacement(Player* player, Item* item, std::string& reason);
-    bool CancelSpellPlacement(Player* player, std::string& reason);
-    bool HandlePlacementSpellCast(Player* player, Spell* spell, std::string& reason);
-    bool ListPlacementChoices(Player* player, std::vector<std::pair<uint32, std::string>>& choices, std::string& reason);
-    bool MoveFurniture(Player* player, uint32 placementId, std::string& reason);
-    bool RemoveFurniture(Player* player, uint32 placementId, std::string& reason);
-    bool ListFurniture(Player* player, std::vector<std::string>& lines, std::string& reason);
-    bool ListCatalog(Player* player, std::vector<std::string>& lines, std::string& reason);
-    bool GetHouseStatus(Player* player, std::vector<std::string>& lines, std::string& reason);
-
-    bool IsHousingMap(uint32 mapId) const;
-    bool IsInsideManagedHouse(Player const* player) const;
+    bool IsEnabled() const { return _enabled; }
+    bool IsFreeMode() const { return _freeMode; }
+    bool IsUnlockAll() const { return _unlockAll; }
+    uint32 GetStewardEntry() const { return _stewardEntry; }
+    uint32 GetStewardDisplayId() const { return _stewardDisplayId; }
+    bool IsStewardEntry(uint32 entry) const { return _enabled && entry == _stewardEntry; }
     static bool IsHousingPhase(uint32 phaseMask);
-    bool IsStewardEntry(uint32 entry) const;
-    uint32 GetStewardEntry() const;
-    uint32 GetStewardDisplayId() const;
+
+    // ---- travel (PlayerHousingMgr.cpp)
+    bool EnterOwnHouse(Player* player, std::string& reason);
+    bool VisitHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason);
+    bool VisitHouseByName(Player* player, std::string const& ownerName, std::string& reason);
+    bool RequestGoHome(Player* player, std::string& reason);
+    bool LeaveHouse(Player* player, std::string& reason);
+    bool Unstuck(Player* player, std::string& reason);
+    bool GiveHouseKey(Player* player, std::string& reason);
+
+    // Where the player stands: 0 when not on anyone's island.
+    ObjectGuid::LowType GetIslandOwner(Player const* player) const;
+    bool IsOnOwnIsland(Player const* player) const;
+    bool IsDecorating(Player const* player) const;
+
+    // ---- pieces and editing (HousingPieces.cpp)
+    Housing::PieceDefinition const* GetPiece(uint32 itemEntry) const;
+    std::vector<Housing::PieceDefinition const*> GetPiecesInCategory(uint8 category) const;
+    bool HandlePlacementCast(Player* player, Item* castItem, Position const& target, std::string& reason);
+    bool SetDecorating(Player* player, bool on, std::string& reason);
+    bool PickUp(Player* player, uint32 placementId, bool withInside, std::string& reason);
+    bool Rotate(Player* player, uint32 placementId, float degrees, std::string& reason);
+    bool Nudge(Player* player, uint32 placementId, float forward, float left, float up, std::string& reason);
+    bool FaceMe(Player* player, uint32 placementId, std::string& reason);
+    bool MoveHere(Player* player, uint32 placementId, std::string& reason);
+    bool PlaceOnHook(Player* player, uint32 surfacePlacementId, uint32 itemEntry, std::string& reason);
+    bool PackUpEverything(Player* player, std::string& reason);
+    bool Undo(Player* player, std::string& reason);
+    bool Redo(Player* player, std::string& reason);
+    std::string UndoLabel(Player const* player) const;
+    std::string RedoLabel(Player const* player) const;
+    uint32 GetSelectedPlacement(Player const* player) const;
+    uint32 ResolvePlacementArgument(Player* player, uint32 placementId) const;
+    std::optional<Housing::Placement> GetPlacement(Player const* player, uint32 placementId) const;
+    uint32 GetPlacementForObject(Player const* player, ObjectGuid const& guid) const;
+    uint32 GetSurfaceForMarker(Player const* player, ObjectGuid const& guid) const;
+    std::vector<std::pair<Housing::Placement, float>> GetNearbyPlacements(Player const* player, float range) const;
+    std::vector<Housing::Placement> GetPiecesInside(ObjectGuid::LowType ownerGuid, uint32 buildingPlacementId) const;
+    void CountPlaced(ObjectGuid::LowType ownerGuid, uint32& furnishings, uint32& buildings) const;
+    uint32 GetMaxFurnishings() const { return _maxFurnishings; }
+    uint32 GetMaxBuildings() const { return _maxBuildings; }
+    std::map<uint32, uint32> GetStorage(ObjectGuid::LowType ownerGuid) const;
+    bool TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason);
+    std::string CountsText(ObjectGuid::LowType ownerGuid) const;
+    void SelectPlacement(Player const* player, uint32 placementId);
+    ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
+    void ProcessPendingConsumes(Player* player);
+
+    // ---- collection (HousingCollection.cpp)
+    bool IsUnlocked(Player const* player, Housing::PieceDefinition const& piece, std::set<uint32> const* known = nullptr) const;
+    std::set<uint32> LoadUnlocks(Player const* player) const;
+    std::string DescribeProgress(Player const* player, Housing::PieceDefinition const& piece) const;
+    void CollectionCounts(Player const* player, int32 category, uint32& unlocked, uint32& total, std::set<uint32> const* known = nullptr) const;
+    bool GetCopy(Player* player, uint32 itemEntry, std::string& reason);
+    bool GetOneOfEverything(Player* player, std::string& reason);
+    void EvaluateUnlocks(Player* player, uint8 ruleType, uint32 param, bool announce, uint32 value = 0);
+    uint32 CreditPastProgress(Player* player);
+    bool GmUnlock(Player* target, std::string const& what, bool unlock, std::string& reason);
+    void OnCreatureKilled(Player* killer, uint32 creatureEntry);
+
+    // ---- people (HousingPeople.cpp)
+    bool GetHouseRecord(ObjectGuid::LowType ownerGuid, Housing::HouseRecord& outRecord) const;
+    bool EnsureHouse(ObjectGuid::LowType ownerGuid) const;
+    bool CanVisit(Player const* visitor, Housing::HouseRecord const& house, std::string& reason) const;
+    bool SetPrivacy(Player* player, uint8 privacy, std::string& reason);
+    bool CyclePrivacy(Player* player, std::string& reason);
+    bool InviteGuest(Player* player, ObjectGuid::LowType guestGuid, std::string& reason);
+    bool InviteGuestByName(Player* player, std::string const& name, std::string& reason);
+    bool InviteTarget(Player* player, std::string& reason);
+    bool InviteParty(Player* player, std::string& reason);
+    bool RemoveGuest(Player* player, ObjectGuid::LowType guestGuid, std::string& reason);
+    bool RemoveGuestByName(Player* player, std::string const& name, std::string& reason);
+    std::vector<Housing::VisitEntry> GetGuests(ObjectGuid::LowType ownerGuid) const;
+    std::vector<Housing::VisitEntry> GetVisitList(Player const* player, uint8 list) const;
+    bool SetGreeting(Player* player, std::string const& greeting, std::string& reason);
+    static char const* PrivacyName(uint8 privacy);
+
+    // ---- misc helpers shared by the scripts
+    void Say(Player* player, std::string const& text) const;
+    void Tip(Player* player, uint32 tip, std::string const& text);
+    void SendAddonState(Player* player) const;
+    bool ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const;
+    std::string NameOf(ObjectGuid::LowType guid) const;
+    static std::string FormatMoney(uint64 copper);
+    static char const* CategoryName(uint8 category);
 
 private:
-    struct StyleDefinition
+    struct SpawnedPiece
     {
-        uint8 styleId{0};
-        std::string styleCode;
-        std::string displayName;
-        uint32 mapId{0};
-        float spawnX{0.0f};
-        float spawnY{0.0f};
-        float spawnZ{0.0f};
-        float spawnO{0.0f};
-        float stewardOffsetX{7.0f};  // along the spawn orientation
-        float stewardOffsetY{2.0f};  // sideways, same axis as style object offset_y (left)
-    };
-
-    struct StageDefinition
-    {
-        uint8 stage{0};
-        uint32 costCopper{0};
-        uint32 maxItems{0};
-        float placeRadius{0.0f};
-    };
-
-    struct CatalogDefinition
-    {
-        uint32 catalogId{0};
-        std::string displayName;
-        uint32 gameobjectEntry{0};
-        uint32 unlockCostCopper{0};
-        uint8 minStage{0};
-        uint32 styleMask{0};
-        bool isDefault{false};
-        bool active{true};
-        uint32 sortOrder{0};
-    };
-
-    struct StyleObjectDefinition
-    {
-        uint8 styleId{0};
-        uint8 minStage{0};
-        uint8 objectIndex{0};
-        uint32 gameobjectEntry{0};
-        float offsetX{0.0f};
-        float offsetY{0.0f};
-        float offsetZ{0.0f};
-        float orientationOffset{0.0f};
-    };
-
-    struct FurnitureItemDefinition
-    {
-        uint32 itemEntry{0};
-        uint32 catalogId{0};
-        uint8 spawnType{0}; // 0 = GO, 1 = Creature
-        uint32 spawnEntry{0};
-        uint32 displayId{0};
-        float scale{1.0f};
-        float collisionRadius{1.0f};
-        float minDistance{1.5f};
-        float orientationOffset{0.0f};
-        uint8 requiredStage{0};
-        uint32 styleMask{0};
-        bool consumeOnPlace{true};
-        bool active{true};
-        uint32 sortOrder{0};
-        std::string displayName;
-    };
-
-    struct SpawnedFurnitureRef
-    {
-        uint8 spawnType{0}; // 0 = GO, 1 = Creature
         ObjectGuid guid;
-        float collisionRadius{1.0f};
+        bool editCopy{false};
     };
 
-    // One per occupied house. Houses share a spot on an open-world map and are kept apart by
-    // giving each owner its own exact phase (see IsHousingPhase).
+    // One per occupied island. Islands share the spot on an open-world map and are kept apart
+    // by giving each owner an exact phase of their own (see IsHousingPhase).
     struct Session
     {
         ObjectGuid::LowType ownerGuid{0};
         uint32 phaseMask{0};
         uint32 mapId{0};
-        uint8 styleId{1};
-        uint8 stage{0};
         bool initialized{false};
-        Position center;
+        bool decorating{false};
+        uint32 nextPlacementId{1};
+        uint32 selected{0};
         std::unordered_set<ObjectGuid> occupants;
-        std::unordered_map<uint32, SpawnedFurnitureRef> spawnedFurniture;
-        std::vector<ObjectGuid> spawnedStyleObjects;
+        std::map<uint32, Housing::Placement> placements;
+        std::unordered_map<uint32, SpawnedPiece> spawned;
+        std::unordered_map<uint32, ObjectGuid> markers;  // surface placement id -> hook marker
         ObjectGuid stewardGuid;
     };
 
-    struct PendingPlacement
+    struct Journal
     {
-        ObjectGuid::LowType ownerGuid{0};
-        uint32 catalogId{0};
-        uint32 sourceItemEntry{0};
-        std::string displayName;
-        uint8 spawnType{0}; // 0 = GO, 1 = Creature
-        uint32 spawnEntry{0};
-        uint32 displayId{0};
-        float scale{1.0f};
-        float collisionRadius{1.0f};
-        float minDistance{1.5f};
-        float orientationOffset{0.0f};
-        bool consumeOnPlace{false};
-        bool temporarySpellGranted{false};
-        std::time_t expiresAt{0};
+        std::deque<Housing::JournalEntry> undo;
+        std::deque<Housing::JournalEntry> redo;
+    };
+
+    // What the last batch of changes did with items, for the message that follows.
+    struct ApplyReport
+    {
+        uint32 toBags{0};
+        uint32 toStorage{0};
+        uint32 placed{0};
+    };
+
+    struct PendingTrip
+    {
+        std::time_t at{0};
+        float x{0.0f};
+        float y{0.0f};
+        float z{0.0f};
     };
 
     PlayerHousingMgr() = default;
 
+    // PlayerHousingMgr.cpp
     void LoadConfig();
     bool LoadDefinitions();
-    bool IsSupportedHousingMap(uint32 mapId) const;
-    bool ResolveHousingMaps(std::string& reason);
-    bool GetStyleMapId(uint8 styleId, uint32& mapId) const;
-
-    bool ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const;
-    bool GetHouseRecord(ObjectGuid::LowType ownerGuid, HouseRecord& outRecord) const;
-    bool CreateStarterHouse(ObjectGuid::LowType ownerGuid, std::string& reason);
-    void GrantStarterUnlocks(ObjectGuid::LowType ownerGuid, uint8 styleId);
-    bool CanVisitHouse(Player const* visitor, HouseRecord const& house, std::string& reason) const;
-
-    bool EnterHouseByOwnerGuid(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason);
-    bool EnsureSession(HouseRecord const& house, uint32 mapId, std::string& reason);
+    void ConvertLegacyData();
+    bool EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason);
+    bool EnsureSession(ObjectGuid::LowType ownerGuid);
     bool InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason);
     void DespawnSessionObjects(Session& session, Map* map);
     void EndSessionIfEmpty(ObjectGuid::LowType ownerGuid);
+    ObjectGuid::LowType RemovePlayerTracking(ObjectGuid playerGuid, bool eraseReturnLocation);
     bool TryAdmitGroupBot(Player* bot);
     void ApplyHousePhase(Player* player, uint32 phaseMask) const;
     void RestoreNormalPhase(Player* player) const;
     bool IsInHousingArea(WorldObject const* object) const;
-    Map* GetHousingMap(uint32 mapId) const;
-    bool SpawnStyleObject(Session& session, Map* map, StyleObjectDefinition const& objectDef, Position const& anchor);
-    bool SpawnFurnitureObject(Session& session, Map* map, uint32 placementId, uint8 spawnType, uint32 spawnEntry, uint32 displayId, float scale, float collisionRadius, float x, float y, float z, float o);
-    bool PlaceFurnitureAt(Player* player, uint32 catalogId, Position const& target, std::string& reason);
-    bool PlaceFurnitureResolved(Player* player, uint32 catalogId, uint32 sourceItemEntry, uint8 spawnType, uint32 spawnEntry, uint32 displayId, float scale, float collisionRadius, float minDistance, float orientationOffset, bool consumeOnPlace, std::string const& displayName, Position const& target, std::string& reason);
-    bool ValidatePlacementRequest(Player* player, uint32 catalogId, HouseRecord& house, CatalogDefinition& catalog, StageDefinition& stage, std::string& reason);
-    bool ValidateItemPlacementRequest(Player* player, FurnitureItemDefinition const& itemDef, HouseRecord& house, StageDefinition& stage, std::string& reason);
-    bool UnlockCatalogInternal(Player* player, uint32 catalogId, std::string& reason, bool chargePlayer);
-    bool GetFurnitureItemDefinition(uint32 itemEntry, FurnitureItemDefinition& outDefinition) const;
-    bool IsPlacementPointValid(Player* player, Map* map, Position const& center, StageDefinition const& stage, float minDistance, float collisionRadius, float& x, float& y, float& z, std::string& reason, uint32 ignorePlacementId = 0) const;
+    bool IsOnIslandGround(float x, float y) const;
+    Map* GetHousingMap() const;
+    void OnArrived(Player* player, ObjectGuid::LowType ownerGuid);
+    void GiveFirstLoginItems(Player* player);
+    uint32 GetCharacterFlags(ObjectGuid::LowType guid, uint32* tips = nullptr) const;
+    void SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, bool tip) const;
+    void UpdatePendingTrip(Player* player);
 
-    bool EnsureOwnerEditingContext(Player* player, HouseRecord& house, Session& session, Map*& map, std::string& reason);
-    bool IsCatalogAllowedForHouse(CatalogDefinition const& catalog, HouseRecord const& house) const;
+    // HousingPieces.cpp
+    Session* GetOwnerSession(Player* player, std::string& reason);
+    Session const* FindSessionOf(Player const* player) const;
+    bool SpawnPlacement(Session& session, Map* map, Housing::Placement const& placement);
+    void DespawnPlacement(Session& session, Map* map, uint32 placementId);
+    void RespawnPlacement(Session& session, Map* map, uint32 placementId);
+    void SpawnMarkers(Session& session, Map* map);
+    void DespawnMarkers(Session& session, Map* map);
+    void SpawnSteward(Session& session, Map* map);
+    void PlaceStarterWreckage(Session& session, Map* map);
+    bool CheckLimit(Session const& session, Housing::PieceDefinition const& piece, std::string& reason) const;
+    bool IsSpotOnIsland(float x, float y, float z) const;
+    bool ReturnItem(Player* player, uint32 itemEntry, bool& toStorage);
+    bool TakeItem(Player* player, uint32 itemEntry);
+    void AddToStorage(ObjectGuid::LowType ownerGuid, uint32 itemEntry, int32 delta) const;
+    bool ApplyChanges(Player* player, Session& session, std::vector<Housing::Change> const& changes, bool towardsAfter, std::string& reason);
+    bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
+    void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes);
+    bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason);
+    void SavePlacement(ObjectGuid::LowType ownerGuid, Housing::Placement const& placement, uint32 mapId) const;
+    void DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const;
+    std::string PieceName(uint32 itemEntry) const;
+    std::string DescribeReturns() const;
 
-    bool GetStyleDefinition(uint8 styleId, StyleDefinition& outStyle) const;
-    bool GetStageDefinition(uint8 stage, StageDefinition& outStage) const;
-    bool GetCatalogDefinition(uint32 catalogId, CatalogDefinition& outCatalog) const;
-    bool GetHouseCenter(Map* map, uint8 styleId, Position& outCenter) const;
-    bool ResolveSafeGroundPosition(Map* map, float seedX, float seedY, float seedZ, float orientation, Position& outPosition) const;
-    float SnapToGround(Map* map, float x, float y, float z) const;
+    // HousingCollection.cpp
+    bool RuleMet(Player const* player, Housing::PieceRule const& rule) const;
+    // Whether any rule group of the piece is complete; `triggered` marks rules the current
+    // event satisfies by itself.
+    template <typename Triggered>
+    bool AnyGroupMet(Player const* player, Housing::PieceDefinition const& piece, Triggered triggered) const;
+    bool Unlock(Player* player, Housing::PieceDefinition const& piece, bool announce);
+    static bool IsAreaExplored(Player const* player, uint32 areaId);
 
-    uint32 GetPlacedFurnitureCount(ObjectGuid::LowType ownerGuid) const;
-    bool IsCatalogUnlocked(ObjectGuid::LowType ownerGuid, uint32 catalogId) const;
-    std::unordered_set<uint32> LoadUnlockedCatalogSet(ObjectGuid::LowType ownerGuid) const;
-    uint32 GetNextPlacementId(ObjectGuid::LowType ownerGuid) const;
-
-    ObjectGuid::LowType RemovePlayerTrackingLocked(ObjectGuid playerGuid, bool eraseReturnLocation);
-    ObjectGuid::LowType RemovePlayerTracking(ObjectGuid playerGuid, bool eraseReturnLocation);
-    void ClearPendingPlacement(ObjectGuid playerGuid, Player* player);
-    void CleanupExpiredPendingPlacement(Player* player);
-    void RefreshSessionFromHouse(HouseRecord const& house);
-
-    static uint32 GetStyleMaskFor(uint8 styleId);
-    static uint32 GetHousePhase(ObjectGuid::LowType ownerGuid);
-    std::string HousingMapList() const;
-    static std::string ToLower(std::string value);
-    static std::string FormatMoney(uint64 copper);
-
-private:
-    mutable std::mutex _lock;
+    mutable std::recursive_mutex _lock;
 
     bool _enabled{true};
-    bool _autoProvisionOnLogin{true};
-    bool _gmVisitBypass{true};
-    bool _defaultPrivate{true};
-    uint32 _defaultHousingMapId{1};
-    std::unordered_set<uint32> _housingMapIds;
-    std::vector<WorldLocation> _housingAnchors;  // style spawn points; the housing area surrounds them
+    bool _freeMode{false};
+    bool _unlockAll{false};
+    bool _gmVisitBypass{false};
+    uint8 _defaultPrivacy{Housing::PRIVACY_PRIVATE};
     uint32 _stewardEntry{900200};
     uint32 _stewardDisplayId{25384};
-    std::string _defaultStyleCode{"human"};
+    uint32 _maxFurnishings{200};
+    uint32 _maxBuildings{10};
+    uint32 _keyDelaySeconds{5};
+    std::string _layoutCode{"cleared"};
 
-    bool _definitionsLoaded{false};
-    std::unordered_map<uint8, StyleDefinition> _stylesById;
-    std::unordered_map<std::string, uint8> _styleIdByCode;
-    std::unordered_map<uint8, StageDefinition> _stagesById;
-    std::unordered_map<uint32, CatalogDefinition> _catalogById;
-    std::unordered_map<uint32, FurnitureItemDefinition> _furnitureItemsByEntry;
-    std::unordered_map<uint8, std::vector<uint32>> _styleStarterUnlocks;
-    std::unordered_map<uint8, std::vector<StyleObjectDefinition>> _styleObjects;
+    Housing::LayoutDefinition _layout;
+    std::map<uint32, Housing::PieceDefinition> _pieces;
+    std::map<std::pair<uint8, uint32>, std::vector<uint32>> _piecesByRule;  // (rule type, param1) -> pieces
 
     std::unordered_map<ObjectGuid::LowType, Session> _sessionsByOwner;
     std::unordered_map<ObjectGuid, ObjectGuid::LowType> _playerOwnerByGuid;
     std::unordered_map<ObjectGuid, WorldLocation> _returnLocations;
-    std::unordered_map<ObjectGuid, PendingPlacement> _pendingPlacementByPlayer;
-
-    float _placementMaxSlopeDegrees{35.0f};
-    float _placementSlopeSampleDistance{0.75f};
-    float _placementDefaultMinDistance{1.5f};
-    float _placementDefaultCollisionRadius{1.0f};
+    std::unordered_map<ObjectGuid::LowType, Journal> _journals;
+    std::unordered_map<ObjectGuid, PendingTrip> _pendingTrips;
+    std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
+    // Items used to place pieces; removed on the player's next update because the cast that
+    // placed them still holds the item.
+    std::unordered_map<ObjectGuid, std::map<uint32, uint32>> _pendingConsumes;
+    ApplyReport _report;
 };
 
 #define sPlayerHousingMgr PlayerHousingMgr::instance()
