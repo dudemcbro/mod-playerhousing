@@ -2,8 +2,8 @@
 
 Private player housing for AzerothCore (WotLK): every owner gets their own phased copy of the guild house on GM Island, with owner-only editing, visiting permissions, style selection, and upgrade progression.
 
-The plan for making housing easier to learn and use (undo, free test mode, click to edit,
-LOTRO-style hooks) is in [docs/UX_PLAN.md](docs/UX_PLAN.md).
+The plan for making housing easier to learn and use (undo, free test mode, placing
+anywhere on the island, click to edit) is in [docs/UX_PLAN.md](docs/UX_PLAN.md).
 
 ## V1 feature set
 

@@ -31,6 +31,7 @@ From reading the module and the database, in the order a new player hits them:
 | 12 | **Errors don't say what to do.** "Too close to another furniture object" doesn't say which one or how far. "Outside your current house bounds" doesn't mention that upgrading helps. | `IsPlacementPointValid` |
 | 13 | **Everything costs gold, with no test switch.** Upgrades (50g to 12,150g), unlocks and kits. | stage, catalog and item tables |
 | 14 | **Long lists can crash the server.** The client allows 32 menu entries, and the core asserts on more. The "select furniture" list adds one entry per unlocked item with no paging. | `GOSSIP_MAX_MENU_ITEMS = 32` |
+| 15 | **Placement rules block normal decorating.** Nine checks run on every placement. Pieces must be yards apart (a chair can't go within 4 yd of a table), the spot must be walkable, slopes over 35° are refused, and every piece is dropped onto the floor below, so nothing can go on a table, a wall or up high. Furniture must stay within 50 yd of the house (80 yd at stage 6), which is 16% to 35% of the island. | `IsPlacementPointValid`, `place_radius` |
 
 ## 2. Design principles
 
@@ -63,15 +64,27 @@ Chair"). The shop sells them. Picking a piece up puts it back in your bags. The 
 "unlock by ID" catalog goes away. Pieces already unlocked or placed are converted
 (section 7).
 
-### Placing: two ways, same items
+### Placing: anywhere on your island
 
-- **Free placement (FFXIV).** Right-click a furnishing, click the floor with the targeting
-  circle, and it appears there facing you. Good for anything that stands on the floor.
-- **Hooks (LOTRO).** In decorate mode, small glowing markers appear at hand-picked spots:
-  walls, tabletops, shelves, corners. Click a marker, pick one of your furnishings that
-  fits (wall pieces for wall hooks, small pieces for tabletops), and it snaps into place
-  at the right height and angle. Hooks cover what the targeting circle can't reach
-  (walls, tabletops) and give beginners good-looking results with zero fiddling.
+Your private copy is the whole of GM Island, not just the building. Measured from the
+server's map data, all of the island's land lies within 227 yd of the house, and each
+owner's private copy reaches 250 yd, so beaches, the hilltop, the roof and every room are
+yours to decorate. Nobody else sees any of it unless you let them in.
+
+Right-click a furnishing, click anywhere with the targeting circle, and it appears exactly
+where you clicked, facing you: any floor, stairs, the upper storeys, outdoors, and (to be
+confirmed in game) tabletops and the tops of other furniture. The fine-tuning controls
+below then take a piece anywhere else: onto a wall (a piece placed against a wall faces
+you, so it faces out of the wall), up to the ceiling, stacked, or floating.
+
+Only three rules stay:
+
+1. The spot is on your island (inside your private copy).
+2. You can see it from where you're standing.
+3. You're under your furnishing limit.
+
+Pieces may overlap, like FFXIV, where overlapping pieces to build new shapes is a popular
+technique. No spacing, slope, "walkable" or snap-to-floor rules.
 
 ### Editing: click the piece (FFXIV layout mode)
 
@@ -81,17 +94,17 @@ The owner toggles **Decorate mode** from the Home menu. While it's on:
   - Pick up (back to your bags)
   - Rotate 45° left or right, or 15° for fine turns
   - Face toward me
-  - Nudge forward, back, left or right (0.25 yd), or up and down (0.1 yd)
+  - Nudge forward, back, left or right (0.25 yd), or up and down (0.1 yd), with no
+    height limit
   - Move to where I'm standing
   - Undo last change
-- hook markers are visible.
 
 Outside decorate mode, chairs and benches can be sat on by everyone, and nothing can be
 moved by accident. Both reference games separate decorating from normal play this way.
 
 ### Undo and redo
 
-Every change goes onto an undo list: place, pick up, move, rotate, nudge, fill a hook, and
+Every change goes onto an undo list: place, pick up, move, rotate, nudge, and
 "pack up everything". **Undo** reverses the last change exactly:
 
 | You did | Undo does |
@@ -124,7 +137,7 @@ Your house: Human Cottage, stage 1, 4/10 furnishings, Private
   How housing works
 ```
 
-**Home menu, inside your own house**
+**Home menu, anywhere on your own island**
 
 ```
 Your house: Human Cottage, stage 1, 4/10 furnishings, Private
@@ -133,6 +146,7 @@ Your house: Human Cottage, stage 1, 4/10 furnishings, Private
   Redo: ...                           (only after an undo)
   Shop furnishings                    (calls Krook over)
   House settings
+  Unstuck: back to the entrance
   Leave house
 ```
 
@@ -147,15 +161,6 @@ Westfall Chair  (4/10 furnishings)
   Nudge...              (forward, back, left, right, up, down)
   Move to where I'm standing
   Undo last change
-```
-
-**Hook menu (click a glowing marker)**
-
-```
-Wall hook, great hall
-  Alliance Banner  (you have 1)
-  Forsaken Banner  (you have 2)
-  Shop wall pieces
 ```
 
 **Visit a house**
@@ -180,7 +185,7 @@ Each list shows only houses you're allowed into, so every entry works when click
       Invite my party
       Invite by name...
   Style: Human Cottage                (list of styles with a one-line description)
-  Upgrade to stage 2: 18 furnishings, unlocks the main floor   150g
+  Upgrade to stage 2: 18 furnishings (now 10)   150g
   Greeting for visitors               (FFXIV's estate greeting, optional)
 ```
 
@@ -214,10 +219,10 @@ before you accept. In test mode there is no price to show.
 
 - **Style** changes the look of the house (like FFXIV's interior fixtures). All
   furnishings work with every style, so style never hides items.
-- **Stages** grow the house in ways you can see: stage 0 is the ground floor, higher
-  stages open the main floor and then the upper floor of the guild house, and add
-  furnishing slots and hooks. This replaces the invisible 50 to 80 yard radius. Placing on
-  a locked floor says "Upgrade to stage 2 to decorate the main floor."
+- **The whole island is yours from day one.** The 50 to 80 yd radius goes away.
+- **Stages raise the furnishing limit.** That is the one thing an upgrade buys, so it's
+  easy to understand. The limits (5 at stage 0 up to 72 at stage 6) were sized for one
+  building and should grow with a whole island to fill (section 9).
 - The upgrade option says what you get before you pay.
 
 ### Placement feel
@@ -226,9 +231,18 @@ before you accept. In test mode there is no price to show.
   effects go away. The module reads the clicked spot while the spell is being checked,
   then cancels the cast silently: no flare, no stealth reveal, no global cooldown,
   nothing expires. Hunters casting Flare outside a house are unaffected.
-- Errors name the problem and the fix: "Too close to Westfall Chair (0.4 yd). Nudge it or
-  pick another spot." "House is full (10/10). Pick something up or upgrade to stage 2 (18)."
+- Errors name the problem and the fix: "You can't see that spot from here. Walk closer."
+  "House is full (10/10). Pick something up or upgrade to stage 2 (18)."
 - Every success line ends with the count: "Placed Westfall Chair (5/10)."
+- Safety nets instead of rules: the server ignores furniture when players move, but the
+  game client still bumps into furniture models, so a player can box themselves in.
+  "Unstuck" in the Home menu puts them back at the entrance, and undo and pick up fix
+  the layout.
+- Like anything in the open world, pieces more than about 90 yd away (Kalimdor's
+  default view distance) appear as you walk closer.
+- Swimming out past the edge of the private copy would drop a player back into the
+  normal world. Instead, they're brought back to the beach with "Use your House Key to
+  leave the island."
 
 ### Commands for power users and macros
 
@@ -275,39 +289,43 @@ Each phase ships on its own, keeps the end-to-end test green, and adds to it.
 - undo and redo list; "Undo: ..." at the top of the in-house menu; `.house undo/redo`
 - House Key item and `.house`; menus that change with where you are; paging for all lists
 - steward spawns in capital cities; `.krook add` GM-only
+- placement anywhere on the island with only the three rules; the exact clicked spot is
+  kept; Unstuck; bringing swimmers back to the beach
 - silent targeting (no Flare side effects)
 - clearer messages with counts
 
 Test additions: place, then undo, and the item is back in bags; undo the undo (redo);
 pick up to full bags goes to storage and "Take all" works; with FreeMode on, every cost is
-zero; old catalog placements pick up into items.
+zero; old catalog placements pick up into items; a chair next to a table, a piece
+outdoors on the far side of the island, and a piece on the main floor all place; a spot
+out at sea is refused.
 
 ### Phase 2: click to edit
 
 - clickable copies of every furniture object (same model), and sittable chairs
-- Decorate mode, piece menu (rotate, face, nudge, move here)
+- Decorate mode, piece menu (rotate, face, nudge, raise and lower, move here)
+- a curated set of wall and tabletop pieces (banners, shields, torches, candles, books,
+  bottles) now that pieces can go anywhere
+
+Test additions: the test client clicks a piece (CMSG_GAMEOBJ_USE) and drives the piece
+menu; rotate, nudge and height are checked in the database; a guest clicking a chair
+sits and can't edit.
+
+### Phase 3: people
+
 - guest list you can click, invite target or party, visit lists, privacy presets,
   arrival and invite messages
 
-Test additions: the test client clicks a piece (CMSG_GAMEOBJ_USE) and drives the piece
-menu; rotate and nudge are checked in the database; a guest clicking a chair sits and
-can't edit.
-
-### Phase 3: hooks and floors
-
-- hook tables (position, facing, type) for the guild house, with markers shown only
-  while decorating
-- furnishings tagged with the hooks they fit; a curated set of wall pieces (banners,
-  shields, torches) and tabletop pieces (candles, books, bottles)
-- stages unlock floors instead of a radius
-
-Test additions: fill a wall hook, undo it, and the item is back; a locked floor refuses
-with the upgrade hint.
+Test additions: the guest finds the owner's house in "Houses you're invited to" and gets
+in with one click; "Friends & guild" lets a guild member in and keeps a stranger out.
 
 ### Phase 4: polish and optional extras
 
 - one-time tips and the first-visit greeting
 - visitor greeting message, "Pack up everything" (undoable)
+- optional LOTRO-style hooks: glowing "snap here" spots on walls and tables that place a
+  piece at the right height and angle in one click, for players who don't want to
+  fine-tune
 - optional client addon: a real furnishing window with icons, drag to place and
   mouse-wheel rotation, talking to the same server commands. It stays optional; the
   native menus remain complete without it.
@@ -319,5 +337,6 @@ with the upgrade hint.
 | Keep gold costs on live servers? | Yes for upgrades and the shop, no for style changes. FreeMode covers testing. |
 | House Key on live: instant, or a short cast and cooldown? | 5 second cast, no cooldown (like a mount, not a hearthstone). |
 | Include the "Friends & guild" privacy level? | Yes. It covers sharing with friends without opening the house to everyone. |
-| Keep free placement once hooks exist? | Yes. Hooks are the easy path, free placement is the flexible one. |
+| Raise the furnishing limits now that the whole island is usable? | Yes, roughly triple them (15 at stage 0 up to about 200 at stage 6). They live in the stage table, so they're easy to tune after testing. |
+| Add LOTRO-style hooks? | Later and optional. They help beginners, but aren't needed now that pieces can go anywhere. |
 | Undo list across logouts? | No. It lasts until you leave the house; pick up covers anything older. |
