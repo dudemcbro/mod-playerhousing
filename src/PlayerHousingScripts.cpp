@@ -322,7 +322,7 @@ public:
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
         handler->SendSysMessage(".house another [id] | grid <off|yards>");
-        handler->SendSysMessage(".house collection | storage | visit [name] | invite <name|target|party> | uninvite <name>");
+        handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
         if (gm)
             handler->SendSysMessage("GM: .house unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
@@ -516,7 +516,12 @@ public:
                 handler->PSendSysMessage("#{} {} ({:.0f} yd)", placement.id, mgr->GetPiece(placement.itemEntry)->name, distance);
         }
         else if (sub == "collection")
-            HousingMenus::ShowCollection(player, FromPlayer(player));
+        {
+            if (tokens.size() > 1)
+                HousingMenus::ShowCollectionSearch(player, FromPlayer(player), restFrom(1));
+            else
+                HousingMenus::ShowCollection(player, FromPlayer(player));
+        }
         else if (sub == "storage")
             HousingMenus::ShowStorage(player, FromPlayer(player));
         else if (sub == "visit")

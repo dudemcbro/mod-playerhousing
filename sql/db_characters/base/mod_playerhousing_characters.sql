@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_collection` (
   `guid` int unsigned NOT NULL DEFAULT 0,
   `item_entry` int unsigned NOT NULL,
   `unlocked_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `seen` tinyint unsigned NOT NULL DEFAULT 0,  -- 0: shown as new in the Collection
   PRIMARY KEY (`account_id`,`guid`,`item_entry`),
   KEY `idx_mod_playerhousing_collection_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -601,13 +601,46 @@ def main():
     owner.command(".house collection")
     menu = owner.last_gossip
     check("the Collection lists categories with counts", any(o.startswith("Buildings (") for o in options(menu)), str(options(menu)))
+    check("the Collection counts what's new", options(menu)[0].startswith("Collection:") and " new" in options(menu)[0], str(options(menu)))
     _, _ = owner.gossip_select("Buildings (")
     menu = owner.last_gossip
     locked = [o for o in options(menu) if o.startswith("Canvas Tent:")]
     check("locked pieces say how to earn them, with progress", locked and "level 20" in locked[0] and "you're level 15" in locked[0], str(options(menu)))
-    _, msgs = owner.gossip_select("Razorfen Lean-to")
+    check("pieces unlocked by past progress are marked new", "Razorfen Lean-to (new)" in options(menu), str(options(menu)))
+    _, _ = owner.gossip_select("Razorfen Lean-to")
+    menu = owner.last_gossip
+    check("an unlocked piece has a page: what you have, get one or five", options(menu)[:3] == ["Razorfen Lean-to: you have none yet", "Get one", "Get 5"],
+          str(options(menu)))
+    _, msgs = owner.gossip_select("Get one")
     wait_for(lambda: owner.count_item(RAZORFEN_LEANTO) == 1, 3, owner)
-    check("an unlocked piece gives a free copy (FreeMode)", owner.count_item(RAZORFEN_LEANTO) == 1, joined(msgs))
+    check("get one gives a free copy (FreeMode)", owner.count_item(RAZORFEN_LEANTO) == 1
+          and options(owner.last_gossip)[0] == "Razorfen Lean-to: 1 in your bags", joined(msgs) + " " + str(options(owner.last_gossip)))
+    owner.gossip_select("Back to Buildings")
+    check("once seen, it isn't new any more", "Razorfen Lean-to" in options(owner.last_gossip), str(options(owner.last_gossip)))
+
+    owner.command(".house collection")
+    owner.gossip_select("Showing all pieces")
+    menu = owner.last_gossip
+    check("the Collection can show only unlocked pieces", "Showing unlocked pieces only (click to show all)" in options(menu), str(options(menu)))
+    owner.gossip_select("Buildings (")
+    pieces = [o for o in options(owner.last_gossip)[1:] if o not in ("Back to the Collection", "Next page", "Previous page")]
+    check("and then lists no locked ones", pieces and not any(": " in o for o in pieces), str(options(owner.last_gossip)))
+    owner.command(".house collection")
+    owner.gossip_select("Showing unlocked pieces only")
+
+    owner.command(".house collection lamp")
+    menu = owner.last_gossip
+    check("searching the Collection by name, locked pieces included", menu is not None and options(menu)[0].startswith('"lamp":')
+          and "Stormwind Lamp Post (new)" in options(menu) and any(o.startswith("Tauren Lamp Post: Explore") for o in options(menu)),
+          str(options(menu)))
+    owner.gossip_select("Stormwind Lamp Post")
+    _, msgs = owner.gossip_select("Get 5")
+    wait_for(lambda: owner.count_item(LAMP_POST) == 5, 3, owner)
+    check("get 5 at once", owner.count_item(LAMP_POST) == 5 and has(msgs, "Here are 5 of the Stormwind Lamp Post"), joined(msgs))
+    check("the page goes back to the search", "Back to the search" in options(owner.last_gossip), str(options(owner.last_gossip)))
+    while owner.count_item(LAMP_POST):
+        if not owner.destroy_item(LAMP_POST):
+            break
 
     mark = owner.message_mark()
     admin.command(".character level %s 20" % args.owner_char, wait=2.0)
@@ -620,9 +653,14 @@ def main():
     admin.command(".house unlock Mailbox %s" % args.owner_char, wait=1.5)
     msgs = owner.messages_since(mark)
     check("a GM unlocks a piece for a player, who is told", MAILBOX in unlocked(owner_account, owner_guid) and has(msgs, "Mailbox"), joined(msgs))
+    owner.command(".house")
+    check("the Home menu says there's something new", any(o.startswith("Collection (") and " new)" in o for o in options(owner.last_gossip)),
+          str(options(owner.last_gossip)))
     owner.command(".house collection")
     owner.gossip_select("Capstones (")
+    check("the Mailbox is marked new", "Mailbox (new)" in options(owner.last_gossip), str(options(owner.last_gossip)))
     owner.gossip_select("Mailbox")
+    owner.gossip_select("Get one")
     wait_for(lambda: owner.count_item(MAILBOX) == 1, 3, owner)
     move(owner, L["mailbox_stand"][0], L["mailbox_stand"][1], L["ground"])
     msgs = owner.command(".house adjust all")
@@ -644,7 +682,8 @@ def main():
     log("== buildings")
     owner.command(".house collection")
     owner.gossip_select("Buildings (")
-    _, msgs = owner.gossip_select("Westfall Farmhouse")
+    owner.gossip_select("Westfall Farmhouse")
+    _, msgs = owner.gossip_select("Get one")
     wait_for(lambda: owner.count_item(FARMHOUSE) == 1, 3, owner)
     move(owner, L["farmhouse_stand"][0], L["farmhouse_stand"][1], L["ground"])
     msgs = owner.use_item(FARMHOUSE, spell_of(FARMHOUSE), L["farmhouse"])
@@ -692,6 +731,7 @@ def main():
     owner.command(".house collection")
     owner.gossip_select("Starter (")
     owner.gossip_select("Mannequin")
+    owner.gossip_select("Get one")
     wait_for(lambda: owner.count_item(MANNEQUIN) == 1, 3, owner)
     move(owner, L["stand_stand"][0], L["stand_stand"][1], L["ground"])
     msgs = owner.use_item(MANNEQUIN, spell_of(MANNEQUIN), L["stand"])

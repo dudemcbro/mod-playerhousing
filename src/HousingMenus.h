@@ -15,6 +15,7 @@ namespace HousingMenus
     void ShowHook(Player* player, Housing::MenuSource const& source, uint32 surfacePlacementId);
     void ShowStandToGuest(Player* player, Housing::MenuSource const& source, uint32 placementId);
     void ShowCollection(Player* player, Housing::MenuSource const& source);
+    void ShowCollectionSearch(Player* player, Housing::MenuSource const& source, std::string const& text);
     void ShowStorage(Player* player, Housing::MenuSource const& source);
     void ShowVisit(Player* player, Housing::MenuSource const& source);
     void HandleSelect(Player* player, Housing::MenuSource const& source, uint32 sender, uint32 action, char const* code);

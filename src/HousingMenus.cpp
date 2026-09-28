@@ -66,6 +66,12 @@ namespace
         CMD_ADJUST_MODE,
         CMD_SHAPE_MENU,       // action: placement id
         CMD_GRID,
+        CMD_COLLECTION_FILTER,
+        CMD_COLLECTION_SEARCH, // coded
+        CMD_SEARCH_PAGE,      // action: page << 8
+        CMD_SEARCH_LOCKED,    // action: page << 8 (shows the hint again)
+        CMD_PIECE_INFO,       // action: item entry | origin << 24
+        CMD_GET_COPIES,       // action: item entry | count << 20 | origin << 24
         CMD_CLOSE
     };
 
@@ -80,6 +86,17 @@ namespace
     };
     std::mutex dressChoicesLock;
     std::unordered_map<ObjectGuid, DressChoice> dressChoices;
+
+    // What the player last searched the Collection for, for its pages.
+    std::mutex searchesLock;
+    std::unordered_map<ObjectGuid, std::string> searches;
+
+    // Where a piece's Collection page goes back to.
+    enum PieceOrigin : uint32
+    {
+        ORIGIN_CATEGORY = 0,
+        ORIGIN_SEARCH = 1
+    };
 
     enum PieceOp : uint32
     {
@@ -174,40 +191,159 @@ namespace
         return Acore::StringFormat("Your island: {}, {}", sPlayerHousingMgr->CountsText(self), PlayerHousingMgr::PrivacyName(privacy));
     }
 
-    void ShowCategory(Player* player, MenuSource const& source, uint8 category, uint32 page)
+    // One page of a Collection list: unlocked pieces open their page, locked ones say how to
+    // earn them. Pieces shown as new are new no more.
+    void AddPieceLines(Player* player, std::vector<PieceDefinition const*> const& pieces, uint32 page, std::set<uint32> const& known,
+        std::set<uint32> const& fresh, uint32 origin, uint32 lockedCommand, uint32 lockedAction)
     {
-        std::vector<PieceDefinition const*> pieces = sPlayerHousingMgr->GetPiecesInCategory(category);
-        std::set<uint32> known = sPlayerHousingMgr->LoadUnlocks(player);
-        uint32 unlocked = 0;
-        for (PieceDefinition const* piece : pieces)
-            if (sPlayerHousingMgr->IsUnlocked(player, *piece, &known))
-                ++unlocked;
-
-        ClearGossipMenuFor(player);
-        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {} of {} unlocked", PlayerHousingMgr::CategoryName(category), unlocked, pieces.size()),
-            CMD_CATEGORY, category | (page << 8));
-
+        std::vector<uint32> seen;
         uint32 first = page * PAGE_SIZE;
         for (uint32 i = first; i < pieces.size() && i < first + PAGE_SIZE; ++i)
         {
             PieceDefinition const* piece = pieces[i];
             if (sPlayerHousingMgr->IsUnlocked(player, *piece, &known))
             {
-                uint32 cost = sPlayerHousingMgr->IsFreeMode() ? 0 : piece->copyCost;
-                std::string label = piece->name;
-                if (cost)
-                    Confirm(player, GOSSIP_ICON_VENDOR, label + " (" + PlayerHousingMgr::FormatMoney(cost) + ")", CMD_GET_COPY, piece->itemEntry,
-                        "Get a " + piece->name + "?", cost);
-                else
-                    Add(player, GOSSIP_ICON_VENDOR, label, CMD_GET_COPY, piece->itemEntry);
+                bool isNew = fresh.count(piece->itemEntry) > 0;
+                if (isNew)
+                    seen.push_back(piece->itemEntry);
+                Add(player, GOSSIP_ICON_VENDOR, piece->name + (isNew ? " (new)" : ""), CMD_PIECE_INFO, piece->itemEntry | (origin << 24));
             }
             else
-                Add(player, GOSSIP_ICON_DOT, piece->name + ": " + sPlayerHousingMgr->DescribeProgress(player, *piece), CMD_LOCKED, category | (page << 8));
+                Add(player, GOSSIP_ICON_DOT, piece->name + ": " + sPlayerHousingMgr->DescribeProgress(player, *piece), lockedCommand, lockedAction);
         }
+        sPlayerHousingMgr->MarkSeen(player, seen);
+    }
 
+    // With "unlocked only" on, the locked ones are left out.
+    std::vector<PieceDefinition const*> Listed(Player* player, std::vector<PieceDefinition const*> const& pieces, std::set<uint32> const& known,
+        uint32& unlocked)
+    {
+        bool unlockedOnly = sPlayerHousingMgr->IsCollectionUnlockedOnly(player->GetGUID().GetCounter());
+        std::vector<PieceDefinition const*> listed;
+        unlocked = 0;
+        for (PieceDefinition const* piece : pieces)
+        {
+            bool open = sPlayerHousingMgr->IsUnlocked(player, *piece, &known);
+            if (open)
+                ++unlocked;
+            if (open || !unlockedOnly)
+                listed.push_back(piece);
+        }
+        return listed;
+    }
+
+    void ShowCategory(Player* player, MenuSource const& source, uint8 category, uint32 page)
+    {
+        std::vector<PieceDefinition const*> all = sPlayerHousingMgr->GetPiecesInCategory(category);
+        std::set<uint32> known = sPlayerHousingMgr->LoadUnlocks(player);
+        std::set<uint32> fresh = sPlayerHousingMgr->LoadNewUnlocks(player);
+        uint32 unlocked = 0;
+        std::vector<PieceDefinition const*> pieces = Listed(player, all, known, unlocked);
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {} of {} unlocked", PlayerHousingMgr::CategoryName(category), unlocked, all.size()),
+            CMD_CATEGORY, category | (page << 8));
+        AddPieceLines(player, pieces, page, known, fresh, ORIGIN_CATEGORY, CMD_LOCKED, category | (page << 8));
         Paging(player, CMD_CATEGORY, category, page, uint32(pieces.size()));
         Add(player, GOSSIP_ICON_CHAT, "Back to the Collection", CMD_COLLECTION);
         Send(player, source, TEXT_COLLECTION);
+    }
+
+    std::string GetSearch(Player* player)
+    {
+        std::lock_guard<std::mutex> guard(searchesLock);
+        auto itr = searches.find(player->GetGUID());
+        return itr != searches.end() ? itr->second : "";
+    }
+
+    void ShowSearch(Player* player, MenuSource const& source, uint32 page)
+    {
+        std::string text = GetSearch(player);
+        if (text.empty())
+        {
+            HousingMenus::ShowCollection(player, source);
+            return;
+        }
+
+        std::set<uint32> known = sPlayerHousingMgr->LoadUnlocks(player);
+        std::set<uint32> fresh = sPlayerHousingMgr->LoadNewUnlocks(player);
+        uint32 unlocked = 0;
+        std::vector<PieceDefinition const*> pieces = Listed(player, sPlayerHousingMgr->SearchPieces(text), known, unlocked);
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("\"{}\": {} found, {} unlocked", text, pieces.size(), unlocked), CMD_SEARCH_PAGE, page << 8);
+        AddPieceLines(player, pieces, page, known, fresh, ORIGIN_SEARCH, CMD_SEARCH_LOCKED, page << 8);
+        Paging(player, CMD_SEARCH_PAGE, 0, page, uint32(pieces.size()));
+        Ask(player, GOSSIP_ICON_CHAT, pieces.empty() ? "Nothing matches. Search again..." : "Search again...", CMD_COLLECTION_SEARCH);
+        Add(player, GOSSIP_ICON_CHAT, "Back to the Collection", CMD_COLLECTION);
+        Send(player, source, TEXT_COLLECTION);
+    }
+
+    std::string Have(Player* player, PieceDefinition const& piece)
+    {
+        ObjectGuid::LowType self = player->GetGUID().GetCounter();
+        std::map<uint32, uint32> storage = sPlayerHousingMgr->GetStorage(self);
+        uint32 bags = player->GetItemCount(piece.itemEntry);
+        uint32 stored = storage.count(piece.itemEntry) ? storage[piece.itemEntry] : 0;
+        uint32 placed = sPlayerHousingMgr->CountPlacedOf(self, piece.itemEntry);
+
+        std::vector<std::string> parts;
+        if (bags)
+            parts.push_back(Acore::StringFormat("{} in your bags", bags));
+        if (stored)
+            parts.push_back(Acore::StringFormat("{} in storage", stored));
+        if (placed)
+            parts.push_back(Acore::StringFormat("{} placed", placed));
+        if (parts.empty())
+            return "you have none yet";
+        std::string text;
+        for (size_t i = 0; i < parts.size(); ++i)
+            text += (i == 0 ? "" : (i + 1 == parts.size() ? " and " : ", ")) + parts[i];
+        return text;
+    }
+
+    void ShowPieceInfo(Player* player, MenuSource const& source, uint32 itemEntry, uint32 origin)
+    {
+        PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(itemEntry);
+        if (!piece)
+        {
+            HousingMenus::ShowCollection(player, source);
+            return;
+        }
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {}", piece->name, Have(player, *piece)), CMD_PIECE_INFO, itemEntry | (origin << 24));
+        if (sPlayerHousingMgr->IsUnlocked(player, *piece))
+        {
+            uint32 cost = sPlayerHousingMgr->IsFreeMode() ? 0 : piece->copyCost;
+            for (uint32 count : { 1u, 5u })
+            {
+                std::string label = count == 1 ? "Get one" : Acore::StringFormat("Get {}", count);
+                uint32 action = itemEntry | (count << 20) | (origin << 24);
+                if (cost)
+                    Confirm(player, GOSSIP_ICON_VENDOR, label + " (" + PlayerHousingMgr::FormatMoney(uint64(cost) * count) + ")", CMD_GET_COPIES, action,
+                        count == 1 ? "Get a " + piece->name + "?" : Acore::StringFormat("Get {} of the {}?", count, piece->name), cost * count);
+                else
+                    Add(player, GOSSIP_ICON_VENDOR, label, CMD_GET_COPIES, action);
+            }
+        }
+        else
+            Add(player, GOSSIP_ICON_DOT, "Locked: " + sPlayerHousingMgr->DescribeProgress(player, *piece), CMD_PIECE_INFO, itemEntry | (origin << 24));
+
+        if (origin == ORIGIN_SEARCH)
+            Add(player, GOSSIP_ICON_CHAT, "Back to the search", CMD_SEARCH_PAGE, 0);
+        else
+            Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Back to {}", PlayerHousingMgr::CategoryName(piece->category)), CMD_CATEGORY,
+                piece->category);
+        Send(player, source, TEXT_COLLECTION);
+    }
+
+    std::string CollectionLabel(Player* player, uint32 unlocked)
+    {
+        size_t fresh = sPlayerHousingMgr->LoadNewUnlocks(player).size();
+        if (fresh)
+            return Acore::StringFormat("Collection ({} unlocked, {} new)", unlocked, fresh);
+        return Acore::StringFormat("Collection ({} unlocked)", unlocked);
     }
 
     void ShowSettings(Player* player, MenuSource const& source)
@@ -569,7 +705,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
 
         if (decorating)
             Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
-        Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Collection ({} unlocked)", unlocked), CMD_COLLECTION);
+        Add(player, GOSSIP_ICON_VENDOR, CollectionLabel(player, unlocked), CMD_COLLECTION);
         if (stored)
             Add(player, GOSSIP_ICON_MONEY_BAG, Acore::StringFormat("Storage ({})", stored), CMD_STORAGE, 0);
         Add(player, GOSSIP_ICON_TABARD, "Island settings", CMD_SETTINGS);
@@ -586,7 +722,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
         Add(player, GOSSIP_ICON_CHAT, "You're visiting " + sPlayerHousingMgr->NameOf(islandOwner) + "'s island", CMD_HOME);
         Add(player, GOSSIP_ICON_TAXI, "Go home", CMD_GO_HOME);
         Add(player, GOSSIP_ICON_TAXI, "Visit another island", CMD_VISIT);
-        Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Collection ({} unlocked)", unlocked), CMD_COLLECTION);
+        Add(player, GOSSIP_ICON_VENDOR, CollectionLabel(player, unlocked), CMD_COLLECTION);
         Add(player, GOSSIP_ICON_CHAT, "Unstuck: back to the landing spot", CMD_UNSTUCK);
         Add(player, GOSSIP_ICON_TAXI, "Leave the island", CMD_LEAVE);
         Add(player, GOSSIP_ICON_CHAT, "How housing works", CMD_HELP);
@@ -596,7 +732,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
         Add(player, GOSSIP_ICON_CHAT, StatusLine(player), CMD_HOME);
         Add(player, GOSSIP_ICON_TAXI, "Go home", CMD_GO_HOME);
         Add(player, GOSSIP_ICON_TAXI, "Visit an island", CMD_VISIT);
-        Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Collection ({} unlocked)", unlocked), CMD_COLLECTION);
+        Add(player, GOSSIP_ICON_VENDOR, CollectionLabel(player, unlocked), CMD_COLLECTION);
         if (stored)
             Add(player, GOSSIP_ICON_MONEY_BAG, Acore::StringFormat("Storage ({})", stored), CMD_STORAGE, 0);
         Add(player, GOSSIP_ICON_TABARD, "Island settings", CMD_SETTINGS);
@@ -611,26 +747,53 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
 void HousingMenus::ShowCollection(Player* player, MenuSource const& source)
 {
     std::set<uint32> known = sPlayerHousingMgr->LoadUnlocks(player);
+    std::set<uint32> fresh = sPlayerHousingMgr->LoadNewUnlocks(player);
+    bool unlockedOnly = sPlayerHousingMgr->IsCollectionUnlockedOnly(player->GetGUID().GetCounter());
     uint32 unlocked = 0;
     uint32 total = 0;
     sPlayerHousingMgr->CollectionCounts(player, -1, unlocked, total, &known);
 
+    std::map<uint8, uint32> freshByCategory;
+    for (uint32 itemEntry : fresh)
+        if (PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(itemEntry))
+            ++freshByCategory[piece->category];
+    auto newText = [](size_t count) { return count ? Acore::StringFormat(", {} new", count) : std::string(); };
+
     ClearGossipMenuFor(player);
-    Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Collection: {} of {} unlocked", unlocked, total), CMD_COLLECTION);
+    Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Collection: {} of {} unlocked{}", unlocked, total, newText(fresh.size())), CMD_COLLECTION);
+    Ask(player, GOSSIP_ICON_CHAT, "Search by name...", CMD_COLLECTION_SEARCH);
+    Add(player, GOSSIP_ICON_INTERACT_1, unlockedOnly ? "Showing unlocked pieces only (click to show all)"
+                                                     : "Showing all pieces (click to show only unlocked)", CMD_COLLECTION_FILTER);
     for (uint8 category = 0; category < CATEGORY_COUNT; ++category)
     {
         uint32 categoryUnlocked = 0;
         uint32 categoryTotal = 0;
         sPlayerHousingMgr->CollectionCounts(player, category, categoryUnlocked, categoryTotal, &known);
-        if (categoryTotal)
-            Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("{} ({}/{})", PlayerHousingMgr::CategoryName(category), categoryUnlocked, categoryTotal),
-                CMD_CATEGORY, category);
+        if (categoryTotal && (categoryUnlocked || !unlockedOnly))
+            Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("{} ({}/{}{})", PlayerHousingMgr::CategoryName(category), categoryUnlocked, categoryTotal,
+                newText(freshByCategory[category])), CMD_CATEGORY, category);
     }
 
     if (sPlayerHousingMgr->IsFreeMode() || sPlayerHousingMgr->IsUnlockAll())
         Add(player, GOSSIP_ICON_MONEY_BAG, "Give me one of everything (test server)", CMD_GET_ALL);
     Add(player, GOSSIP_ICON_CHAT, "Back", CMD_HOME);
     Send(player, source, TEXT_COLLECTION);
+}
+
+void HousingMenus::ShowCollectionSearch(Player* player, MenuSource const& source, std::string const& text)
+{
+    // Trimmed, and short enough for a menu line.
+    size_t begin = text.find_first_not_of(" \t");
+    size_t end = text.find_last_not_of(" \t");
+    std::string wanted = begin == std::string::npos ? "" : text.substr(begin, end - begin + 1).substr(0, 40);
+    {
+        std::lock_guard<std::mutex> guard(searchesLock);
+        if (wanted.empty())
+            searches.erase(player->GetGUID());
+        else
+            searches[player->GetGUID()] = wanted;
+    }
+    ShowSearch(player, source, 0);
 }
 
 void HousingMenus::ShowStorage(Player* player, MenuSource const& source)
@@ -824,6 +987,28 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
         case CMD_LOCKED:
             Say(player, "Locked pieces unlock by themselves when you earn them.");
             ShowCategory(player, source, uint8(action & 0xFF), action >> 8);
+            return;
+        case CMD_COLLECTION_FILTER:
+            sPlayerHousingMgr->SetCollectionUnlockedOnly(player, !sPlayerHousingMgr->IsCollectionUnlockedOnly(player->GetGUID().GetCounter()));
+            ShowCollection(player, source);
+            return;
+        case CMD_COLLECTION_SEARCH:
+            ShowCollectionSearch(player, source, text);
+            return;
+        case CMD_SEARCH_PAGE:
+            ShowSearch(player, source, action >> 8);
+            return;
+        case CMD_SEARCH_LOCKED:
+            Say(player, "Locked pieces unlock by themselves when you earn them.");
+            ShowSearch(player, source, action >> 8);
+            return;
+        case CMD_PIECE_INFO:
+            ShowPieceInfo(player, source, action & 0xFFFFFF, action >> 24);
+            return;
+        case CMD_GET_COPIES:
+            sPlayerHousingMgr->GetCopies(player, action & 0xFFFFF, (action >> 20) & 0xF, reason);
+            Say(player, reason);
+            ShowPieceInfo(player, source, action & 0xFFFFF, action >> 24);
             return;
         case CMD_GET_COPY:
         {

@@ -110,6 +110,19 @@ PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
 
+-- Unlocks from before the "new" marks count as seen; new ones start unseen.
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_collection` ADD COLUMN `seen` tinyint unsigned NOT NULL DEFAULT 1 AFTER `unlocked_at`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_collection' AND column_name = 'seen'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+ALTER TABLE `mod_playerhousing_collection` ALTER COLUMN `seen` SET DEFAULT 0;
+
 -- Columns from the house levels version that nothing uses any more.
 
 SET @ph_stmt = (

@@ -13,6 +13,7 @@
 #include "WorldSession.h"
 
 #include <algorithm>
+#include <cctype>
 
 using namespace Housing;
 
@@ -29,6 +30,12 @@ namespace
         for (int32 i = int32(digits.size()) - 3; i > 0; i -= 3)
             digits.insert(size_t(i), ",");
         return value < 0 ? "-" + digits : digits;
+    }
+
+    std::string ToLower(std::string value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        return value;
     }
 }
 
@@ -101,6 +108,71 @@ std::set<uint32> PlayerHousingMgr::LoadUnlocks(Player const* player) const
     return unlocked;
 }
 
+std::set<uint32> PlayerHousingMgr::LoadNewUnlocks(Player const* player) const
+{
+    std::set<uint32> fresh;
+    if (_unlockAll)
+        return fresh;
+
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT item_entry FROM mod_playerhousing_collection WHERE ((account_id={} AND guid=0) OR guid={}) AND seen=0",
+            player->GetSession()->GetAccountId(), player->GetGUID().GetCounter()))
+    {
+        do
+        {
+            fresh.insert((*result)[0].Get<uint32>());
+        } while (result->NextRow());
+    }
+    return fresh;
+}
+
+void PlayerHousingMgr::MarkSeen(Player const* player, std::vector<uint32> const& itemEntries) const
+{
+    if (itemEntries.empty())
+        return;
+
+    std::string list;
+    for (uint32 entry : itemEntries)
+        list += (list.empty() ? "" : ",") + std::to_string(entry);
+    CharacterDatabase.Execute(
+        "UPDATE mod_playerhousing_collection SET seen=1 WHERE ((account_id={} AND guid=0) OR guid={}) AND item_entry IN ({})",
+        player->GetSession()->GetAccountId(), player->GetGUID().GetCounter(), list);
+}
+
+std::vector<PieceDefinition const*> PlayerHousingMgr::SearchPieces(std::string const& text) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::string wanted = ToLower(text);
+    std::vector<PieceDefinition const*> found;
+    for (auto const& [itemEntry, piece] : _pieces)
+        if (ToLower(piece.name).find(wanted) != std::string::npos || ToLower(CategoryName(piece.category)).find(wanted) != std::string::npos)
+            found.push_back(&piece);
+    std::sort(found.begin(), found.end(), [](PieceDefinition const* left, PieceDefinition const* right) { return left->name < right->name; });
+    return found;
+}
+
+bool PlayerHousingMgr::IsCollectionUnlockedOnly(ObjectGuid::LowType guid) const
+{
+    return (GetCharacterFlags(guid) & CHAR_FLAG_UNLOCKED_ONLY) != 0;
+}
+
+void PlayerHousingMgr::SetCollectionUnlockedOnly(Player* player, bool unlockedOnly) const
+{
+    CharacterDatabase.DirectExecute(
+        "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) "
+        "ON DUPLICATE KEY UPDATE flags = (flags & ~{}) | {}", player->GetGUID().GetCounter(), unlockedOnly ? CHAR_FLAG_UNLOCKED_ONLY : 0,
+        uint32(CHAR_FLAG_UNLOCKED_ONLY), unlockedOnly ? CHAR_FLAG_UNLOCKED_ONLY : 0);
+}
+
+uint32 PlayerHousingMgr::CountPlacedOf(ObjectGuid::LowType ownerGuid, uint32 itemEntry) const
+{
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM mod_playerhousing_placement WHERE owner_guid={} AND source_item_entry={} AND map_id={}",
+            ownerGuid, itemEntry, _layout.mapId))
+        return uint32((*result)[0].Get<uint64>());
+    return 0;
+}
+
 bool PlayerHousingMgr::IsUnlocked(Player const* player, PieceDefinition const& piece, std::set<uint32> const* known) const
 {
     if (_unlockAll || piece.rules.empty())
@@ -116,7 +188,7 @@ bool PlayerHousingMgr::Unlock(Player* player, PieceDefinition const& piece, bool
 {
     uint32 guid = piece.HasFlag(PIECE_FLAG_PER_CHARACTER) ? player->GetGUID().GetCounter() : 0;
     CharacterDatabase.DirectExecute(
-        "INSERT IGNORE INTO mod_playerhousing_collection (account_id, guid, item_entry) VALUES ({}, {}, {})",
+        "INSERT IGNORE INTO mod_playerhousing_collection (account_id, guid, item_entry, seen) VALUES ({}, {}, {}, 0)",
         player->GetSession()->GetAccountId(), guid, piece.itemEntry);
 
     if (announce)
@@ -302,6 +374,11 @@ void PlayerHousingMgr::CollectionCounts(Player const* player, int32 category, ui
 
 bool PlayerHousingMgr::GetCopy(Player* player, uint32 itemEntry, std::string& reason)
 {
+    return GetCopies(player, itemEntry, 1, reason);
+}
+
+bool PlayerHousingMgr::GetCopies(Player* player, uint32 itemEntry, uint32 count, std::string& reason)
+{
     PieceDefinition const* piece = GetPiece(itemEntry);
     if (!piece)
     {
@@ -315,25 +392,35 @@ bool PlayerHousingMgr::GetCopy(Player* player, uint32 itemEntry, std::string& re
         return false;
     }
 
+    count = std::clamp<uint32>(count, 1, 20);
     uint32 cost = _freeMode ? 0 : piece->copyCost;
-    if (cost && player->GetMoney() < cost)
+    if (cost && player->GetMoney() < uint64(cost) * count)
     {
-        reason = Acore::StringFormat("A {} costs {}.", piece->name, FormatMoney(cost));
+        reason = count == 1 ? Acore::StringFormat("A {} costs {}.", piece->name, FormatMoney(cost))
+                            : Acore::StringFormat("{} of them cost {}.", count, FormatMoney(uint64(cost) * count));
         return false;
     }
 
-    if (!player->AddItem(itemEntry, 1))
+    // As many as fit; only those are paid for.
+    uint32 given = 0;
+    while (given < count && player->AddItem(itemEntry, 1))
+        ++given;
+    if (!given)
     {
         reason = "Your bags are full.";
         return false;
     }
 
     if (cost)
-        player->ModifyMoney(-int32(cost));
+        player->ModifyMoney(-int64(uint64(cost) * given));
 
-    reason = piece->IsBuilding()
-        ? Acore::StringFormat("Here's a {}. Right-click it on your island, then click where it should stand.", piece->name)
-        : Acore::StringFormat("Here's a {}. Right-click it on your island, then click where it should go.", piece->name);
+    std::string where = piece->IsBuilding() ? "where it should stand" : "where it should go";
+    if (given == 1 && count == 1)
+        reason = Acore::StringFormat("Here's a {}. Right-click it on your island, then click {}.", piece->name, where);
+    else if (given == count)
+        reason = Acore::StringFormat("Here are {} of the {}. Right-click one on your island, then click {}.", given, piece->name, where);
+    else
+        reason = Acore::StringFormat("Your bags only had room for {} of the {}.", given, piece->name);
     return true;
 }
 

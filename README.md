@@ -90,10 +90,17 @@ Rings, necklaces, trinkets and relics don't show on a body, so they aren't offer
 ### The Collection
 
 House Key, Collection. It lists every piece by category with your progress, for example
-"Buildings (6/49)". An unlocked piece hands you a copy when clicked (free with FreeMode,
-a small gold cost otherwise). A locked piece tells you how to earn it, with your progress
-so far ("Reach level 20 (you're level 15)", "Exalted with Stormwind (you're Revered)").
+"Buildings (6/49, 2 new)". Click an unlocked piece for its page: how many you have (in
+your bags, in storage, placed) and Get one or Get 5 (free with FreeMode, a small gold
+cost otherwise). A locked piece tells you how to earn it, with your progress so far
+("Reach level 20 (you're level 15)", "Exalted with Stormwind (you're Revered)").
 
+- **Search by name** (or `.house collection lamp`) finds pieces in every category,
+  locked ones included, so you can see what's out there.
+- Pieces you've unlocked but not looked at yet are marked **(new)**, and the Home menu
+  and the Collection count them. Seeing one in a list is enough to clear the mark.
+- **Showing all pieces / unlocked only**: hide what you haven't earned yet, for a shorter
+  list of what you can place right now.
 - Unlocks happen the moment you earn them, with a message.
 - Things you did before the module was installed count: they unlock at your next login.
 - Unlocks are shared by all your characters, except faction buildings, which need Exalted
@@ -136,7 +143,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house grid <off\|yards>` | Snap to a grid of 0.25 to 4 yards |
 | `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
 | `.house packup` | Pick up everything (undoable) |
-| `.house collection`, `storage`, `visit [name]` | Open those menus, or visit someone by name |
+| `.house collection [search]`, `storage`, `visit [name]` | Open those menus, search the Collection, or visit someone by name |
 | `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
 | `.house privacy <private\|friends\|public>` | Who can visit |
 | `.house greeting <text\|clear>` | The message visitors see |

@@ -112,7 +112,8 @@ namespace Housing
         CHAR_FLAG_VETERAN_DONE = 0x02,
         CHAR_FLAG_GREETED = 0x04,
         CHAR_FLAG_ADJUST_ALL = 0x08,     // adjust menu after placing anything
-        CHAR_FLAG_ADJUST_NEVER = 0x10    // never; neither flag: after placing buildings
+        CHAR_FLAG_ADJUST_NEVER = 0x10,   // never; neither flag: after placing buildings
+        CHAR_FLAG_UNLOCKED_ONLY = 0x20   // the Collection lists only unlocked pieces
     };
 
     // When the piece menu opens by itself right after placing.
@@ -352,6 +353,14 @@ public:
     std::string DescribeProgress(Player const* player, Housing::PieceDefinition const& piece) const;
     void CollectionCounts(Player const* player, int32 category, uint32& unlocked, uint32& total, std::set<uint32> const* known = nullptr) const;
     bool GetCopy(Player* player, uint32 itemEntry, std::string& reason);
+    bool GetCopies(Player* player, uint32 itemEntry, uint32 count, std::string& reason);
+    // Unlocked since the player last saw them listed.
+    std::set<uint32> LoadNewUnlocks(Player const* player) const;
+    void MarkSeen(Player const* player, std::vector<uint32> const& itemEntries) const;
+    std::vector<Housing::PieceDefinition const*> SearchPieces(std::string const& text) const;
+    bool IsCollectionUnlockedOnly(ObjectGuid::LowType guid) const;
+    void SetCollectionUnlockedOnly(Player* player, bool unlockedOnly) const;
+    uint32 CountPlacedOf(ObjectGuid::LowType ownerGuid, uint32 itemEntry) const;
     bool GetOneOfEverything(Player* player, std::string& reason);
     void EvaluateUnlocks(Player* player, uint8 ruleType, uint32 param, bool announce, uint32 value = 0);
     uint32 CreditPastProgress(Player* player);

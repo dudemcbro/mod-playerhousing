@@ -900,11 +900,12 @@ class WorldClient:
         return self.messages_since(mark)
 
     def destroy_item(self, entry, wait=1.0):
-        """Destroys the first backpack item with this entry, like dragging it out of the bags."""
+        """Destroys the first backpack stack with this entry, like dragging it out of the bags."""
         slot, guid = self.find_item(entry)
         if guid is None:
             return False
-        self.send(CMSG_DESTROYITEM, struct.pack("<BBBBBB", INVENTORY_SLOT_BAG_0, slot, 1, 0, 0, 0))
+        count = self.backpack()[slot][2]
+        self.send(CMSG_DESTROYITEM, struct.pack("<BBBBBB", INVENTORY_SLOT_BAG_0, slot, min(count, 255), 0, 0, 0))
         self.pump(wait)
         return True
 
