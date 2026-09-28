@@ -643,7 +643,7 @@ namespace
         Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 15°", CMD_PIECE_OP, op(OP_TURN_RIGHT_15));
         Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 5°", CMD_PIECE_OP, op(OP_TURN_LEFT_5));
         Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 5°", CMD_PIECE_OP, op(OP_TURN_RIGHT_5));
-        if (!piece->HasFlag(PIECE_FLAG_STAND) && sPlayerHousingMgr->GetMaxTilt() > 0.0f)
+        if (!piece->IsCreature() && sPlayerHousingMgr->GetMaxTilt() > 0.0f)
         {
             Add(player, GOSSIP_ICON_INTERACT_1, "Tilt forward 5° (its front down)", CMD_PIECE_OP, op(OP_TILT_FORWARD));
             Add(player, GOSSIP_ICON_INTERACT_1, "Tilt back 5°", CMD_PIECE_OP, op(OP_TILT_BACK));

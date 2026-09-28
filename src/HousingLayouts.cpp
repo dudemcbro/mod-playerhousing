@@ -434,7 +434,7 @@ bool PlayerHousingMgr::SwitchLayout(Player* player, uint32 layoutId, std::string
         Placement copy = placement;
         copy.id = nextId++;
         copy.gear.clear();
-        if (piece->HasFlag(PIECE_FLAG_STAND))
+        if (piece->IsCreature())
             copy.pitch = copy.roll = 0.0f;
         newIds[placement.id] = copy.id;
         kept.push_back(copy);

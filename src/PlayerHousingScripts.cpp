@@ -110,6 +110,34 @@ public:
     }
 };
 
+// A figurine: its owner (and roommates) get its piece menu; visitors hear what it is.
+class npc_playerhousing_figurine : public CreatureScript
+{
+public:
+    npc_playerhousing_figurine() : CreatureScript("npc_playerhousing_figurine") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        MenuSource source{ SOURCE_CREATURE, creature->GetGUID() };
+        uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, creature->GetGUID());
+        if (!placementId)
+            return true;
+
+        if (sPlayerHousingMgr->CanDecorate(player))
+            HousingMenus::ShowPiece(player, source, placementId);
+        else
+            Reply(player, Acore::StringFormat("{}: a trophy of {}'s adventures.", creature->GetName(),
+                sPlayerHousingMgr->NameOf(sPlayerHousingMgr->GetIslandOwner(player))));
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+        return true;
+    }
+};
+
 // A mannequin's armor reaches the client as mirror image data, which the client asks for
 // when the figure comes into view. The core only answers for real mirror images (spells), so
 // the module answers for mannequins.
@@ -813,6 +841,7 @@ void Addmod_playerhousingScripts()
     RegisterSpellScript(spell_playerhousing_place);
     RegisterSpellScript(spell_playerhousing_key);
     new go_playerhousing_piece();
+    new npc_playerhousing_figurine();
     new mod_playerhousing_worldscript();
     new mod_playerhousing_commandscript();
     new mod_playerhousing_playerscript();

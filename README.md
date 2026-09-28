@@ -70,6 +70,15 @@ Swim too far out and you're brought back to the beach.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone
   too.
 
+### Figurines
+
+The Collection's **Figurines**: 21 trophies, from a Kobold and Hogger to Onyxia, Illidan
+and the Lich King. Each is the creature's own model, shrunk to fit on a table (about a
+yard long) and frozen mid-pose. Defeat the boss to unlock it, or hold its dungeon or raid
+achievement, so past victories count. Figurines go on tables like other small pieces,
+resize like anything else, and don't tilt. Visitors who click one learn whose trophy it
+is.
+
 ### The Bank Chest
 
 Unlocked at level 20 (or by buying 7 bank slots). Place it anywhere, and click it when

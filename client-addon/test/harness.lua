@@ -38,6 +38,7 @@ function Widget:Enable() self.enabled = true end
 function Widget:SetModel(path) self.modelPath = path end
 function Widget:ClearModel() self.modelPath = nil end
 function Widget:SetUnit(unit) self.unit = unit end
+function Widget:SetCreature(id) self.creature = id end
 function Widget:Disable() self.enabled = false end
 
 function CreateFrame(kind, name, parent, template)
@@ -120,6 +121,11 @@ assert(PlayerHousingPreviewPlan:IsShown(), "floor plan shown")
 local rect = PlayerHousingPreviewPlanRect
 assert(math.abs(rect.width / rect.height - 3) < 0.01, "30 by 10 yards drawn 3 to 1: " .. rect.width .. "x" .. rect.height)
 assert(PlayerHousingPreviewPlanYou.width >= 10, "the person marker stays visible")
+PlayerHousingSlot3.scripts.OnLeave(PlayerHousingSlot3)
+-- Figurines show their creature.
+PlayerHousing_Models[902200] = { "creature:10184", 0.9, 0.5, 0.4 }
+PlayerHousingSlot3.scripts.OnEnter(PlayerHousingSlot3)
+assert(PlayerHousingPreviewModel.creature == 10184 and PlayerHousingPreviewModel:IsShown(), "figurine preview")
 PlayerHousingSlot3.scripts.OnLeave(PlayerHousingSlot3)
 -- A model piece hides the floor plan again.
 PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)

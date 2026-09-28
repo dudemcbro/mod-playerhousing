@@ -369,3 +369,29 @@ belong to the character that earned it; everything else is shared across the acc
 | Moonglade Fountain | furnishing | Complete Classic, Outland or Northrend Dungeonmaster | object 185493 |  |
 | Barber Chair | furnishing | Earn The Loremaster | object 191817 | works like the real thing |
 | Guild Vault | furnishing | Loot 10,000 gold (Got My Mind On My Money) | object 187299 | works like the real thing |
+
+## Figurines (21)
+
+| Piece | Kind | How to unlock | Model | Notes |
+| --- | --- | --- | --- | --- |
+| Kobold Figurine | furnishing | Defeat a Kobold Vermin (you no take candle) | creature 6 | a figurine of Kobold Vermin, fits on tables |
+| Murloc Figurine | furnishing | Defeat a Murloc Forager | creature 46 | a figurine of Murloc Forager, fits on tables |
+| Hogger Figurine | furnishing | Defeat Hogger | creature 448 | a figurine of Hogger, fits on tables |
+| Edwin VanCleef Figurine | furnishing | Defeat Edwin VanCleef or earn the achievement Deadmines | creature 639 | a figurine of Edwin VanCleef, fits on tables |
+| Onyxia Figurine | furnishing | Defeat Onyxia (or hold an Onyxia's Lair achievement) | creature 10184 | a figurine of Onyxia, fits on tables |
+| Ragnaros Figurine | furnishing | Defeat Ragnaros or earn the achievement Molten Core | creature 11502 | a figurine of Ragnaros, fits on tables |
+| Nefarian Figurine | furnishing | Defeat Nefarian or earn the achievement Blackwing Lair | creature 11583 | a figurine of Nefarian, fits on tables |
+| Hakkar Figurine | furnishing | Defeat Hakkar or earn the achievement Zul'Gurub | creature 14834 | a figurine of Hakkar, fits on tables |
+| C'Thun Figurine | furnishing | Defeat C'Thun or earn the achievement Temple of Ahn'Qiraj | creature 15727 | a figurine of C'Thun, fits on tables |
+| Prince Malchezaar Figurine | furnishing | Defeat Prince Malchezaar or earn the achievement Karazhan | creature 15690 | a figurine of Prince Malchezaar, fits on tables |
+| Lady Vashj Figurine | furnishing | Defeat Lady Vashj or earn the achievement Serpentshrine Cavern | creature 21212 | a figurine of Lady Vashj, fits on tables |
+| Kael'thas Sunstrider Figurine | furnishing | Defeat Kael'thas Sunstrider or earn the achievement Tempest Keep | creature 19622 | a figurine of Kael'thas Sunstrider, fits on tables |
+| Archimonde Figurine | furnishing | Defeat Archimonde or earn the achievement The Battle for Mount Hyjal | creature 17968 | a figurine of Archimonde, fits on tables |
+| Illidan Stormrage Figurine | furnishing | Defeat Illidan Stormrage or earn the achievement The Black Temple | creature 22917 | a figurine of Illidan Stormrage, fits on tables |
+| Kil'jaeden Figurine | furnishing | Defeat Kil'jaeden or earn the achievement Sunwell Plateau | creature 25315 | a figurine of Kil'jaeden, fits on tables |
+| Ingvar the Plunderer Figurine | furnishing | Defeat Ingvar the Plunderer or earn the achievement Utgarde Keep | creature 23954 | a figurine of Ingvar the Plunderer, fits on tables |
+| Kel'Thuzad Figurine | furnishing | Defeat Kel'Thuzad (or hold Kel'Thuzad's Defeat) | creature 15990 | a figurine of Kel'Thuzad, fits on tables |
+| Sartharion Figurine | furnishing | Defeat Sartharion (or hold Besting the Black Dragonflight) | creature 28860 | a figurine of Sartharion, fits on tables |
+| Malygos Figurine | furnishing | Defeat Malygos (or hold The Spellweaver's Downfall) | creature 28859 | a figurine of Malygos, fits on tables |
+| Yogg-Saron Figurine | furnishing | Defeat Yogg-Saron (or hold The Secrets of Ulduar) | creature 33288 | a figurine of Yogg-Saron, fits on tables |
+| The Lich King Figurine | furnishing | Defeat the Lich King (or hold The Frozen Throne) | creature 36597 | a figurine of The Lich King, fits on tables |

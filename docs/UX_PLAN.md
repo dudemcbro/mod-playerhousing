@@ -590,6 +590,10 @@ With your client, once the patch works:
   the rotation needs flipping in `SpawnPlacement`), and tilted pieces look right from
   every side; bigger and smaller pieces, and a lantern staying on a bigger table
 - [ ] the grid: a row of fence posts placed with the grid on and "Another" lines up
+- [ ] figurines: each boss looks right at table size (frozen, standing on the ground or a
+  table, not sunk into it or floating); the addon preview once the creature has been
+  seen; very large models (Onyxia, C'Thun, Yogg-Saron)
+- [ ] the Bank Chest opens the bank window; the Music Box tunes play and replay
 
 ### Content list
 

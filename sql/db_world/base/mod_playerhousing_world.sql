@@ -51,7 +51,8 @@ INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landin
 --   footprint radius in yards (targeting circle, distance to a building); height of the top
 --             surface; outline the rectangle on the ground in the piece's own frame (x forward),
 --             which is what counts as inside a building
---   flags     1 surface, 2 small, 4 unlock per character, 8 first-login gift, 16 starter wreckage
+--   flags     1 surface, 2 small, 4 unlock per character, 8 first-login gift, 16 starter wreckage,
+--             32 mannequin, 64 Bank Chest, 128 Music Box, 256 figurine
 DROP TABLE IF EXISTS `mod_playerhousing_piece`;
 CREATE TABLE `mod_playerhousing_piece` (
   `item_entry` int unsigned NOT NULL,
@@ -60,13 +61,14 @@ CREATE TABLE `mod_playerhousing_piece` (
   `name` varchar(80) NOT NULL,
   `go_entry` int unsigned NOT NULL,
   `edit_go_entry` int unsigned NOT NULL DEFAULT 0,
+  `creature_entry` int unsigned NOT NULL DEFAULT 0,  -- figurines: the creature shown
   `scale` float NOT NULL DEFAULT 1,
   `footprint` float NOT NULL DEFAULT 1,
   `height` float NOT NULL DEFAULT 1,
   `flags` int unsigned NOT NULL DEFAULT 0,
   `copy_cost` int unsigned NOT NULL DEFAULT 0,
   `sort_order` int unsigned NOT NULL DEFAULT 0,
-  `hint` varchar(160) NOT NULL DEFAULT '',
+  `hint` varchar(255) NOT NULL DEFAULT '',
   `legacy_catalog_id` int unsigned NOT NULL DEFAULT 0,
   `outline_min_x` float NOT NULL DEFAULT 0,
   `outline_min_y` float NOT NULL DEFAULT 0,

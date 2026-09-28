@@ -314,6 +314,32 @@ bool PlayerHousingMgr::SpawnStand(Session& session, Map* map, Placement const& p
     return true;
 }
 
+// A figurine: its own creature (a copy of its boss, named after the figurine), shrunk to fit a
+// table and frozen mid-pose.
+bool PlayerHousingMgr::SpawnFigure(Session& session, Map* map, PieceDefinition const& piece, Placement const& placement)
+{
+    Position position;
+    position.Relocate(placement.x, placement.y, placement.z, placement.o);
+    TempSummon* figure = map->SummonCreature(piece.creatureEntry, position);
+    if (!figure)
+    {
+        LOG_WARN("module", "mod-playerhousing: Failed to summon figurine {} (creature {}) for owner {}.", piece.name, piece.creatureEntry, session.ownerGuid);
+        return false;
+    }
+
+    figure->SetObjectScale(placement.scale);
+    figure->SetReactState(REACT_PASSIVE);
+    figure->SetControlled(true, UNIT_STATE_ROOT);
+    figure->SetDisableGravity(true);
+    figure->AddAura(SPELL_FREEZE_ANIM, figure);
+    figure->SetPhaseMask(session.phaseMask, true);
+
+    SpawnedPiece& spawned = session.spawned[placement.id];
+    spawned.guid = figure->GetGUID();
+    spawned.editCopy = false;
+    return true;
+}
+
 void PlayerHousingMgr::RemoveSpawned(Map* map, ObjectGuid const& guid)
 {
     _mannequins.erase(guid);

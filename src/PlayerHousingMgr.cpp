@@ -78,6 +78,7 @@ char const* PlayerHousingMgr::CategoryName(uint8 category)
         case CATEGORY_PROFESSIONS: return "Professions";
         case CATEGORY_HOLIDAYS: return "Holidays";
         case CATEGORY_CAPSTONES: return "Capstones";
+        case CATEGORY_FIGURINES: return "Figurines";
         default: return "Other";
     }
 }
@@ -152,7 +153,7 @@ bool PlayerHousingMgr::LoadDefinitions()
 
     QueryResult pieceResult = WorldDatabase.Query(
         "SELECT item_entry, kind, category, name, go_entry, edit_go_entry, scale, footprint, height, flags, copy_cost, sort_order, hint, legacy_catalog_id, "
-        "outline_min_x, outline_min_y, outline_max_x, outline_max_y FROM mod_playerhousing_piece");
+        "outline_min_x, outline_min_y, outline_max_x, outline_max_y, creature_entry FROM mod_playerhousing_piece");
     if (!pieceResult)
     {
         LOG_ERROR("module", "mod-playerhousing: No pieces found. Did you apply the db_world SQL?");
@@ -181,11 +182,13 @@ bool PlayerHousingMgr::LoadDefinitions()
         piece.outlineMinY = fields[15].Get<float>();
         piece.outlineMaxX = fields[16].Get<float>();
         piece.outlineMaxY = fields[17].Get<float>();
+        piece.creatureEntry = fields[18].Get<uint32>();
 
-        // Stands are figures, not objects: they have no gameobject.
-        bool needsObject = !(piece.flags & PIECE_FLAG_STAND);
+        // Stands and figurines are creatures, not objects: they have no gameobject.
+        bool needsObject = !piece.IsCreature();
+        bool figureOk = !piece.HasFlag(PIECE_FLAG_FIGURE) || sObjectMgr->GetCreatureTemplate(piece.creatureEntry);
         if (!sObjectMgr->GetItemTemplate(piece.itemEntry) || (needsObject && !sObjectMgr->GetGameObjectTemplate(piece.goEntry)) ||
-            (piece.editGoEntry && !sObjectMgr->GetGameObjectTemplate(piece.editGoEntry)))
+            (piece.editGoEntry && !sObjectMgr->GetGameObjectTemplate(piece.editGoEntry)) || !figureOk)
         {
             LOG_WARN("module", "mod-playerhousing: Piece {} ({}) is missing its item or object template; skipped.", piece.itemEntry, piece.name);
             continue;

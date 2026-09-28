@@ -30,6 +30,7 @@ BANK_CHEST, CHEST_BANKER = 901108, 900202               # level 20: opens the ba
 BANKSLOT_NOTBANKER, BANKSLOT_OK = 2, 3
 MUSIC_BOX, GRIZZLY_HILLS = 901109, 12816               # level 10; a zone music track
 WEATHER_FINE, WEATHER_RAIN = 0, 4
+HOGGER_FIGURINE, HOGGER_FIGURE_NPC = 902952, 932952   # unlocked by defeating Hogger
 SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
 UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
 SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
@@ -58,6 +59,7 @@ LAYOUTS = {
         stand_stand=(16233.0, 16300.0), stand=(16230.0, 16300.0, 12.92),
         chest_stand=(16248.0, 16306.0), chest=(16250.0, 16310.0, 12.92),
         music_stand=(16238.0, 16304.0), music=(16240.0, 16306.0, 12.92),
+        figure_stand=(16244.0, 16300.0), figure=(16246.0, 16300.0, 12.92),
         sea_stand=(16250.0, 16120.0, 0.0), sea_target=(16250.0, 16098.0, 0.0),
         past_edge=(16250.0, 16108.0, 0.0)),
 }
@@ -717,6 +719,28 @@ def main():
     check("but not from across the island", result == BANKSLOT_NOTBANKER, str(result))
     owner.command(".house decorate on")
 
+    # Figurines: a boss's own model, shrunk to fit on a table and frozen.
+    admin.command(".house unlock Hogger Figurine %s" % args.owner_char, wait=1.5)
+    owner.command(".house collection figurine")
+    check("figurines are in the Collection, new once unlocked", "Hogger Figurine (new)" in options(owner.last_gossip)
+          and any(o.startswith("Onyxia Figurine: Defeat Onyxia") for o in options(owner.last_gossip)), str(options(owner.last_gossip)))
+    owner.gossip_select("Hogger Figurine")
+    owner.gossip_select("Get one")
+    wait_for(lambda: owner.count_item(HOGGER_FIGURINE) == 1, 3, owner)
+    move(owner, L["figure_stand"][0], L["figure_stand"][1], L["ground"])
+    msgs = owner.use_item(HOGGER_FIGURINE, spell_of(HOGGER_FIGURINE), L["figure"])
+    figurine = placement_of(owner_guid, HOGGER_FIGURINE)
+    wait_for(lambda: owner.nearest(HOGGER_FIGURE_NPC, TYPEID_UNIT) is not None, 3, owner)
+    figure_npc = owner.nearest(HOGGER_FIGURE_NPC, TYPEID_UNIT)
+    piece_scale = float(db("SELECT scale FROM mod_playerhousing_piece WHERE item_entry=%d" % HOGGER_FIGURINE, "acore_world")[0][0])
+    check("a figurine is Hogger, shrunk to table size", figurine is not None and figure_npc is not None
+          and abs(figure_npc.scale() - piece_scale) < 0.001 and piece_scale < 0.9
+          and math.dist((figure_npc.x, figure_npc.y), L["figure"][:2]) < 0.1, joined(msgs) + " scale %s" % (figure_npc.scale() if figure_npc else None))
+    menu, _ = owner.gossip_hello(figure_npc.guid) if figure_npc else (None, None)
+    check("clicking it opens its piece menu", menu is not None and "Pick up (back to your bags)" in options(menu), str(options(menu)))
+    msgs = owner.command(".house tilt forward 5 %d" % figurine["id"]) if figurine else []
+    check("figurines don't tilt", has(msgs, "Figurines always stand upright"), joined(msgs))
+
     # ------------------------------------------------------------- buildings
     log("== buildings")
     owner.command(".house collection")
@@ -1135,6 +1159,13 @@ def main():
               and "Put gear on..." not in options(menu), str(options(menu)))
     else:
         check("a guest sees what the mannequin wears, and can't change it", False, "no mannequin in sight")
+    figure_npc = guest.nearest(HOGGER_FIGURE_NPC, TYPEID_UNIT)
+    if figure_npc:
+        stand_next_to(guest, figure_npc, 2.0)
+        menu, msgs = guest.gossip_hello(figure_npc.guid)
+        check("a guest sees the figurine as a trophy", has(msgs, "Hogger Figurine: a trophy of %s's adventures" % args.owner_char), joined(msgs))
+    else:
+        check("a guest sees the figurine as a trophy", False, "no figurine in sight")
     mailbox_go = nearest_go(guest, live(MAILBOX))
     if mailbox_go:
         stand_next_to(guest, mailbox_go, 2.0)

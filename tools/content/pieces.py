@@ -7,7 +7,7 @@ Fields:
   item      item entry (also decides the object entries, so never renumber a piece)
   name      what the player sees
   cat       Starter, Buildings, Exploration, Dungeons, Raids, Reputation, Professions,
-            Holidays or Capstones
+            Holidays, Capstones or Figurines
   go        existing gameobject to copy the model (and, for "keep", the behavior) from
   display   or a GameObjectDisplayInfo id when no gameobject uses the model
   style     decor     clickable ornament (default)
@@ -18,6 +18,8 @@ Fields:
                       display: the figure takes after its owner)
             chest     opens its owner's bank (and House Storage)
             music     a music box: its owner picks the island's music
+            figure    a figurine: the creature's model (creature=<entry>), frozen and
+                      shrunk to fit on a table
   rules     list of groups; each group is a list of rules that must all be met. Any
             complete group unlocks the piece. No rules: everyone has it.
   flags     surface (things go on top), small (fits on a surface), gift (first login),
@@ -449,4 +451,38 @@ PIECES = [
          hint="Earn The Loremaster"),
     dict(item=902904, name="Guild Vault", cat="Capstones", go=187299, style="keep", rules=[[ach(1180)]],
          hint="Loot 10,000 gold (Got My Mind On My Money)"),
+
+    # ------------------------------------------------------------------ Figurines
+    # Defeat the boss (or hold its achievement) for a figurine of it, small enough for a table.
+    dict(item=902950, name="Kobold Figurine", cat="Figurines", creature=6, style="figure", rules=[[kill(6)]],
+         hint="Defeat a Kobold Vermin (you no take candle)"),
+    dict(item=902951, name="Murloc Figurine", cat="Figurines", creature=46, style="figure", rules=[[kill(46)]],
+         hint="Defeat a Murloc Forager"),
+    dict(item=902952, name="Hogger Figurine", cat="Figurines", creature=448, style="figure", rules=[[kill(448)]]),
+    dict(item=902953, name="Edwin VanCleef Figurine", cat="Figurines", creature=639, style="figure", rules=[[kill(639)], [ach(628)]]),
+    dict(item=902954, name="Onyxia Figurine", cat="Figurines", creature=10184, style="figure",
+         rules=[[kill(10184)]] + any_ach(684, 4396, 4397), hint="Defeat Onyxia (or hold an Onyxia's Lair achievement)"),
+    dict(item=902955, name="Ragnaros Figurine", cat="Figurines", creature=11502, style="figure", rules=[[kill(11502)], [ach(686)]]),
+    dict(item=902956, name="Nefarian Figurine", cat="Figurines", creature=11583, style="figure", rules=[[kill(11583)], [ach(685)]]),
+    dict(item=902957, name="Hakkar Figurine", cat="Figurines", creature=14834, style="figure", rules=[[kill(14834)], [ach(688)]]),
+    dict(item=902958, name="C'Thun Figurine", cat="Figurines", creature=15727, style="figure", rules=[[kill(15727)], [ach(687)]]),
+    dict(item=902959, name="Prince Malchezaar Figurine", cat="Figurines", creature=15690, style="figure", rules=[[kill(15690)], [ach(690)]]),
+    dict(item=902960, name="Lady Vashj Figurine", cat="Figurines", creature=21212, style="figure", rules=[[kill(21212)], [ach(694)]]),
+    dict(item=902961, name="Kael'thas Sunstrider Figurine", cat="Figurines", creature=19622, style="figure",
+         rules=[[kill(19622)], [ach(696)]]),
+    dict(item=902962, name="Archimonde Figurine", cat="Figurines", creature=17968, style="figure", rules=[[kill(17968)], [ach(695)]]),
+    dict(item=902963, name="Illidan Stormrage Figurine", cat="Figurines", creature=22917, style="figure", rules=[[kill(22917)], [ach(697)]]),
+    dict(item=902964, name="Kil'jaeden Figurine", cat="Figurines", creature=25315, style="figure", rules=[[kill(25315)], [ach(698)]]),
+    dict(item=902965, name="Ingvar the Plunderer Figurine", cat="Figurines", creature=23954, style="figure",
+         rules=[[kill(23954)], [ach(477)]]),
+    dict(item=902966, name="Kel'Thuzad Figurine", cat="Figurines", creature=15990, style="figure",
+         rules=[[kill(15990)]] + any_ach(574, 575), hint="Defeat Kel'Thuzad (or hold Kel'Thuzad's Defeat)"),
+    dict(item=902967, name="Sartharion Figurine", cat="Figurines", creature=28860, style="figure",
+         rules=[[kill(28860)]] + any_ach(1876, 625), hint="Defeat Sartharion (or hold Besting the Black Dragonflight)"),
+    dict(item=902968, name="Malygos Figurine", cat="Figurines", creature=28859, style="figure", rules=[[kill(28859)]] + any_ach(622, 623),
+         hint="Defeat Malygos (or hold The Spellweaver's Downfall)"),
+    dict(item=902969, name="Yogg-Saron Figurine", cat="Figurines", creature=33288, style="figure",
+         rules=[[kill(33288)]] + any_ach(2894, 2895), hint="Defeat Yogg-Saron (or hold The Secrets of Ulduar)"),
+    dict(item=902970, name="The Lich King Figurine", cat="Figurines", creature=36597, style="figure",
+         rules=[[kill(36597)]] + any_ach(4530, 4597), hint="Defeat the Lich King (or hold The Frozen Throne)"),
 ]

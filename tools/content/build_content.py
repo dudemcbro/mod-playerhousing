@@ -22,8 +22,12 @@ MODULE = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import pieces as content  # noqa: E402
 
-CATEGORIES = ["Starter", "Buildings", "Exploration", "Dungeons", "Raids", "Reputation", "Professions", "Holidays", "Capstones"]
-FLAG_BITS = {"surface": 0x01, "small": 0x02, "per_char": 0x04, "gift": 0x08, "wreckage": 0x10, "stand": 0x20, "chest": 0x40, "music": 0x80}
+CATEGORIES = ["Starter", "Buildings", "Exploration", "Dungeons", "Raids", "Reputation", "Professions", "Holidays", "Capstones",
+              "Figurines"]
+FLAG_BITS = {"surface": 0x01, "small": 0x02, "per_char": 0x04, "gift": 0x08, "wreckage": 0x10, "stand": 0x20, "chest": 0x40, "music": 0x80,
+             "figure": 0x100}
+FIGURINE_SIZE = 0.9   # yards, the longest side of a figurine
+FIGURE_SCRIPT = "npc_playerhousing_figurine"
 RANKS = ["Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted"]
 SKILLS = {164: "Blacksmithing", 186: "Mining", 171: "Alchemy", 185: "Cooking", 202: "Engineering", 773: "Inscription",
           129: "First Aid", 197: "Tailoring", 165: "Leatherworking", 333: "Enchanting", 755: "Jewelcrafting",
@@ -50,10 +54,10 @@ def circle_spell(footprint):
 
 # Copy cost in copper on live servers (FreeMode makes everything free).
 COST = {"Starter": 0, "Exploration": 5000, "Dungeons": 10000, "Raids": 50000, "Reputation": 10000,
-        "Professions": 20000, "Holidays": 5000, "Capstones": 100000}
+        "Professions": 20000, "Holidays": 5000, "Capstones": 100000, "Figurines": 20000}
 SHELTER_COST, FACTION_BUILDING_COST = 2000, 50000
 QUALITY = {"Starter": 1, "Buildings": 2, "Exploration": 2, "Dungeons": 3, "Raids": 4, "Reputation": 3,
-           "Professions": 2, "Holidays": 2, "Capstones": 4}
+           "Professions": 2, "Holidays": 2, "Capstones": 4, "Figurines": 3}
 ICON_FURNISHING, ICON_BUILDING = 1102, 7744
 
 
@@ -63,6 +67,25 @@ def live_entry(item):
 
 def edit_entry(item):
     return 920000 + (item - 900000)
+
+
+def figure_entry(item):
+    """The creature a figurine shows (a copy of its boss, named after the figurine)."""
+    return 930000 + (item - 900000)
+
+
+def load_creature_boxes(dbc):
+    """Bounding box of each creature display at scale 1, from CreatureDisplayInfo.dbc and
+    CreatureModelData.dbc: low x, y, z, high x, y, z."""
+    rows, _ = read_dbc(os.path.join(dbc, "CreatureModelData.dbc"))
+    models = {ints[0]: tuple(v * floats[4] for v in floats[17:23]) for ints, floats in rows}
+    rows, _ = read_dbc(os.path.join(dbc, "CreatureDisplayInfo.dbc"))
+    boxes = {}
+    for ints, floats in rows:
+        box = models.get(ints[1])
+        if box:
+            boxes[ints[0]] = tuple(v * (floats[4] or 1.0) for v in box)
+    return boxes
 
 
 def read_dbc(path):
@@ -101,6 +124,12 @@ class World:
             raise SystemExit("gameobject %d not found in the world database" % entry)
         row = rows[0]
         return {"type": int(row[0]), "display": int(row[1]), "size": float(row[2]), "data": [int(v) for v in row[3:27]]}
+
+    def creature_display(self, entry):
+        rows = self.query("SELECT CreatureDisplayID, DisplayScale FROM creature_template_model WHERE CreatureID=%d ORDER BY Idx LIMIT 1" % entry)
+        if not rows:
+            raise SystemExit("creature %d has no model in the world database" % entry)
+        return int(rows[0][0]), float(rows[0][1] or 1.0)
 
     def creature_name(self, entry):
         rows = self.query("SELECT name FROM creature_template WHERE entry=%d" % entry)
@@ -204,6 +233,8 @@ def build(args):
     names = load_names(args.dbc)
     models = load_models(args.dbc)
     world_bounds = load_world_model_bounds(args.dbc)
+    creature_boxes = load_creature_boxes(args.dbc)
+    creatures = []
     previews = []
     boxes = names[0]
 
@@ -219,11 +250,19 @@ def build(args):
         style = piece.get("style", "decor")
         building = style == "building"
         stand = style == "stand"
+        figure = style == "figure"
         name = piece["name"]
+        creature_display = figure_box = None
 
         if stand:
             # A stand is a figure the module dresses in the owner's gear: no object at all.
             source = {"type": GO_TYPE_GENERIC, "display": 0, "size": 1.0, "data": [0] * 24}
+        elif figure:
+            # A figurine is its creature's model, frozen and shrunk to fit on a table.
+            creature_display, display_scale = world.creature_display(piece["creature"])
+            figure_box = tuple(v * display_scale for v in creature_boxes.get(creature_display, (-0.5, -0.5, 0.0, 0.5, 0.5, 1.0)))
+            extent = max(figure_box[3] - figure_box[0], figure_box[4] - figure_box[1], figure_box[5] - figure_box[2], 0.1)
+            source = {"type": GO_TYPE_GENERIC, "display": 0, "size": FIGURINE_SIZE / extent, "data": [0] * 24}
         elif "go" in piece:
             source = world.gameobject(piece["go"])
         else:
@@ -240,9 +279,9 @@ def build(args):
         else:
             go_type, data = GO_TYPE_GOOBER, [0] * 24
 
-        live = 0 if stand else live_entry(item)
+        live = 0 if stand or figure else live_entry(item)
         # Pieces that work like the real thing get a clickable copy for decorate mode.
-        edit = edit_entry(item) if go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC) and not stand else 0
+        edit = edit_entry(item) if go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC) and not stand and not figure else 0
 
         def go_row(entry, gtype, gdata):
             return "(%d, %d, %d, %s, '', '', '', %s, %s, '', %s, 0)" % (
@@ -253,7 +292,7 @@ def build(args):
         if edit:
             gameobjects.append(go_row(edit, GO_TYPE_GOOBER, [0] * 24))
 
-        box = boxes.get(display, (0.0,) * 6)
+        box = figure_box if figure else boxes.get(display, (0.0,) * 6)
         footprint = max(abs(box[0]), abs(box[1]), abs(box[3]), abs(box[4])) * size
         height = box[5] * size
         # Length and depth, for the addon's floor plan and size text.
@@ -270,7 +309,10 @@ def build(args):
             length = depth = 2 * footprint
             outline = (-footprint, -footprint, footprint, footprint)
 
-        if not stand and display not in models:
+        if figure:
+            creatures.append("(%d, %s, %s, %d, %d, %s)" % (figure_entry(item), sql_text(name), sql_text(FIGURE_SCRIPT), creature_display,
+                                                            piece["creature"], sql_text(name)))
+        elif not stand and display not in models:
             raise SystemExit("%s (%d) uses model %d, which isn't in GameObjectDisplayInfo.dbc: it would be invisible"
                              % (name, item, display))
 
@@ -293,6 +335,8 @@ def build(args):
                 height = world_box[5] * size
         if stand:
             model = "player"
+        elif figure:
+            model = "creature:%d" % piece["creature"]
         elif not model or model.lower().endswith(".wmo"):
             model = None
         else:
@@ -300,6 +344,8 @@ def build(args):
         previews.append((item, model) + preview_size)
 
         flags = FLAG_BITS["stand"] if stand else 0
+        if figure:
+            flags |= FLAG_BITS["figure"] | FLAG_BITS["small"]
         if style in ("chest", "music"):
             flags |= FLAG_BITS[style]
         for flag in piece.get("flags", []):
@@ -315,8 +361,9 @@ def build(args):
         cost = piece.get("cost", cost)
         hint = describe(piece, world, names)
 
-        piece_rows.append("(%d, %d, %d, %s, %d, %d, %s, %s, %s, %d, %d, %d, %s, %d, %s)" % (
-            item, 1 if building else 0, CATEGORIES.index(category), sql_text(name), live, edit, repr(piece.get("scale", 1.0)),
+        piece_rows.append("(%d, %d, %d, %s, %d, %d, %d, %s, %s, %s, %d, %d, %d, %s, %d, %s)" % (
+            item, 1 if building else 0, CATEGORIES.index(category), sql_text(name), live, edit, figure_entry(item) if figure else 0,
+            repr(round(size, 4) if figure else piece.get("scale", 1.0)),
             repr(round(footprint, 2)), repr(round(height, 2)), flags, cost, order, sql_text(hint), piece.get("legacy", 0),
             ", ".join(repr(round(v, 2)) for v in outline)))
         for group_index, group in enumerate(groups):
@@ -333,6 +380,8 @@ def build(args):
         notes = []
         if stand:
             notes.append("wears real gear from your bags: armor, weapons, shields")
+        if figure:
+            notes.append("a figurine of %s" % world.creature_name(piece["creature"]))
         if style == "chest":
             notes.append("opens your bank and House Storage")
         if style == "music":
@@ -350,7 +399,7 @@ def build(args):
         if flags & FLAG_BITS["per_char"]:
             notes.append("per character")
         docs[category].append((name, "building" if building else "furnishing", hint or "Everyone has it",
-                               "a figure in your gear" if stand else
+                               "a figure in your gear" if stand else "creature %d" % piece["creature"] if figure else
                                "%s %d" % ("object" if "go" in piece else "model", piece.get("go", piece.get("display"))),
                                ", ".join(notes)))
 
@@ -376,6 +425,8 @@ def build(args):
         "DELETE FROM `mod_playerhousing_piece`;",
         "DELETE FROM `item_template` WHERE `entry` BETWEEN 901100 AND 901199 OR `entry` BETWEEN 902001 AND 902999;",
         "DELETE FROM `gameobject_template` WHERE `entry` BETWEEN 911100 AND 922999;",
+        "DELETE FROM `creature_template_model` WHERE `CreatureID` BETWEEN 931100 AND 932999;",
+        "DELETE FROM `creature_template` WHERE `entry` BETWEEN 931100 AND 932999;",
         "",
         "-- The spells behind the targeting circles, one per circle size.",
         "DELETE FROM `spell_script_names` WHERE `ScriptName` = '%s';" % PLACE_SCRIPT,
@@ -388,7 +439,20 @@ def build(args):
         "INSERT INTO `item_template` (%s) VALUES" % item_columns,
         ",\n".join(items) + ";",
         "",
-        "INSERT INTO `mod_playerhousing_piece` (`item_entry`, `kind`, `category`, `name`, `go_entry`, `edit_go_entry`, `scale`, "
+        "-- Figurines: each one a creature of its own, with its boss's model (frozen and shrunk by",
+        "-- the module when placed).",
+        "CREATE TEMPORARY TABLE `ph_figure` (`entry` int unsigned, `name` varchar(80), `script` varchar(64), `display` int unsigned,",
+        "  `source` int unsigned, `subname` varchar(80));",
+        "INSERT INTO `ph_figure` VALUES",
+        (",\n".join(creatures) if creatures else "(0, '', '', 0, 0, '')") + ";",
+        "INSERT INTO `creature_template` (`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`,",
+        "  `unit_class`, `unit_flags`, `type`, `AIName`, `MovementType`, `RegenHealth`, `ScriptName`, `VerifiedBuild`)",
+        "SELECT `entry`, `name`, 'Figurine', 0, 1, 1, 35, 1, 1, 770, 10, '', 0, 1, `script`, 0 FROM `ph_figure` WHERE `entry` <> 0;",
+        "INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`)",
+        "SELECT `entry`, 0, `display`, 1.0, 1.0, 0 FROM `ph_figure` WHERE `entry` <> 0;",
+        "DROP TEMPORARY TABLE `ph_figure`;",
+        "",
+        "INSERT INTO `mod_playerhousing_piece` (`item_entry`, `kind`, `category`, `name`, `go_entry`, `edit_go_entry`, `creature_entry`, `scale`, "
         "`footprint`, `height`, `flags`, `copy_cost`, `sort_order`, `hint`, `legacy_catalog_id`, "
         "`outline_min_x`, `outline_min_y`, `outline_max_x`, `outline_max_y`) VALUES",
         ",\n".join(piece_rows) + ";",

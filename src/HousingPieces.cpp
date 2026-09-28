@@ -344,6 +344,8 @@ bool PlayerHousingMgr::SpawnPlacement(Session& session, Map* map, Placement cons
     PieceDefinition const& piece = pieceItr->second;
     if (piece.HasFlag(PIECE_FLAG_STAND))
         return SpawnStand(session, map, placement);
+    if (piece.HasFlag(PIECE_FLAG_FIGURE))
+        return SpawnFigure(session, map, piece, placement);
 
     bool editCopy = session.decorating && piece.editGoEntry != 0;
     uint32 entry = editCopy ? piece.editGoEntry : piece.goEntry;
@@ -1514,9 +1516,9 @@ bool PlayerHousingMgr::Tilt(Player* player, uint32 placementId, float forwardDeg
         return false;
     }
 
-    if (piece->HasFlag(PIECE_FLAG_STAND))
+    if (piece->IsCreature())
     {
-        reason = "Mannequins always stand upright.";
+        reason = piece->HasFlag(PIECE_FLAG_STAND) ? "Mannequins always stand upright." : "Figurines always stand upright.";
         return false;
     }
 

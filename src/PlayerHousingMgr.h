@@ -34,6 +34,7 @@ namespace Housing
     constexpr uint32 HOOK_MARKER_GO = 903990;
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
+    constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
     // "Move a Piece" items, one per targeting circle size (tools/content/build_content.py):
     // handed out to move a piece with the circle, gone once used.
     constexpr uint32 MOVER_ITEM_FIRST = 901190;
@@ -69,7 +70,8 @@ namespace Housing
         PIECE_FLAG_WRECKAGE = 0x10,       // standing on the island at the first visit
         PIECE_FLAG_STAND = 0x20,          // a mannequin that wears real gear from the bags
         PIECE_FLAG_CHEST = 0x40,          // opens its owner's bank
-        PIECE_FLAG_MUSIC = 0x80           // a music box: plays the island's music
+        PIECE_FLAG_MUSIC = 0x80,          // a music box: plays the island's music
+        PIECE_FLAG_FIGURE = 0x100         // a figurine: a creature's model, frozen and small
     };
 
     enum Category : uint8
@@ -83,6 +85,7 @@ namespace Housing
         CATEGORY_PROFESSIONS,
         CATEGORY_HOLIDAYS,
         CATEGORY_CAPSTONES,
+        CATEGORY_FIGURINES,
         CATEGORY_COUNT
     };
 
@@ -171,6 +174,7 @@ namespace Housing
         std::string name;
         uint32 goEntry{0};
         uint32 editGoEntry{0};
+        uint32 creatureEntry{0};  // figurines
         float scale{1.0f};
         float footprint{1.0f};
         float height{1.0f};
@@ -189,6 +193,8 @@ namespace Housing
         bool IsBuilding() const { return kind == PIECE_BUILDING; }
         bool HasOutline() const { return outlineMaxX > outlineMinX && outlineMaxY > outlineMinY; }
         bool HasFlag(uint32 flag) const { return (flags & flag) != 0; }
+        // Shown as a creature (mannequins, figurines): no tilting.
+        bool IsCreature() const { return HasFlag(PIECE_FLAG_STAND) || HasFlag(PIECE_FLAG_FIGURE); }
     };
 
     struct LayoutDefinition
@@ -564,6 +570,7 @@ private:
     Session const* FindSessionOf(Player const* player) const;
     bool SpawnPlacement(Session& session, Map* map, Housing::Placement const& placement);
     bool SpawnStand(Session& session, Map* map, Housing::Placement const& placement);
+    bool SpawnFigure(Session& session, Map* map, Housing::PieceDefinition const& piece, Housing::Placement const& placement);
     void RemoveSpawned(Map* map, ObjectGuid const& guid);
     void DespawnPlacement(Session& session, Map* map, uint32 placementId);
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);

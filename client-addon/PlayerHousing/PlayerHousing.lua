@@ -556,8 +556,16 @@ local function ShowPreview(piece)
     plan:Hide()
 
     local model = data and data[1]
+    local creature = type(model) == "string" and tonumber(model:match("^creature:(%d+)$"))
     if model == "player" then
         previewModel:SetUnit("player")
+        previewModel:Show()
+    elseif creature then
+        -- Figurines: the creature's model (drawn once the client has seen that creature).
+        previewModel:ClearModel()
+        previewModel:SetCreature(creature)
+        previewModel:SetModelScale(1)
+        previewModel:SetPosition(0, 0, 0)
         previewModel:Show()
     elseif model then
         previewModel:ClearModel()
