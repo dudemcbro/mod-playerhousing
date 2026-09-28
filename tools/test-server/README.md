@@ -21,10 +21,34 @@ tools/test-server/podman-test.sh           # add --verbose for every chat line
 ```
 
 It starts a throwaway container with this checkout mounted (`:Z`, for Bluefin's SELinux;
-on an NTFS or exFAT drive it turns labeling off for the container instead), waits for the
-worldserver, runs `housing_smoke.py` inside and removes the container.
-`KEEP=1` leaves it running with ports 3724/8085 published, so you can log in with a client or attach to the console
-(`podman exec -it <name> tmux attach -t acore`).
+on an NTFS or exFAT drive it turns labeling off for the container instead), clears GM
+Island's guild hall from the server data, builds the module, starts the servers with
+FreeMode on, runs `housing_smoke.py` inside and removes the container.
+
+- `HOUSING_LAYOUT=guildhouse` keeps the guild hall instead.
+- `KEEP=1` leaves the container running with ports 3724 and 8085 published, so you can
+  log in with a client or attach to the console
+  (`podman exec -it <name> tmux attach -t acore`).
+
+## Development loop: dev-container.sh
+
+For working on the module: one long-running container from the same image, with this
+checkout mounted. A rebuild only compiles the module, re-applies its SQL and restarts the
+worldserver, which takes a minute or two.
+
+```bash
+tools/test-server/dev-container.sh start     # first start builds the module
+tools/test-server/dev-container.sh rebuild   # after editing C++ or SQL
+tools/test-server/dev-container.sh test      # the end-to-end test (add --verbose)
+tools/test-server/dev-container.sh console "server info"
+tools/test-server/dev-container.sh logs      # follow the server log
+tools/test-server/dev-container.sh stop      # remove the container
+```
+
+Ports 3724 and 8085 are published, so a real client can log in too. The container runs
+the cleared island with FreeMode on; `HOUSING_LAYOUT=guildhouse`,
+`AC_PLAYER_HOUSING_FREE_MODE=0` or `AC_PLAYER_HOUSING_UNLOCK_ALL=1` on `start` change
+that. `ENGINE=docker` works too.
 
 ## Quick start on Bluefin (building everything locally)
 
@@ -54,17 +78,22 @@ changed, so it is also the way to pick up module edits.
 2. Downloads the prebuilt client data (`dbc`, `maps`, `vmaps`, `mmaps`) from
    `wowgaming/client-data` (the version `acore.sh` pins).
 3. Symlinks this checkout into `$CORE_DIR/modules/mod-playerhousing`.
-4. Builds and installs to `$SERVER_DIR` (build dir `$SERVER_DIR/build`).
-5. Writes `authserver.conf`, `worldserver.conf` and `mod_playerhousing.conf`
-   (existing files are kept). Warden is disabled for the headless client.
-6. Creates the `acore` MySQL user and databases, then populates them with
+4. Builds and installs to `$SERVER_DIR` (build dir `$SERVER_DIR/build`), including the
+   map tools the cleared island needs.
+5. Writes `authserver.conf` and `worldserver.conf` (existing files are kept; Warden is
+   off for the headless client) and `mod_playerhousing.conf`, rewritten every run with
+   FreeMode on and the chosen layout.
+6. Clears GM Island's guild hall from the server's collision and pathing data
+   (`tools/gm-island-cleared/server_data.sh`), or puts it back for the guildhouse layout.
+7. Creates the `acore` MySQL user and databases, then populates them with
    `worldserver --dry-run`.
-7. Applies this module's SQL. The core's auto-updater only reads
+8. Applies this module's SQL. The core's auto-updater only reads
    `modules/<name>/data/sql/db-*`, so the files in `sql/` are applied here.
-8. Creates accounts `houseowner` and `houseguest` (players) and `admin` (GM 3).
+9. Creates accounts `houseowner` and `houseguest` (players) and `admin` (GM 3).
    Passwords match the names.
 
-Variables: `CORE_DIR`, `SERVER_DIR`, `BUILD_DIR`, `JOBS`.
+Variables: `CORE_DIR`, `SERVER_DIR`, `BUILD_DIR`, `JOBS`, `HOUSING_LAYOUT` (`cleared`,
+the default, or `guildhouse`) and `TOOLS_BUILD`.
 
 ## Day to day
 
@@ -87,31 +116,44 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 ## The automated test
 
-`testclient/housing_smoke.py` logs in two characters (`Krookowner` and
-`Krookguest`, created on first run) and exercises:
+`testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
+the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
+checking the database and what the client sees after each step (76 checks):
 
-- starter house and starter unlocks on first login
-- `.krook`, `.krook status`, `.krook leave`, `.krook add`, `.krook add <id>`
-- steward gossip menus in the city and inside the house
-- entering the GM Island guild house, moving-in props, the island's own spawns hidden
-- buying kits from Krook's Cranny and placing them with Flare targeting inside the house
-- stage gating, upgrading, catalog placement, list, move and remove furniture
-- two houses at the same spot staying invisible to each other
-- privacy, invites, guest visits with the owner home, the owner coming home with a
-  guest inside, guests blocked from editing
-- style changes, reconnecting and relogging inside the house, normal phase afterwards,
-  persistence
+- first login: House Key, starter furnishings, past progress unlocking pieces
+- the Home menu from `.house` and from the key, going home, Krook's greeting, the
+  starter wreckage
+- placing with the targeting circle where it was clicked, facing you; undo returns the
+  item, redo places it again; no spacing rules; placing far out on the island; refusing
+  spots off the island; swimmers brought back to the beach
+- decorate mode: clickable copies, the snap rune on tables, the piece menu (turn, nudge,
+  undo), putting a lantern on a table, picking up
+- full bags: pieces go to House Storage, undo takes them back out, "Take everything"
+- the Collection: categories, hints with progress, free copies, a level up unlocking a
+  shelter on the spot
+- buildings: placing a faction building, the pick up choice, the building and what's
+  inside coming back, undo
+- visitors: greeting, private islands refusing strangers, invites, the visit menu, a
+  guest arriving with one click, sitting on a chair but not editing anything, private
+  copies, privacy presets
+- the addon messages: at login, on request, the selected piece and the undo label
+- pack up everything and undo, unstuck, logging out on the island and back in
 
-Add `--verbose` to see every chat line, and `--layout cleared` when the server runs the
-cleared-island variant (`tools/gm-island-cleared`). Exit code is 0 only if every check passes.
+Add `--verbose` to see every chat line, and `--layout guildhouse` when the server keeps
+the guild hall. The exit code is 0 only if every check passes.
 
 ## Not covered by the test
 
-- **Party bots following into a house.** The test server is built without
-  mod-playerbots, so there are no bots to try it with.
-- **`.krook add` is open to every player** and summons a steward that never
-  despawns, so players can spawn as many as they like, anywhere. This is a design
-  question, not something the test checks.
+These need a real client:
+
+- how things look: pieces on tabletops, building models and their collision, the
+  targeting circle
+- the cleared island client patch (`tools/gm-island-cleared/make_client_patch.sh`)
+- the client addon's window (its logic is tested with
+  `client-addon/test/harness.lua`)
+
+And **party bots following into a house**: the test server is built without
+mod-playerbots, so there are no bots to try it with.
 
 ## Troubleshooting
 

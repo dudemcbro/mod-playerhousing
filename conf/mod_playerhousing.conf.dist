@@ -73,7 +73,7 @@ PlayerHousing.HouseKey.DelaySeconds = 5
 ###############################################################################
 # PlayerHousing.StewardEntry
 # PlayerHousing.StewardDisplayId
-#    Krook, the housing steward, and his model (25384: Wolvar orphan).
+#    Krook, the housing steward, and the model Krook uses (25384: Wolvar orphan).
 ###############################################################################
 PlayerHousing.StewardEntry = 900200
 PlayerHousing.StewardDisplayId = 25384

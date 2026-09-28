@@ -1,131 +1,233 @@
 # mod-playerhousing
 
-Private player housing for AzerothCore (WotLK): every owner gets their own phased copy of the guild house on GM Island, with owner-only editing, visiting permissions, style selection, and upgrade progression.
+Player housing for AzerothCore (WotLK 3.3.5a), modeled on Lord of the Rings Online and Final
+Fantasy XIV without the neighborhoods. Every character gets a private copy of GM Island to
+build on. Furnishings and buildings are ordinary items: right-click one, click where it
+should go, done. Every change can be undone, and anything picked up goes back to your bags.
+What you can own grows as you play: exploring, dungeons, raids, reputation, professions and
+holidays all add pieces to your Collection, and buildings climb from a broken cart and a
+shredded tent at level 1 to faction halls at Exalted.
 
-The plan for making housing easier to learn and use (undo, free test mode, placing
-anywhere on the island, click to edit, unlocks from progression instead of house levels,
-pre-made buildings from wreckage to a grand estate) is in [docs/UX_PLAN.md](docs/UX_PLAN.md).
+The design and the reasoning behind it are in [docs/UX_PLAN.md](docs/UX_PLAN.md). Every
+piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 
-## V1 feature set
+## For players
 
-- Starter house is free and defaults to **private**.
-- 4 selectable styles: `human`, `gnome`, `tauren`, `undead`.
-- 6 paid upgrade tiers (stage 1 to stage 6), each at **x3 cost growth**.
-- Stage 0 is the furnished guild house plus a few moving-in props (lantern, bedroll, crate); each style adds its own piece at later stages.
-- Owner can invite/uninvite guests to private houses.
-- Guests can visit, but only owner can edit or place furniture.
-- Housing steward NPC uses a **Wolvar orphan** display.
-- Furniture is bought from Krook via standard **vendor window** items.
-- Right click furniture item to enter placement mode, then place with instant ground-target reticle.
-- Steward gossip menus handle all normal workflows.
-- Optional command shortcuts:
-  - `.krook add` to spawn a housing steward near you
-  - `.krook add <catalogId>` to select furniture for Flare placement
-  - `.krook leave` / `.krook status`
-- Party bots (playerbots) follow their party into the house.
+### Getting started
 
-## Steward workflow
+- On your first login you get a **House Key** and a chair, a table and a lantern.
+- Right-click the House Key (or type `.house`) for the Home menu. **Go home** takes you to
+  your island. A fallen cart and a shredded tent are waiting, and Krook the steward says
+  hello.
+- Lost the key? Krook stands beside the innkeeper in every capital (Stormwind, Ironforge,
+  Darnassus, the Exodar, Orgrimmar, Thunder Bluff, the Undercity, Silvermoon, Shattrath
+  and Dalaran), or use the Home menu, "I lost my House Key".
 
-- Talk to a Housing Steward in any major city to:
-  - Enter your own house
-  - Visit another player's house by character name
-  - Upgrade stage, toggle privacy, change style
-  - Manage guest access (invite/remove by name)
-  - Open furniture tools
-- While inside your house, use the steward there to:
-  - Open `Krook's Cranny` furniture vendor window
-  - Show catalog
-  - Unlock item by catalog ID
-  - Right click purchased furniture item to place with `Flare` ground targeting
-  - (Optional/legacy) select unlocked item and cast `Flare` manually
-  - Move/remove placement by placement ID
-  - List placed furniture
+### Placing things
+
+1. Right-click a furnishing or building in your bags.
+2. Click where it should go. It lands on that exact spot, facing you.
+
+That's the whole flow. You can place anywhere on your island, indoors or out, up to the
+beach. The only rules: it has to be on your island, you have to be able to see the spot,
+and each island holds up to 200 furnishings and 10 buildings (both set in the config).
+Swim too far out and you're brought back to the beach.
+
+### Changing things
+
+- **Start decorating** (Home menu, or `.house decorate`). Now click any piece to open its
+  menu: turn it, face it toward you, move it to where you stand, nudge it, raise or lower
+  it, or pick it up.
+- Tables, crates and shelves grow a blue rune while decorating. Click the rune to put a
+  small piece (a lantern, a candle, a book) right on top.
+- **Done decorating** puts everything back to normal: chairs can be sat on, mailboxes and
+  crafting stations work.
+- **Undo** and **Redo** are at the top of the Home menu, with the change they'd undo
+  spelled out ("Undo: placed Westfall Chair"). Undo remembers your last 30 changes while
+  you're on the island.
+- Picked-up pieces go back to your bags. When your bags are full they wait in **House
+  Storage** (Home menu), and "Take everything" empties it.
+- Buildings ask first: pick up the building only, or the building and everything inside.
+- **Pack up everything** (while decorating) returns every piece at once, and can be undone
+  too.
+
+### The Collection
+
+House Key, Collection. It lists every piece by category with your progress, for example
+"Buildings (6/49)". An unlocked piece hands you a copy when clicked (free with FreeMode,
+a small gold cost otherwise). A locked piece tells you how to earn it, with your progress
+so far ("Reach level 20 (you're level 15)", "Exalted with Stormwind (you're Revered)").
+
+- Unlocks happen the moment you earn them, with a message.
+- Things you did before the module was installed count: they unlock at your next login.
+- Unlocks are shared by all your characters, except faction buildings, which need Exalted
+  with their faction on the character that places them.
+
+### Visitors
+
+House Key, Island settings:
+
+- **Privacy**: Private (only you and your guests), Friends & guild, or Public.
+- **Guest list**: invite by name, your target, or your whole party. Guests can always
+  visit, whatever the privacy setting. They're told when you invite them.
+- **Greeting**: a message every visitor sees when they arrive.
+
+Visit someone with House Key, Visit an island. It lists the islands of your party, guild
+and friends, the ones you're invited to, and public ones. Only islands you're allowed into
+are shown, so every entry works with one click. Visitors can use chairs and stations but
+can't change anything. The owner is told when someone arrives.
+
+### Commands
+
+Everything is also in the menus; these are shortcuts. `.krook` works the same as `.house`.
+
+| Command | What it does |
+| --- | --- |
+| `.house` | Opens the Home menu |
+| `.house home`, `leave`, `unstuck`, `key` | Go home, leave the island, back to the landing spot, a new House Key |
+| `.house decorate [on\|off]` | Start or stop decorating |
+| `.house undo`, `redo` | Undo or redo the last change |
+| `.house select [id]` | Select a piece by number, or the nearest one |
+| `.house list` | The pieces within 40 yards, with their numbers |
+| `.house rotate <degrees> [id]` | Turn a piece (positive is left) |
+| `.house face [id]`, `here [id]` | Face you, move to where you stand |
+| `.house nudge <forward\|back\|left\|right\|up\|down> [yards] [id]` | Nudge a piece, relative to where you're facing |
+| `.house up`, `down` | Raise or lower a tenth of a yard |
+| `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
+| `.house packup` | Pick up everything (undoable) |
+| `.house collection`, `storage`, `visit [name]` | Open those menus, or visit someone by name |
+| `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
+| `.house privacy <private\|friends\|public>` | Who can visit |
+| `.house greeting <text\|clear>` | The message visitors see |
+
+Without an id, commands act on the selected piece (the one you last clicked).
+
+GMs also have `.house unlock <item|name|all> [player]`, `.house relock ...`,
+`.house unlocks [player]` and `.house add` (Krook next to you for ten minutes).
+
+## Optional client addon
+
+`client-addon/PlayerHousing` is a window for players who'd rather click icons than use
+menus. It's optional: the House Key menus do everything without it.
+
+- Your furnishings and buildings as icons, with filters and search. Click one, then click
+  where it goes. Drag one to an action bar to keep it handy.
+- Go home or leave, Decorate, Undo and Redo (the tooltip says what they'd undo),
+  Collection, Storage, Visit and the full menu, one click each.
+- For the selected piece: turn left or right (or use the mouse wheel over the window:
+  Shift for small steps, Ctrl to raise or lower), face me, move here, nudge, and pick up.
+- Opens by itself when you arrive home (`/housing auto` turns that off). `/housing`
+  shows or hides it, and `/housing <command>` runs any `.house` command.
+- Key bindings for the window, undo, redo, decorate, turning and selecting the nearest
+  piece (Key Bindings, Player Housing).
+
+Install: copy the `PlayerHousing` folder into `World of Warcraft/Interface/AddOns/`. The
+window can't open or close in combat (a WoW rule for windows with item buttons).
+
+The addon talks to the server with the same `.house` commands and reads a state message
+the server whispers to the player (addon prefix `HOUSING`, fields in
+`PlayerHousingMgr::SendAddonState`). `client-addon/test/harness.lua` runs it outside the
+game against stubbed WoW functions: `lua5.1 client-addon/test/harness.lua
+client-addon/PlayerHousing/PlayerHousing.lua`.
 
 ## Install
 
-1. Put the module in your AzerothCore modules folder:
-   - `/data/azerothcore/modules/mod-playerhousing`
-2. Build with the built-in compiler workflow:
-   - `cd /data/azerothcore`
-   - `./acore.sh compiler build`
-3. Apply SQL:
-   - World: `sql/db_world/base/mod_playerhousing_world.sql`
-   - World hotfix for existing installs: `sql/db_world/base/mod_playerhousing_world_hotfix.sql`
-   - Characters: `sql/db_characters/base/mod_playerhousing_characters.sql`
-   - Characters hotfix for existing installs: `sql/db_characters/base/mod_playerhousing_characters_hotfix.sql`
-4. Copy config and adjust if needed:
-   - `conf/mod_playerhousing.conf.dist` -> your server config directory.
-5. Restart `worldserver`.
+1. Put the module in your AzerothCore `modules` folder and rebuild the server.
+2. Apply the SQL, in this order (all files can be re-applied safely):
+   - world: `sql/db_world/base/mod_playerhousing_world.sql`, then
+     `sql/db_world/base/mod_playerhousing_world_content.sql`
+   - characters: `sql/db_characters/base/mod_playerhousing_characters.sql`, then
+     `sql/db_characters/base/mod_playerhousing_characters_hotfix.sql`
 
-If you use `acore.sh` db assembly, `include.sh` + `conf/conf.sh.dist` already register the SQL directories.
+   The core's auto-updater only reads `data/sql`, so these are applied by hand (the test
+   server scripts do it for you).
+3. Copy `conf/mod_playerhousing.conf.dist` to your server's `modules` config folder as
+   `mod_playerhousing.conf`.
+4. The island: the default layout, `cleared`, is GM Island with its guild hall removed.
+   It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
+   the server data (collision and pathing without the hall, one script) and a client patch
+   every player installs once. To keep the hall instead, set
+   `PlayerHousing.Layout = "guildhouse"`; no patch is needed then.
+5. Restart the worldserver.
 
-## Economy and stages
+## Configuration
 
-`mod_playerhousing_stage` in world SQL ships with:
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `PlayerHousing.Enable` | 1 | The whole module |
+| `PlayerHousing.FreeMode` | 0 | Test servers: copies from the Collection are free and the House Key is instant |
+| `PlayerHousing.UnlockAll` | 0 | Test servers: the whole Collection is unlocked, plus "one of everything" |
+| `PlayerHousing.Layout` | cleared | `cleared` (no guild hall) or `guildhouse` |
+| `PlayerHousing.DefaultPrivacy` | private | Privacy of new islands: `private`, `friends` or `public` |
+| `PlayerHousing.GmBypassPrivate` | 0 | GMs in GM mode can visit any island |
+| `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |
+| `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
+| `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
+| `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
+| `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
 
-- Stage 0: free starter
-- Stage 1: 50g
-- Stage 2: 150g
-- Stage 3: 450g
-- Stage 4: 1350g
-- Stage 5: 4050g
-- Stage 6: 12150g
+Every setting can also come from an environment variable, for example
+`AC_PLAYER_HOUSING_FREE_MODE=1` (the core's usual `AC_` naming).
 
-Each paid upgrade is exactly x3 the previous one.
-Placement/bounds radius starts at 50 yards and expands by stage.
+## Content
 
-Furniture purchase economy (v1) is standard gold-buy vendor pricing on item templates.
+The pieces, their models and what unlocks them are written as a Python list in
+`tools/content/pieces.py`. `tools/content/build_content.py` turns it into
+`sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces and rules)
+and `docs/UNLOCKS.md`. It reads the world database (to copy models and behavior from
+existing objects) and the client data's `dbc` folder (for model sizes and names):
 
-## Where houses are
+```
+python3 tools/content/build_content.py --dbc /path/to/data/dbc \
+    --mysql "mysql -uacore -pacore acore_world"
+```
 
-All houses are the guild house on GM Island (Kalimdor, map 1, entry room at
-16224.5, 16283.5, 13.18), set in `mod_playerhousing_style`.
+Rules in `mod_playerhousing_piece_rule`: level, achievement, reputation rank, quest, kill,
+exploring an area, skill level, or never (GM and UnlockAll only). Rules in the same group
+must all be met; any complete group unlocks the piece. Achievements come first wherever one
+fits, since players already see and track those.
 
-- Every owner gets a private copy through phasing. A house phase has bit 31 set and
-  bit 0 clear, and the module turns off the core's "any shared bit" phase matching
-  for it (`GLOBALHOOK_ON_BEFORE_WORLDOBJECT_SET_PHASEMASK`), so each phase value is its
-  own ID. That gives one phase per owner instead of WotLK's usual 32.
-- The owner and their guests share the owner's phase. Pets and summons follow the player.
-- The house (steward, style pieces, furniture) is spawned when the first person arrives
-  and removed when the last one leaves.
-- Nobody reaches the island without going through a steward; anyone else found there
-  (other than GM accounts) is sent back to where they came from.
-- Logging out inside a house brings you back to where you entered from on the next
-  login. A dropped connection that reconnects puts you back in the house.
-- Housing furniture has server-side collision turned off: collision still compares
-  phases bit by bit, so houses would otherwise block each other's placement checks.
-- `tools/gm-island-cleared` can remove the guild house instead (client patch, server
-  collision/pathing data and `sql/layouts/gm_island_cleared.sql`), leaving a campsite on
-  open ground. The guild house is the default.
-- Older installs used Pit of Saron instances. The world hotfix SQL moves styles to
-  GM Island; furniture placed on the old maps stays in the database but is not shown.
+## How it works
 
-## Steward appearance
+- **One island per character.** GM Island (Kalimdor) is shared by everyone, and phasing
+  gives each owner a private copy. A house phase has bit 31 set and bit 0 clear, and the
+  module turns off the core's "any shared bit" phase matching for it
+  (`GLOBALHOOK_ON_BEFORE_WORLDOBJECT_SET_PHASEMASK`), so each phase value is its own ID.
+  The owner's guests share the owner's phase.
+- An island's pieces are spawned when the first person arrives and removed when the last
+  one leaves. Anyone found on the island without going through the House Key (other than
+  GMs) is sent back where they came from, and logging out on an island brings you back
+  where you came from.
+- **Pieces.** Each piece is an item (901100 to 901199 and 902001 to 902999; the House Key
+  is 902000) and a gameobject: `910000 + (item - 900000)` normally, and
+  `920000 + (item - 900000)` while decorating, a clickable copy of chairs and stations that
+  opens the piece menu instead of working. Buildings stay visible from farther away.
+  Housing objects have server-side collision turned off.
+- **Placement** uses the Flare targeting circle: the item's spell is caught before it casts,
+  so there's no cast bar, sound or cooldown. The core has already checked range and line of
+  sight to the clicked spot by then.
+- **Undo** keeps each change as the before and after of the pieces it touched, so undo and
+  redo replay them exactly, handing items back or taking them as needed. The list lives in
+  memory and is cleared when the owner leaves the island.
 
-- `PlayerHousing.StewardDisplayId` defaults to `25384` (Wolvar orphan).
-- Change this in config if you want a different display.
+### Upgrading from the house levels version
 
-## Placement safety
+Older versions had house styles, stages, a vendor catalog and furniture unlocks. Applying
+the world SQL removes those tables. At the next startup the module converts what players
+had: placed furniture gets its item (so it picks up into your bags), catalog unlocks become
+Collection unlocks plus one copy in House Storage, and with the cleared island, anything
+that stood inside the old guild hall goes to its owner's House Storage with a message on
+their next visit. Gold spent on stages isn't refunded.
 
-Placement validates:
+## Testing
 
-- House boundary radius by stage
-- Ground height correction (Z snap)
-- LOS / collision checks vs terrain and map geometry
-- Slope threshold checks
-- Overlap distance checks against existing furniture
-- Spawn orientation defaults to **face the player** (rotation editing is follow-up)
-
-Relevant config keys:
-
-- `PlayerHousing.Placement.MaxSlopeDegrees`
-- `PlayerHousing.Placement.SlopeSampleDistance`
-- `PlayerHousing.Placement.DefaultMinDistance`
-- `PlayerHousing.Placement.DefaultCollisionRadius`
+[tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
+development container and an end-to-end test that plays the whole thing through with
+headless clients (76 checks: placing, undo, decorating, storage, the Collection,
+buildings, visitors, addon messages, relogging).
 
 ## Rollback
 
-- World rollback:
-  - `sql/db_world/base/mod_playerhousing_world_rollback.sql`
-- Characters rollback:
-  - `sql/db_characters/base/mod_playerhousing_characters_rollback.sql`
+`sql/db_world/base/mod_playerhousing_world_rollback.sql` and
+`sql/db_characters/base/mod_playerhousing_characters_rollback.sql` remove everything the
+module added.
