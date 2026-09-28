@@ -89,7 +89,7 @@ belong to the character that earned it; everything else is shared across the acc
 | Wintergrasp Tower (Horde) | building | Reach Exalted with Warsong Offensive | model 7878 | per character |
 | Blizzard's Test House | building | Blizzard's own unfinished player housing prototype, still in the game files. GMs only | model 467 |  |
 
-## Exploration (25)
+## Exploration (65)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -118,8 +118,48 @@ belong to the character that earned it; everything else is shared across the acc
 | Scourge Weapon Rack | furnishing | Explore Icecrown | object 190576 |  |
 | Hellfire Floor Brazier | furnishing | Explore Hellfire Peninsula | model 7092 |  |
 | Bogbean Plant | furnishing | Explore Zangarmarsh | object 20939 |  |
+| Alterac Apple Barrel | furnishing | Explore Alterac Mountains | object 190559 |  |
+| Arathi Rune Stone | furnishing | Explore Arathi Highlands | object 2711 |  |
+| Excavation Supply Crate | furnishing | Explore Badlands | object 2867 | things go on top |
+| Dark Portal Monolith | furnishing | Explore Blasted Lands | object 153205 |  |
+| Ambermill Magic Brazier | furnishing | Explore Silverpine Forest | object 1770 |  |
+| Plaguelands Scourge Banner | furnishing | Explore Western Plaguelands | object 176087 |  |
+| Southshore Ale Keg | furnishing | Explore Hillsbrad Foothills | object 1727 |  |
+| Wildhammer Gryphon Roost | furnishing | Explore The Hinterlands | object 182254 |  |
+| Dark Iron Chair | furnishing | Explore Searing Gorge | object 136929 | can be sat on |
+| Blackrock Tool Rack | furnishing | Explore Burning Steppes | model 1487 |  |
+| Karazhan Supply Crate | furnishing | Explore Deadwind Pass | model 7489 | things go on top |
+| Lakeshire Bench | furnishing | Explore Redridge Mountains | object 92703 | can be sat on |
+| Swamp of Sorrows Reed Plant | furnishing | Explore Swamp of Sorrows | model 7444 |  |
+| Dragonmaw Dragon Egg | furnishing | Explore Wetlands | model 277 |  |
+| Tranquillien Brazier | furnishing | Explore Ghostlands | object 184229 |  |
+| Shattered Sun Banner | furnishing | Explore Isle of Quel'Danas | object 187357 |  |
+| Darkshore Ancient Flame | furnishing | Explore Darkshore | object 16393 |  |
+| Highperch Wyvern Egg | furnishing | Explore Thousand Needles | object 183147 |  |
+| Venture Co. Shredder | furnishing | Explore Stonetalon Mountains | object 188697 |  |
+| Kodo Graveyard Bones | furnishing | Explore Desolace | object 176751 |  |
+| Feralas Hippogryph Egg | furnishing | Explore Feralas | object 186814 |  |
+| Blackhoof Weapon Rack | furnishing | Explore Dustwallow Marsh | object 186301 |  |
+| Steamwheedle Cargo | furnishing | Explore Tanaris Desert | object 142181 | things go on top |
+| Azshara Arcane Crystal | furnishing | Explore Azshara | object 150140 |  |
+| Cleansed Songflower | furnishing | Explore Felwood | object 164882 |  |
+| Un'Goro Power Crystal | furnishing | Explore Un'Goro Crater | object 164838 |  |
+| Moonglade Dream Catcher | furnishing | Explore Moonglade | object 185504 |  |
+| Silithus Wind Stone | furnishing | Explore Silithus | object 180456 |  |
+| Winterfall Furbolg Totem | furnishing | Explore Winterspring | model 6704 |  |
+| Azure Watch Cookpot | furnishing | Explore Azuremyst Isle | object 181790 |  |
+| Bloodmyst Impact Crystal | furnishing | Explore Bloodmyst Isle | object 181779 |  |
+| Netherstorm Machine Parts | furnishing | Explore Netherstorm | object 183771 |  |
+| Shadowmoon Demonic Crystal | furnishing | Explore Shadowmoon Valley | object 184731 |  |
+| Apexis Crystal | furnishing | Explore Blade's Edge Mountains | object 185933 |  |
+| Arakkoa Alchemy Set | furnishing | Explore Terokkar Forest | object 190689 |  |
+| Vrykul Crest Shield | furnishing | Explore Howling Fjord | object 187386 |  |
+| Drakil'jin Pedestal | furnishing | Explore Grizzly Hills | object 190522 |  |
+| Zul'Drak Skull Pile | furnishing | Explore Zul'Drak | object 190594 |  |
+| Sholazar Crystal Formation | furnishing | Explore Sholazar Basin | object 190502 |  |
+| Titan Control Orb | furnishing | Explore Storm Peaks | object 192262 |  |
 
-## Dungeons (17)
+## Dungeons (57)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -140,8 +180,48 @@ belong to the character that earned it; everything else is shared across the acc
 | Fancy Bed | furnishing | Complete Classic Dungeonmaster | object 13948 | works like the real thing |
 | Arcane Brazier | furnishing | Complete Outland Dungeonmaster | object 183098 |  |
 | Tome of the Light | furnishing | Complete Northrend Dungeonmaster | object 191140 | fits on tables |
+| Searing Blade Brazier | furnishing | Complete Ragefire Chasm | object 175287 |  |
+| Wailing Caverns Stone Bed | furnishing | Complete Wailing Caverns | object 185475 |  |
+| Blackfathom Naga Statue | furnishing | Complete Blackfathom Deeps | object 187342 |  |
+| Stockade Ball and Chain | furnishing | Complete Stormwind Stockade | object 175544 | fits on tables |
+| Razorfen Cauldron | furnishing | Complete Razorfen Kraul | object 74075 |  |
+| Razorfen Downs Pyre | furnishing | Complete Razorfen Downs | object 40199 |  |
+| Uldaman Titan Urn | furnishing | Complete Uldaman | object 125477 |  |
+| Gong of Zul'Farrak | furnishing | Complete Zul'Farrak | object 141832 |  |
+| Maraudon Crystal | furnishing | Complete Maraudon | object 176581 |  |
+| Atal'ai Eternal Flame | furnishing | Complete Sunken Temple | object 148418 |  |
+| Blackrock Meat Rack | furnishing | Complete Lower Blackrock Spire | object 176461 |  |
+| Rookery Egg | furnishing | Complete Upper Blackrock Spire | object 191840 |  |
+| Blood Furnace War Banner | furnishing | Complete The Blood Furnace | model 6832 |  |
+| Shattered Halls Fel Brazier | furnishing | Complete The Shattered Halls | object 184496 |  |
+| Slave Pens Cage | furnishing | Complete The Slave Pens | object 182094 |  |
+| Underbog Giant Mushroom | furnishing | Complete Underbog | model 6919 |  |
+| Coilfang Orb Lamp | furnishing | Complete The Steamvault | model 7243 |  |
+| Ethereal Crate | furnishing | Complete Mana-Tombs | object 183820 | things go on top |
+| Auchenai Offering Bowl | furnishing | Complete Auchenai Crypts | object 190507 |  |
+| Sethekk Crystal Ball | furnishing | Complete Sethekk Halls | object 185554 |  |
+| Shadow Council Banner | furnishing | Complete Shadow Labyrinth | object 185021 |  |
+| Tarren Mill Chair | furnishing | Complete Old Hillsbrad Foothills in the Caverns of Time | object 112318 | can be sat on |
+| Caverns of Time Hourglass | furnishing | Complete the Black Morass in the Caverns of Time | object 190686 |  |
+| Mechanar Mana Cells | furnishing | Complete The Mechanar | object 187057 |  |
+| Botanica Exotic Plant | furnishing | Complete The Botanica | model 6806 |  |
+| Arcatraz Containment Jar | furnishing | Complete The Arcatraz | object 182198 |  |
+| Orb of the Blue Flight | furnishing | Complete Magister's Terrace | object 188415 |  |
+| Vrykul Chair | furnishing | Complete Utgarde Keep | object 186695 | can be sat on |
+| Nexus Dragon Egg | furnishing | Complete The Nexus | object 188457 |  |
+| Nerubian Egg | furnishing | Complete Azjol-Nerub | object 193051 |  |
+| Drakkari Skull Pile | furnishing | Complete Drak'Tharon Keep | object 191347 |  |
+| Violet Hold Prison Cage | furnishing | Complete The Violet Hold | object 144066 |  |
+| Tribunal Chest | furnishing | Complete Halls of Stone | object 113757 | things go on top |
+| Stormforged Brazier | furnishing | Complete Halls of Lightning | object 192120 |  |
+| Cache of Eregos | furnishing | Complete The Oculus | object 180055 | things go on top |
+| Plagued Grain Crate | furnishing | Complete The Culling of Stratholme | object 190094 | things go on top |
+| Argent Lance Rack | furnishing | Complete the Trial of the Champion | object 196398 |  |
+| Soul Crucible Brazier | furnishing | Complete The Forge of Souls | object 201600 |  |
+| Saronite Bar | furnishing | Complete The Pit of Saron | object 201777 | fits on tables |
+| Captain's Chest | furnishing | Complete The Halls of Reflection | object 201710 | things go on top |
 
-## Raids (10)
+## Raids (24)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -155,8 +235,22 @@ belong to the character that earned it; everything else is shared across the acc
 | Thorim's Throne | furnishing | Complete The Siege of Ulduar | object 191647 | can be sat on |
 | Frostmourne | furnishing | Complete The Frozen Throne in Icecrown Citadel | object 202302 |  |
 | Frostmourne Altar | furnishing | Defeat the Lich King | object 202236 |  |
+| Karazhan Opera Moon | furnishing | Complete Karazhan | object 183494 |  |
+| High King's Firepit | furnishing | Complete Gruul's Lair | object 182573 |  |
+| Manticron Cube | furnishing | Complete Magtheridon's Lair | object 181713 |  |
+| Serpentshrine Naga Ark | furnishing | Complete Serpentshrine Cavern | object 182082 |  |
+| Standard of Kael'thas | furnishing | Complete Tempest Keep | object 186983 |  |
+| Altar of Hyjal | furnishing | Complete The Battle for Mount Hyjal | object 211019 |  |
+| Naj'entus Spine | furnishing | Complete The Black Temple | object 185584 |  |
+| Sunwell Replica | furnishing | Complete Sunwell Plateau | object 187345 |  |
+| Amani Eagle Throne | furnishing | Complete Zul'Aman | object 187118 | can be sat on |
+| Obsidian Dragon Egg | furnishing | Defeat Sartharion in the Obsidian Sanctum | object 177807 |  |
+| Spellweaver's Scrying Orb | furnishing | Defeat Malygos in the Eye of Eternity | model 7150 |  |
+| Stone Watcher's Cache | furnishing | Defeat Archavon the Stone Watcher in the Vault of Archavon | object 194307 | things go on top |
+| Argent Crusade Tribute Chest | furnishing | Complete the Call of the Crusade in the Trial of the Crusader | object 195665 | things go on top |
+| Ruby Sanctum Dragon Egg | furnishing | Defeat Halion in the Ruby Sanctum | object 203003 |  |
 
-## Reputation (11)
+## Reputation (63)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -171,6 +265,58 @@ belong to the character that earned it; everything else is shared across the acc
 | Dragon Orb | furnishing | Reach Honored with The Wyrmrest Accord | model 7800 |  |
 | Potted Plant | furnishing | Reach Honored with Cenarion Expedition | object 181087 |  |
 | Tabard Banners | furnishing | Earn the achievement Twenty-Five Tabards | object 180773 |  |
+| Stormwind Griffon Banner | furnishing | Reach Revered with Stormwind | model 624 |  |
+| Stormwind Champion's Banner | furnishing | Reach Exalted with Stormwind | object 194274 |  |
+| Ornate Ironforge Chair | furnishing | Reach Honored with Ironforge | object 183753 | can be sat on |
+| Ornate Dwarven Wardrobe | furnishing | Reach Revered with Ironforge | model 1227 |  |
+| Ironforge Champion's Banner | furnishing | Reach Exalted with Ironforge | object 194277 |  |
+| Night Elf Candle | furnishing | Reach Honored with Darnassus | object 180213 | fits on tables |
+| Night Elf Dresser | furnishing | Reach Revered with Darnassus | object 126158 | things go on top |
+| Darnassus Champion's Banner | furnishing | Reach Exalted with Darnassus | object 194282 |  |
+| Gnome Chair | furnishing | Reach Honored with Gnomeregan Exiles | object 184733 | can be sat on |
+| Deeprun Tram Bench | furnishing | Reach Revered with Gnomeregan Exiles | object 176004 | can be sat on |
+| Gnomeregan Champion's Banner | furnishing | Reach Exalted with Gnomeregan Exiles | object 194279 |  |
+| Draenei Bench | furnishing | Reach Honored with Exodar | object 184038 | can be sat on |
+| Exodar Brazier | furnishing | Reach Revered with Exodar | object 185543 |  |
+| Exodar Champion's Banner | furnishing | Reach Exalted with Exodar | object 194280 |  |
+| Horde Supply Crate | furnishing | Reach Revered with Orgrimmar | object 178442 | things go on top |
+| Orgrimmar Champion's Banner | furnishing | Reach Exalted with Orgrimmar | object 194278 |  |
+| Tauren Log Bench | furnishing | Reach Revered with Thunder Bluff | object 126050 | can be sat on |
+| Thunder Bluff Champion's Banner | furnishing | Reach Exalted with Thunder Bluff | object 194283 |  |
+| Lordaeron Brazier | furnishing | Reach Honored with Undercity | model 754 |  |
+| Forsaken Chemistry Set | furnishing | Reach Revered with Undercity | object 193407 |  |
+| Undercity Champion's Banner | furnishing | Reach Exalted with Undercity | object 194276 |  |
+| Darkspear Drum | furnishing | Reach Honored with Darkspear Trolls | object 185304 |  |
+| Darkspear Gong | furnishing | Reach Revered with Darkspear Trolls | object 180386 |  |
+| Darkspear Champion's Banner | furnishing | Reach Exalted with Darkspear Trolls | object 194281 |  |
+| Silvermoon Chair | furnishing | Reach Honored with Silvermoon City | object 184671 | can be sat on |
+| Silvermoon Lantern | furnishing | Reach Revered with Silvermoon City | model 7084 |  |
+| Silvermoon Champion's Banner | furnishing | Reach Exalted with Silvermoon City | object 194275 |  |
+| Argent Tome | furnishing | Reach Revered with Argent Crusade | object 191312 | fits on tables |
+| Argent Crusade Banner | furnishing | Reach Exalted with Argent Crusade | object 191614 |  |
+| Dalaran Bench | furnishing | Reach Revered with Kirin Tor | object 191476 | can be sat on |
+| Globe of Scrying | furnishing | Reach Exalted with Kirin Tor | object 178439 |  |
+| Eye of Acherus | furnishing | Reach Revered with Knights of the Ebon Blade | object 191612 |  |
+| Ebon Blade Blood Orb | furnishing | Reach Exalted with Knights of the Ebon Blade | object 192933 |  |
+| Chromatic Dragon Egg | furnishing | Reach Revered with The Wyrmrest Accord | model 7188 |  |
+| Wyrmrest Dragon Egg | furnishing | Reach Exalted with The Wyrmrest Accord | object 188133 |  |
+| Glowing Zangar Mushroom | furnishing | Reach Revered with Cenarion Expedition | model 6977 |  |
+| Cenarion Blue Lantern | furnishing | Reach Exalted with Cenarion Expedition | model 6666 |  |
+| Shattrath Standing Lamp | furnishing | Reach Honored with The Sha'tar | object 185967 |  |
+| Sha'tari Banner | furnishing | Reach Revered with The Sha'tar | model 7603 |  |
+| Naaru Crystal | furnishing | Reach Exalted with The Sha'tar | object 182036 |  |
+| Aldor Banner | furnishing | Reach Honored with The Aldor | object 181917 |  |
+| Aldor Brazier | furnishing | Reach Revered with The Aldor | object 185979 |  |
+| Aldor Fountain | furnishing | Reach Exalted with The Aldor | object 182563 |  |
+| Scryer Banner | furnishing | Reach Honored with The Scryers | object 185106 |  |
+| Scryer Chair | furnishing | Reach Revered with The Scryers | object 182598 | can be sat on |
+| Scryer Power Orb | furnishing | Reach Exalted with The Scryers | object 190675 |  |
+| Brunnhildar Brazier | furnishing | Reach Honored with The Sons of Hodir | object 187105 |  |
+| Brunnhildar Shield | furnishing | Reach Revered with The Sons of Hodir | model 7441 |  |
+| Brunnhildar Rug | furnishing | Reach Exalted with The Sons of Hodir | object 186933 |  |
+| Pirate Flag | furnishing | Reach Honored with Booty Bay | object 187083 |  |
+| Booty Bay Fish Rack | furnishing | Reach Revered with Booty Bay | object 181252 |  |
+| Booty Bay Cannon | furnishing | Reach Exalted with Booty Bay | object 113531 |  |
 
 ## Professions (8)
 
