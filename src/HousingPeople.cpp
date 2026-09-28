@@ -156,7 +156,7 @@ bool PlayerHousingMgr::InviteGuest(Player* player, ObjectGuid::LowType guestGuid
     CharacterDatabase.DirectExecute("INSERT IGNORE INTO mod_playerhousing_acl (owner_guid, guest_guid) VALUES ({}, {})", owner, guestGuid);
 
     std::string guestName = NameOf(guestGuid);
-    if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid); guest && MayNotify(player, guestGuid))
+    if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid); guest && MayNotify(player, guestGuid, NOTICE_INVITE))
         Say(guest, Acore::StringFormat("{} invited you to their island. House Key, Visit an island, Islands you're invited to.", player->GetName()));
 
     reason = Acore::StringFormat("Invited {}. They can visit any time.", guestName);
@@ -261,7 +261,7 @@ bool PlayerHousingMgr::SetRoommate(Player* owner, ObjectGuid::LowType guestGuid,
     }
 
     std::string name = NameOf(guestGuid);
-    if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid); guest && MayNotify(owner, guestGuid))
+    if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid); guest && MayNotify(owner, guestGuid, NOTICE_ROOMMATE))
         Say(guest, roommate ? Acore::StringFormat("{} made you a roommate: you can decorate their island (House Key, Start decorating there).", owner->GetName())
                             : Acore::StringFormat("You're no longer a roommate on {}'s island (still a guest).", owner->GetName()));
     reason = roommate ? Acore::StringFormat("{} is now a roommate: they can place their own pieces and change yours. Their pieces stay theirs.", name)
@@ -456,7 +456,7 @@ bool PlayerHousingMgr::ToggleLike(Player* player, std::string& reason)
 
     CharacterDatabase.DirectExecute("INSERT IGNORE INTO mod_playerhousing_like (owner_guid, liker_account, liker_guid) VALUES ({}, {}, {})",
         owner, account, player->GetGUID().GetCounter());
-    if (Player* ownerPlayer = ObjectAccessor::FindPlayerByLowGUID(owner); ownerPlayer && MayNotify(player, owner))
+    if (Player* ownerPlayer = ObjectAccessor::FindPlayerByLowGUID(owner); ownerPlayer && MayNotify(player, owner, NOTICE_LIKE))
         Say(ownerPlayer, Acore::StringFormat("{} likes your island.", player->GetName()));
     reason = Acore::StringFormat("You like {}'s island ({} {}).", ownerName, CountLikes(owner), CountLikes(owner) == 1 ? "like" : "likes");
     return true;

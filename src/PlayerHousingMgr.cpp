@@ -504,12 +504,13 @@ bool PlayerHousingMgr::OnCooldown(Player* player, uint8 kind, uint32 ms, std::st
     return false;
 }
 
-bool PlayerHousingMgr::MayNotify(Player const* sender, ObjectGuid::LowType target)
+bool PlayerHousingMgr::MayNotify(Player const* sender, ObjectGuid::LowType target, uint8 kind)
 {
-    // One message a minute from one player to another; the action itself still happens.
+    // One message of a kind a minute from one player to another; the action itself still
+    // happens.
     uint64 now = GameTime::GetGameTimeMS().count();
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    uint64& last = _notified[sender->GetGUID().GetCounter()][target];
+    uint64& last = _notified[sender->GetGUID().GetCounter()][uint64(target) << 8 | kind];
     if (last && now - last < MINUTE * IN_MILLISECONDS)
         return false;
     last = now;

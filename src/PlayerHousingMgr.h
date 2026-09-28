@@ -522,8 +522,14 @@ public:
     bool OnCooldown(Player* player, uint8 kind, uint32 ms, std::string& reason);
     // .house commands: a burst is fine, a flood isn't.
     bool CommandFlood(Player* player);
-    // Messages to another player (invites, likes, roommate news): not over and over.
-    bool MayNotify(Player const* sender, ObjectGuid::LowType target);
+    // Messages to another player (invites, likes, roommate news): each kind not over and over.
+    enum Notice : uint8
+    {
+        NOTICE_INVITE = 0,
+        NOTICE_ROOMMATE,
+        NOTICE_LIKE,
+    };
+    bool MayNotify(Player const* sender, ObjectGuid::LowType target, uint8 kind);
     static char const* CategoryName(uint8 category);
 
 private:
@@ -734,7 +740,7 @@ private:
         uint32 count{0};
     };
     std::unordered_map<ObjectGuid, CommandWindow> _commandWindows;
-    std::unordered_map<ObjectGuid::LowType, std::unordered_map<ObjectGuid::LowType, uint64>> _notified;  // sender -> target -> sent at (ms)
+    std::unordered_map<ObjectGuid::LowType, std::unordered_map<uint64, uint64>> _notified;  // sender -> target << 8 | kind -> sent at (ms)
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
     // Items used to place pieces; removed before the player's next packet or update, because
     // the cast that placed them still holds the item.

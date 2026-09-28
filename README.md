@@ -429,8 +429,8 @@ Limits, per player (GMs are exempt from the first):
   everything, and undoing or redoing a step of more than 20 pieces.
 - 1 second between weather, time of day and music changes, which everyone on the island
   receives.
-- A like every 10 seconds, and one message a minute from one player to the same other
-  player (invites, roommate news, likes). Five reports an hour per account.
+- A like every 10 seconds, and one message of each kind a minute from one player to the
+  same other player (an invite, roommate news, a like). Five reports an hour per account.
 
 Player text (greetings, layout names, reports) is escaped for SQL, stripped of control
 characters and link codes, and cut to length without splitting a character. `nan` and `inf`
