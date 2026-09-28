@@ -304,8 +304,8 @@ void PlayerHousingMgr::SavePlacement(ObjectGuid::LowType ownerGuid, Placement co
     // The gear on a stand is saved as it moves (see HousingStands.cpp), never from here.
     CharacterDatabase.DirectExecute(
         "REPLACE INTO mod_playerhousing_placement "
-        "(owner_guid, placement_id, catalog_id, source_item_entry, map_id, spawn_type, spawn_entry, display_id, scale, collision_radius, min_distance, pos_x, pos_y, pos_z, orientation, look) "
-        "VALUES ({}, {}, 0, {}, {}, 0, 0, 0, {}, 1, 0, {}, {}, {}, {}, {})",
+        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
         ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o, placement.look);
 }
 

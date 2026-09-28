@@ -39,22 +39,15 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_unlock` (
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `owner_guid` int unsigned NOT NULL,
   `placement_id` int unsigned NOT NULL,
-  `catalog_id` int unsigned NOT NULL DEFAULT 0,
+  `catalog_id` int unsigned NOT NULL DEFAULT 0,  -- old catalog entry, for converting old placements
   `source_item_entry` int unsigned NOT NULL DEFAULT 0,
   `map_id` int unsigned NOT NULL DEFAULT 0,
-  `spawn_type` tinyint unsigned NOT NULL DEFAULT 0,
-  `spawn_entry` int unsigned NOT NULL DEFAULT 0,
-  `display_id` int unsigned NOT NULL DEFAULT 0,
   `scale` float NOT NULL DEFAULT 1,
-  `collision_radius` float NOT NULL DEFAULT 1,
-  `min_distance` float NOT NULL DEFAULT 1.5,
   `pos_x` float NOT NULL,
   `pos_y` float NOT NULL,
   `pos_z` float NOT NULL,
   `orientation` float NOT NULL,
   `look` int unsigned NOT NULL DEFAULT 0,
-  `placed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`,`placement_id`),
   KEY `idx_mod_playerhousing_placement_catalog` (`catalog_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
