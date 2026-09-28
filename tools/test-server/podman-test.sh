@@ -44,8 +44,8 @@ IN=/opt/acore/modules/mod-playerhousing
     -e ACORE_ACCOUNTS="houseowner:houseowner houseguest:houseguest admin:admin:3" \
     -e HOUSING_LAYOUT="${HOUSING_LAYOUT:-cleared}" \
     -e AC_PLAYER_HOUSING_FREE_MODE=1 \
-    -v "$volume" --entrypoint "$IN/tools/test-server/container-entry.sh" \
-    "$IMAGE" >/dev/null
+    -v "$volume" --entrypoint bash \
+    "$IMAGE" "$IN/tools/test-server/container-entry.sh" >/dev/null
 if [ "${KEEP:-0}" != 1 ]; then
     trap '"$ENGINE" rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
 fi

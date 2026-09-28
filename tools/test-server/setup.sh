@@ -101,9 +101,9 @@ if pgrep -x worldserver >/dev/null; then
     echo "note: the worldserver is running; restart it afterwards so it reads the island data" >&2
 fi
 if [ "$HOUSING_LAYOUT" = cleared ]; then
-    SERVER_DIR="$SERVER_DIR" "$MODULE_DIR/tools/gm-island-cleared/server_data.sh"
+    SERVER_DIR="$SERVER_DIR" bash "$MODULE_DIR/tools/gm-island-cleared/server_data.sh"
 else
-    SERVER_DIR="$SERVER_DIR" "$MODULE_DIR/tools/gm-island-cleared/server_data.sh" --restore 2>/dev/null \
+    SERVER_DIR="$SERVER_DIR" bash "$MODULE_DIR/tools/gm-island-cleared/server_data.sh" --restore 2>/dev/null \
         || echo "guild hall in place"
 fi
 

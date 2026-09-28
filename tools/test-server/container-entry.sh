@@ -14,7 +14,7 @@ LAYOUT="${HOUSING_LAYOUT:-cleared}"
 export AC_PLAYER_HOUSING_LAYOUT="$LAYOUT"
 
 if [ "$LAYOUT" = cleared ]; then
-    "$MODULE/tools/gm-island-cleared/server_data.sh"
+    bash "$MODULE/tools/gm-island-cleared/server_data.sh"
 fi
 
 exec acore-entrypoint "$@"

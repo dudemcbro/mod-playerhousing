@@ -69,7 +69,7 @@ case "${1:-}" in
             -e HOUSING_LAYOUT="${HOUSING_LAYOUT:-cleared}" \
             -e AC_PLAYER_HOUSING_FREE_MODE="${AC_PLAYER_HOUSING_FREE_MODE:-1}" \
             -e AC_PLAYER_HOUSING_UNLOCK_ALL="${AC_PLAYER_HOUSING_UNLOCK_ALL:-0}" \
-            -v "$volume" --entrypoint "$IN/tools/test-server/container-entry.sh" "$IMAGE" >/dev/null
+            -v "$volume" --entrypoint bash "$IMAGE" "$IN/tools/test-server/container-entry.sh" >/dev/null
         echo "$NAME: building the module and starting the servers..."
         wait_ready
         ;;

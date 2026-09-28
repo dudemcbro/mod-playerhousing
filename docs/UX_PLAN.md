@@ -326,8 +326,8 @@ to match, or the server and the players' games disagree about where walls are:
 | Part | What changes | Status |
 | --- | --- | --- |
 | Players' game client | A patch file (`patch-H.MPQ`) moves the hall out of sight. Every player puts it in their WoW `Data` folder once. | Built by `make_client_patch.sh` from a 3.3.5a client. Checked against a test file only; **never yet tried with a real client**, so that's the first to-do. |
-| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 53/53. |
-| Database | The arrival spot moves to the old hall's plateau. | `sql/layouts/gm_island_cleared.sql`; tested. |
+| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 76/76. |
+| Database | The arrival spot moves to the old hall's plateau. | The `cleared` row of `mod_playerhousing_layout`, now the default (`PlayerHousing.Layout`); tested. |
 
 A player without the patch would still see the hall and bump into walls that aren't
 there for the server, so the patch goes with the server's other connection instructions
@@ -508,7 +508,10 @@ With them on:
 - the whole Collection is unlocked (`UnlockAll`), and the Collection gets a "Give me one
   of everything" entry
 
-The test server config turns both on. Live servers leave them off.
+The test server scripts turn FreeMode on. UnlockAll stays off there so the end-to-end
+test can check the unlocks themselves; to try every piece, start the development
+container with `AC_PLAYER_HOUSING_UNLOCK_ALL=1`, set it in the config, or use the GM
+command `.house unlock all <character>`. Live servers leave both off.
 
 ## 9. Keeping existing houses working
 
@@ -531,15 +534,21 @@ The test server config turns both on. Live servers leave them off.
 Tick items off here as they land. Each phase ships on its own, keeps the end-to-end test
 green, and adds to it.
 
+**Where it stands:** all six phases are built and pass the end-to-end test (76 checks, on
+the cleared island, in the development container). What hasn't met a real 3.3.5a client
+yet: the cleared island patch, how pieces look (on tabletops, building models and their
+walls), the targeting circle, and the client addon's window. Those need your client, so
+they're the next session together (see "Try it in game" below).
+
 - [x] UX plan (this document)
 - [ ] Cleared island: try the client patch with a real 3.3.5a client (needs your client)
 - [ ] Content list: which piece and building comes from which activity (Phase 3 needs it)
-- [ ] Phase 1: the must-haves
-- [ ] Phase 2: click to edit
-- [ ] Phase 3: progression unlocks
-- [ ] Phase 4: people
-- [ ] Phase 5: buildings
-- [ ] Phase 6: polish and optional extras
+- [x] Phase 1: the must-haves
+- [x] Phase 2: click to edit
+- [x] Phase 3: progression unlocks
+- [x] Phase 4: people
+- [x] Phase 5: buildings
+- [x] Phase 6: polish and optional extras
 
 ### Cleared island: try the client patch
 
@@ -550,8 +559,21 @@ The only part of the cleared island that has never met a real WoW client. Needs 
 - [ ] run a server with the cleared layout and log in: the hall is gone, nothing
   invisible blocks you where it stood, and the island's own trees and rocks are still
   there
-- [ ] if anything is off, fix the patch tools before Phase 1 makes the cleared island the
-  default
+- [ ] if anything is off, fix the patch tools (the cleared island is already the default)
+
+### Try it in game
+
+With your client, once the patch works:
+
+- [ ] place a few pieces from the bags; the targeting circle feels right, pieces land
+  where clicked and face you
+- [ ] a lantern on a table (the blue rune while decorating) sits on the tabletop
+- [ ] buildings: the shelters and a faction building look right, can be walked into, and
+  are seen from a distance
+- [ ] sit on a chair, use a placed mailbox and an anvil
+- [ ] the client addon (`client-addon/PlayerHousing`): the window, icons, mouse wheel
+  turning, key bindings
+- [ ] look at the doubtful models listed in the content list
 
 ### Content list
 
@@ -576,22 +598,23 @@ Planning, not code. Can be done before or alongside Phase 1. The result is
 
 ### Phase 1: the must-haves
 
-- [ ] `PlayerHousing.FreeMode`
-- [ ] the cleared island is the default: server data, database layout and landing spot;
+- [x] `PlayerHousing.FreeMode`
+- [x] the cleared island is the default: server data, database layout and landing spot;
   the test server image can run it; install steps for the client patch; anything placed
   inside the old hall goes back to its owner's House Storage with a message
-- [ ] house levels removed; one furnishing limit for everyone; gold refunds
-- [ ] furnishings are items only; catalog converted; kit names and models fixed; for now
+- [x] house levels removed; one furnishing limit for everyone (gold refunds dropped: the
+  existing data is test data only)
+- [x] furnishings are items only; catalog converted; kit names and models fixed; for now
   every furnishing is available (progression arrives in Phase 3)
-- [ ] pick up returns the item; House Storage for full bags
-- [ ] undo and redo list; "Undo: ..." at the top of the in-house menu; `.house undo/redo`
-- [ ] House Key item and `.house`; menus that change with where you are; paging for all
+- [x] pick up returns the item; House Storage for full bags
+- [x] undo and redo list; "Undo: ..." at the top of the in-house menu; `.house undo/redo`
+- [x] House Key item and `.house`; menus that change with where you are; paging for all
   lists
-- [ ] steward spawns in capital cities; `.krook add` GM-only
-- [ ] placement anywhere on the island with only the three rules; the exact clicked spot
+- [x] steward spawns in capital cities; `.krook add` GM-only
+- [x] placement anywhere on the island with only the three rules; the exact clicked spot
   is kept; Unstuck; bringing swimmers back to the beach
-- [ ] silent targeting (no Flare side effects)
-- [ ] clearer messages with counts
+- [x] silent targeting (no Flare side effects)
+- [x] clearer messages with counts
 
 Test additions: place, then undo, and the item is back in bags; undo the undo (redo);
 pick up to full bags goes to storage and "Take all" works; with FreeMode on, every cost is
@@ -601,21 +624,21 @@ past the edge of the private copy is refused; the test runs on the cleared islan
 
 ### Phase 2: click to edit
 
-- [ ] clickable copies of every furniture object (same model); outside decorate mode,
+- [x] clickable copies of every furniture object (same model); outside decorate mode,
   working furniture keeps working (chairs sit, mailbox and crafting stations work)
-- [ ] Decorate mode, piece menu (rotate, face, nudge, raise and lower, move here)
+- [x] Decorate mode, piece menu (rotate, face, nudge, raise and lower, move here)
 
 Test additions: the test client clicks a piece and drives the piece menu; rotate, nudge
 and height are checked in the database; a guest clicking a chair sits and can't edit.
 
 ### Phase 3: progression unlocks
 
-- [ ] the unlock engine: sources (achievements first, then kills, reputation,
+- [x] the unlock engine: sources (achievements first, then kills, reputation,
   exploration, professions, quests, level, holidays), live unlock messages, veteran
   credit at login
-- [ ] the Collection menu, with categories, counts, hints and "get a copy"
-- [ ] `PlayerHousing.UnlockAll` and the GM unlock commands
-- [ ] the content list loaded into the database, including working furniture and boss
+- [x] the Collection menu, with categories, counts, hints and "get a copy"
+- [x] `PlayerHousing.UnlockAll` and the GM unlock commands
+- [x] the content list loaded into the database, including working furniture and boss
   figurines
 
 Test additions: with `UnlockAll = 0`, a new character has only the starter set; a GM
@@ -624,27 +647,27 @@ already had the achievement gets it at login; locked entries show their hint.
 
 ### Phase 4: people
 
-- [ ] guest list you can click, invite target or party
-- [ ] visit lists (party, guild, friends, invited, public)
-- [ ] privacy presets (Private, Friends & guild, Public)
-- [ ] arrival and invite messages
+- [x] guest list you can click, invite target or party
+- [x] visit lists (party, guild, friends, invited, public)
+- [x] privacy presets (Private, Friends & guild, Public)
+- [x] arrival and invite messages
 
 Test additions: the guest finds the owner's house in "Houses you're invited to" and gets
 in with one click; "Friends & guild" lets a guild member in and keeps a stranger out.
 
 ### Phase 5: buildings
 
-- [ ] buildings as items, placed with the targeting circle, with rotate, nudge and undo
+- [x] buildings as items, placed with the targeting circle, with rotate, nudge and undo
   like furniture, and their own limit
-- [ ] picking a building up asks first: the building only, or the building and the pieces
+- [x] picking a building up asks first: the building only, or the building and the pieces
   inside it
-- [ ] buildings stay visible from farther away (large-object view distance)
-- [ ] the starter wreckage (fallen cart, shredded tent) placed on the old hall's plateau
+- [x] buildings stay visible from farther away (large-object view distance)
+- [x] the starter wreckage (fallen cart, shredded tent) placed on the old hall's plateau
   on first visit
-- [ ] faction buildings need Exalted with their faction; the Collection shows your
+- [x] faction buildings need Exalted with their faction; the Collection shows your
   current standing toward each
-- [ ] house styles retired; their props become ordinary furniture
-- [ ] the buildings from the content list loaded into the database
+- [x] house styles retired (their props were not carried over: test data only)
+- [x] the buildings from the content list loaded into the database
 
 Test additions: place a building and pick it up: the prompt appears, "building only"
 returns it to the bags and leaves the pieces inside where they were; undo puts it back; a
@@ -654,12 +677,12 @@ standing, and reaching Exalted unlocks it with a message.
 
 ### Phase 6: polish and optional extras
 
-- [ ] one-time tips and the first-visit greeting
-- [ ] visitor greeting message, "Pack up everything" (undoable)
-- [ ] optional LOTRO-style hooks: glowing "snap here" spots on walls and tables that place
+- [x] one-time tips and the first-visit greeting
+- [x] visitor greeting message, "Pack up everything" (undoable)
+- [x] optional LOTRO-style hooks: glowing "snap here" spots on walls and tables that place
   a piece at the right height and angle in one click, for players who don't want to
   fine-tune
-- [ ] optional client addon: a real furnishing window with icons, drag to place and
+- [x] optional client addon: a real furnishing window with icons, drag to place and
   mouse-wheel rotation, talking to the same server commands. It stays optional; the
   native menus remain complete without it.
 
