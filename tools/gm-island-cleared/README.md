@@ -50,7 +50,8 @@ sudo apt install smpq
 tools/gm-island-cleared/make_client_patch.sh /path/to/WoW-3.3.5a/Data patch-H.MPQ
 ```
 
-Copy `patch-H.MPQ` into the `Data` folder of every client that plays on this server, and
+The folder can be the client's install folder or its `Data` folder, in any letter case, and
+any `patch-*.MPQ` the client already has is read too. Copy `patch-H.MPQ` into the `Data` folder of every client that plays on this server, and
 clear the client's `WDB` cache folder once. Without the patch, players still see (and bump
 into) the hall while the server treats the spot as open ground. Pick another letter if
 `patch-H.MPQ` is already taken.
