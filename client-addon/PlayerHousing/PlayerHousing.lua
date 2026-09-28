@@ -70,9 +70,11 @@ local function IsMoverItem(id)
     return id >= 901190 and id <= 901199
 end
 
--- Furnishings and buildings from the module's content generator; 902000 is the House Key.
+-- Furnishings and buildings from the module's content generator (902000 is the House Key),
+-- and the catalog of every object (940000 and up).
 local function IsHousingItem(id)
-    return ((id >= 901100 and id <= 901199) or (id >= 902001 and id <= 902999)) and not IsMoverItem(id)
+    return ((id >= 901100 and id <= 901199) or (id >= 902001 and id <= 902999) or (id >= 940000 and id <= 944999))
+        and not IsMoverItem(id)
 end
 
 function PlayerHousing_Command(command)

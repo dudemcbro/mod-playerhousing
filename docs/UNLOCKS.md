@@ -396,3 +396,9 @@ belong to the character that earned it; everything else is shared across the acc
 | Malygos Figurine | furnishing | Defeat Malygos (or hold The Spellweaver's Downfall) | creature 28859 | a figurine of Malygos, fits on tables |
 | Yogg-Saron Figurine | furnishing | Defeat Yogg-Saron (or hold The Secrets of Ulduar) | creature 33288 | a figurine of Yogg-Saron, fits on tables |
 | The Lich King Figurine | furnishing | Defeat the Lich King (or hold The Frozen Throne) | creature 36597 | a figurine of The Lich King, fits on tables |
+
+## Catalog (2062)
+
+With `PlayerHousing.Catalog = everything`, every other object model in the game is a piece too, one per
+model, everyone's from the start (search the Collection for them). They come from
+`sql/db_world/base/mod_playerhousing_world_catalog.sql`.

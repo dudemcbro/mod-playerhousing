@@ -267,6 +267,8 @@ namespace
         ClearGossipMenuFor(player);
         Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {} of {} unlocked", PlayerHousingMgr::CategoryName(category), unlocked, all.size()),
             CMD_CATEGORY, category | (page << 8));
+        if (category == CATEGORY_CATALOG)
+            Ask(player, GOSSIP_ICON_CHAT, "Search by name...", CMD_COLLECTION_SEARCH);
         AddPieceLines(player, pieces, page, known, fresh, ORIGIN_CATEGORY, CMD_LOCKED, category | (page << 8));
         Paging(player, CMD_CATEGORY, category, page, uint32(pieces.size()));
         Add(player, GOSSIP_ICON_CHAT, "Back to the Collection", CMD_COLLECTION);

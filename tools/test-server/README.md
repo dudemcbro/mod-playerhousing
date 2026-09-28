@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (213 checks):
+checking the database and what the client sees after each step (214 checks, 215 with `PlayerHousing.Catalog = everything`):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -148,6 +148,8 @@ checking the database and what the client sees after each step (213 checks):
 - figurines: a GM unlocking the Hogger Figurine, marked new in the Collection, placed as
   Hogger's own model shrunk to table size, its piece menu, no tilting, and a guest
   seeing it as a trophy
+- the catalog of every object: left out with `curated`; with `everything`, the Catalog
+  category counts every object and a Wanted Poster places like any piece
 - the Bank Chest: unlocked at level 20, its menu, the bank opening through an unseen
   banker at the chest, a bank slot bought there, and refused from across the island; a
   guest finding it locked

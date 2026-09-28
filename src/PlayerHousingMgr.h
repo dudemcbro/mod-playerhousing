@@ -93,6 +93,7 @@ namespace Housing
         CATEGORY_HOLIDAYS,
         CATEGORY_CAPSTONES,
         CATEGORY_FIGURINES,
+        CATEGORY_CATALOG,   // every other object (PlayerHousing.Catalog = everything)
         CATEGORY_COUNT
     };
 
@@ -676,6 +677,7 @@ private:
     float _sizeMax{2.0f};
     float _tiltMax{45.0f};  // degrees either way
     uint32 _maxSavedLayouts{5};
+    bool _catalogEverything{false};
     std::string _layoutCode{"cleared"};
 
     Housing::LayoutDefinition _layout;

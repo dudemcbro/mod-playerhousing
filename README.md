@@ -294,6 +294,8 @@ client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHous
 1. Put the module in your AzerothCore `modules` folder and rebuild the server.
 2. Apply the SQL, in this order (all files can be re-applied safely):
    - world: `sql/db_world/base/mod_playerhousing_world.sql`, then
+     `sql/db_world/base/mod_playerhousing_world_catalog.sql` (optional: the catalog of
+     every object, used with `PlayerHousing.Catalog = everything`), then
      `sql/db_world/base/mod_playerhousing_world_content.sql`
    - characters: `sql/db_characters/base/mod_playerhousing_characters.sql`, then
      `sql/db_characters/base/mod_playerhousing_characters_hotfix.sql`
@@ -324,6 +326,7 @@ client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHous
 | `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
 | `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
 | `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
+| `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
 | `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
 | `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
@@ -344,6 +347,16 @@ existing objects) and the client data's `dbc` folder (for model sizes and names)
 python3 tools/content/build_content.py --dbc /path/to/data/dbc \
     --mysql "mysql -uacore -pacore acore_world"
 ```
+
+The builder also writes `sql/db_world/base/mod_playerhousing_world_catalog.sql`: every
+other object model in the game (about 2,000), one piece each, named after its object (or
+its model when the object's name is an internal one), sized from the game data, and
+marked as fitting on tables when small. Big models (whole areas, ships), collision shapes
+and markers are left out. These pieces are used only with `PlayerHousing.Catalog =
+everything`: then everyone has them from the start, in the Collection's Catalog (search it
+by name). The file uses its own item and object ranges (items 940000 and up), so the
+curated content and the catalog never step on each other, and applying it with `curated`
+does nothing visible.
 
 Rules in `mod_playerhousing_piece_rule`: level, achievement, reputation rank, quest, kill,
 exploring an area, skill level, or never (GM and UnlockAll only). Rules in the same group

@@ -727,6 +727,30 @@ def main():
     check("keep it here leaves it standing", placement_of(owner_guid, MAILBOX) is not None)
     owner.command(".house adjust buildings")
 
+    # The catalog of every object: out with the default PlayerHousing.Catalog = curated, a
+    # Collection category with everything.
+    catalog_rows = int(db("SELECT COUNT(*) FROM mod_playerhousing_piece WHERE category=10", "acore_world")[0][0])
+    owner.command(".house collection")
+    catalog_line = next((o for o in options(owner.last_gossip) if o.startswith("Catalog (")), None)
+    if catalog_line is None:
+        check("curated: the catalog of every object stays out of the Collection", catalog_rows > 1000, "%d catalog rows" % catalog_rows)
+    else:
+        check("everything: the Collection has a Catalog of every object", catalog_line == "Catalog (%d/%d)" % (catalog_rows, catalog_rows),
+              catalog_line)
+        owner.command(".house collection wanted poster")
+        poster = next((o for o in options(owner.last_gossip) if o.startswith("Wanted Poster")), None)
+        entry = int(db("SELECT item_entry FROM mod_playerhousing_piece WHERE name='%s'" % poster, "acore_world")[0][0]) if poster else 0
+        if poster:
+            owner.gossip_select(poster)
+            owner.gossip_select("Get one")
+        wait_for(lambda: entry and owner.count_item(entry) == 1, 3, owner)
+        move(owner, L["figure_stand"][0], L["figure_stand"][1] + 4, L["ground"])
+        msgs = owner.use_item(entry, spell_of(entry), (L["figure"][0], L["figure"][1] + 4, L["figure"][2])) if entry else []
+        check("a catalog piece places like any other", entry and placement_of(owner_guid, entry) is not None
+              and live(entry) in go_entries(owner), joined(msgs) + " " + str(poster))
+        if entry and placement_of(owner_guid, entry):
+            owner.command(".house pickup %d" % placement_of(owner_guid, entry)["id"])
+
     # The Bank Chest opens its owner's bank through a banker that only works by the chest.
     check("level 20 unlocked the Bank Chest too", BANK_CHEST in unlocked(owner_account, owner_guid))
     owner.command(".house collection bank chest")

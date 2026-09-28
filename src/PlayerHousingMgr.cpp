@@ -80,6 +80,7 @@ char const* PlayerHousingMgr::CategoryName(uint8 category)
         case CATEGORY_HOLIDAYS: return "Holidays";
         case CATEGORY_CAPSTONES: return "Capstones";
         case CATEGORY_FIGURINES: return "Figurines";
+        case CATEGORY_CATALOG: return "Catalog";
         default: return "Other";
     }
 }
@@ -111,6 +112,10 @@ void PlayerHousingMgr::LoadConfig()
     _sizeMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Max", 2.0f), 1.0f, 10.0f);
     _tiltMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Tilt.Max", 45.0f), 0.0f, 180.0f);
     _maxSavedLayouts = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.SavedLayouts", 5), 20);
+    std::string catalog = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Catalog", "curated"));
+    _catalogEverything = catalog == "everything";
+    if (catalog != "everything" && catalog != "curated")
+        LOG_WARN("module", "mod-playerhousing: PlayerHousing.Catalog = \"{}\" is neither curated nor everything; using curated.", catalog);
 }
 
 bool PlayerHousingMgr::LoadDefinitions()
@@ -184,6 +189,10 @@ bool PlayerHousingMgr::LoadDefinitions()
         piece.outlineMaxX = fields[16].Get<float>();
         piece.outlineMaxY = fields[17].Get<float>();
         piece.creatureEntry = fields[18].Get<uint32>();
+
+        // The catalog of every object is there only when the server asks for it.
+        if (piece.category == CATEGORY_CATALOG && !_catalogEverything)
+            continue;
 
         // Stands and figurines are creatures, not objects: they have no gameobject.
         bool needsObject = !piece.IsCreature();

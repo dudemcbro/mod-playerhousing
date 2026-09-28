@@ -460,29 +460,35 @@ bool PlayerHousingMgr::GetOneOfEverything(Player* player, std::string& reason)
 
 bool PlayerHousingMgr::GmUnlock(Player* target, std::string const& what, bool unlock, std::string& reason)
 {
+    // An item entry, "all", an exact name, or else every name containing the text. Pieces
+    // everyone has (no unlock rules) are left out: there's nothing to unlock.
     std::vector<PieceDefinition const*> matches;
+    std::vector<PieceDefinition const*> exact;
+    bool anyMatch = false;
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         uint32 entry = uint32(std::strtoul(what.c_str(), nullptr, 10));
+        std::string lowerWhat = ToLower(what);
         for (auto const& [itemEntry, piece] : _pieces)
         {
-            if (what == "all" || itemEntry == entry)
-                matches.push_back(&piece);
-            else if (!entry)
-            {
-                std::string lowerName = piece.name;
-                std::string lowerWhat = what;
-                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-                std::transform(lowerWhat.begin(), lowerWhat.end(), lowerWhat.begin(), ::tolower);
-                if (lowerName.find(lowerWhat) != std::string::npos)
-                    matches.push_back(&piece);
-            }
+            std::string lowerName = ToLower(piece.name);
+            bool match = lowerWhat == "all" || itemEntry == entry || (!entry && lowerName.find(lowerWhat) != std::string::npos);
+            if (!match)
+                continue;
+            anyMatch = true;
+            if (piece.rules.empty())
+                continue;
+            matches.push_back(&piece);
+            if (lowerName == lowerWhat)
+                exact.push_back(&piece);
         }
     }
+    if (!exact.empty())
+        matches = exact;
 
     if (matches.empty())
     {
-        reason = "No piece matches that.";
+        reason = anyMatch ? "Everyone has that piece from the start: there's nothing to unlock." : "No piece matches that.";
         return false;
     }
 

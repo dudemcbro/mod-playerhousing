@@ -89,6 +89,17 @@ PlayerHousing.Tilt.Max = 45
 PlayerHousing.SavedLayouts = 5
 
 ###############################################################################
+# PlayerHousing.Catalog
+#    curated     the pieces earned through progression (default)
+#    everything  also every other object model in the game (about 2,000), one
+#                piece each, everyone's from the start, in the Collection's
+#                Catalog (search it by name). Needs
+#                sql/db_world/base/mod_playerhousing_world_catalog.sql applied.
+#    Default: curated
+###############################################################################
+PlayerHousing.Catalog = "curated"
+
+###############################################################################
 # PlayerHousing.HouseKey.DelaySeconds
 #    How long "Go home" takes (moving or combat cancels). 0 = instant.
 #    FreeMode always goes instantly.
