@@ -759,7 +759,11 @@ instead:
 - [x] **A circle the size of the piece**, 1 to 20 yards, instead of Flare's 10 for all.
 - [x] **The placed piece is the preview**: after placing a building (or anything, per
   player setting), its menu opens with Keep it here, Take it back, turn and nudge.
-- [x] **Addon preview**: hovering a piece shows its model turning and its size.
+- [x] **Addon preview**: hovering a piece shows its model turning and its size. The 32
+  buildings made of world models (which a window can't draw) show a floor plan to scale,
+  with a marker for you.
+- [ ] **Pictures of those 32 buildings** for the preview, taken with your client in the
+  in-game session.
 - [ ] **Possible later**: a see-through hologram where you click, before placing. Units
   can be drawn see-through (stealthed party members, hologram NPCs), but only 9 of the 315
   piece models exist as unit models; the client patch would add the rest. Try one piece

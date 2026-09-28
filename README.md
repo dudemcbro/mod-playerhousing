@@ -135,8 +135,10 @@ menus. It's optional: the House Key menus do everything without it.
 
 - Your furnishings and buildings as icons, with filters and search. Click one, then click
   where it goes. Drag one to an action bar to keep it handy.
-- Hover an icon to preview the piece: its model, slowly turning, and its size. (Buildings
-  made of world models can't be drawn in a window; they show their size only.)
+- Hover an icon to preview the piece: its model, slowly turning, and its size. Buildings
+  made of world models can't be drawn in a window, so they show a floor plan to scale
+  instead, with you next to it. Their outline is the most room they take, from the
+  server's collision data (`vmaps/GameObjectModels.dtree`).
 - Go home or leave, Decorate, Undo and Redo (the tooltip says what they'd undo),
   Collection, Storage, Visit and the full menu, one click each.
 - For the selected piece: turn left or right (or use the mouse wheel over the window:

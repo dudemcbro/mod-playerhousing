@@ -46,6 +46,7 @@ local pendingTurn, pendingLift, sinceSend = 0, 0, 0
 
 local frame, statusText, grid, emptyText, pageText, selectedPanel, selectedText
 local preview, previewModel, previewName, previewSize, previewNote
+local plan, planRect, planBorder, planYou, planYouLabel
 local previewFacing = 0
 local homeButton, decorateButton, undoButton, redoButton, prevButton, nextButton
 local pickUpAllButton
@@ -417,8 +418,21 @@ local function CreatePreview()
     previewModel:SetHeight(190)
 
     previewNote = preview:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    previewNote:SetPoint("CENTER", previewModel, "CENTER")
+    previewNote:SetPoint("TOP", previewModel, "TOP", 0, -2)
     previewNote:SetWidth(180)
+
+    -- The floor plan: what world model buildings get instead of a model.
+    plan = CreateFrame("Frame", "PlayerHousingPreviewPlan", preview)
+    plan:SetAllPoints(previewModel)
+    planBorder = plan:CreateTexture("PlayerHousingPreviewPlanBorder", "BORDER")
+    planBorder:SetTexture(0.15, 0.1, 0.05, 1)
+    planRect = plan:CreateTexture("PlayerHousingPreviewPlanRect", "ARTWORK")
+    planRect:SetTexture(0.6, 0.45, 0.25, 0.9)
+    planYou = plan:CreateTexture("PlayerHousingPreviewPlanYou", "OVERLAY")
+    planYou:SetTexture("Interface\\Minimap\\MinimapArrow")
+    planYouLabel = plan:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    planYouLabel:SetPoint("LEFT", planYou, "RIGHT", 2, 0)
+    plan:Hide()
 
     previewSize = preview:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     previewSize:SetPoint("BOTTOMLEFT", 10, 12)
@@ -431,31 +445,66 @@ local function CreatePreview()
     preview:Hide()
 end
 
+-- The building seen from above, as big as fits, with you next to it for scale.
+local function ShowFloorPlan(length, depth)
+    local room = { 170, 140 }
+    local perYard = math.min(room[1] / math.max(length, 1), room[2] / math.max(depth, 1))
+    local width, height = math.max(4, length * perYard), math.max(4, depth * perYard)
+
+    planRect:ClearAllPoints()
+    planRect:SetPoint("CENTER", plan, "CENTER", 8, 0)
+    planRect:SetWidth(width)
+    planRect:SetHeight(height)
+    planBorder:ClearAllPoints()
+    planBorder:SetPoint("CENTER", planRect, "CENTER")
+    planBorder:SetWidth(width + 2)
+    planBorder:SetHeight(height + 2)
+
+    -- A person takes about a yard. Below 10 pixels the marker would vanish, so it's drawn
+    -- bigger then, and says so.
+    local you = perYard
+    planYouLabel:SetText("you")
+    if you < 10 then
+        you = 10
+        planYouLabel:SetText("you (drawn bigger)")
+    end
+    planYou:SetWidth(you)
+    planYou:SetHeight(you)
+    planYou:ClearAllPoints()
+    planYou:SetPoint("TOPRIGHT", planRect, "BOTTOMLEFT", -2, -2)
+
+    previewNote:SetText("Seen from above: the most room it takes")
+    plan:Show()
+end
+
 local function ShowPreview(piece)
     if not preview or not piece then
         return
     end
 
+    -- { model, length, depth, height }: yards.
     local data = PlayerHousing_Models and PlayerHousing_Models[piece.id]
     previewName:SetText(piece.name)
-    previewSize:SetText(data and (Yards(data[2]) .. " across, " .. Yards(data[3]) .. " tall") or "")
+    previewSize:SetText(data and (Yards(data[2]) .. " by " .. Yards(data[3]) .. ", " .. Yards(data[4]) .. " tall") or "")
     previewNote:SetText("")
+    plan:Hide()
 
     local model = data and data[1]
     if model == "player" then
         previewModel:SetUnit("player")
         previewModel:Show()
-        previewNote:SetText("")
     elseif model then
         previewModel:ClearModel()
         previewModel:SetModel(model)
         -- Big and small pieces both fill the frame.
-        previewModel:SetModelScale(math.min(1.5, 2.5 / math.max(data[2], data[3], 0.5)))
+        previewModel:SetModelScale(math.min(1.5, 2.5 / math.max(data[2], data[3], data[4], 0.5)))
         previewModel:SetPosition(0, 0, 0)
         previewModel:Show()
+    elseif data then
+        previewModel:Hide()
+        ShowFloorPlan(data[2], data[3])
     else
         previewModel:Hide()
-        previewNote:SetText("No preview for this building. The targeting circle shows its size.")
     end
     preview:Show()
 end

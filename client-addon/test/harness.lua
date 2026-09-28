@@ -27,7 +27,12 @@ function Widget:GetText() return self.text end
 function Widget:SetHeight(h) self.height = h end
 function Widget:RegisterEvent(e) self.events[e] = true end
 function Widget:CreateFontString() return setmetatable({scripts={}, attrs={}, events={}, shown=true}, Widget) end
-function Widget:CreateTexture() return setmetatable({scripts={}, attrs={}, events={}, shown=true}, Widget) end
+function Widget:CreateTexture(name)
+  local t = setmetatable({scripts={}, attrs={}, events={}, shown=true}, Widget)
+  if name then _G[name] = t end
+  return t
+end
+function Widget:SetWidth(w) self.width = w end
 function Widget:GetPoint() return "CENTER", nil, "CENTER", 10, 20 end
 function Widget:Enable() self.enabled = true end
 function Widget:SetModel(path) self.modelPath = path end
@@ -106,11 +111,19 @@ assert(PlayerHousingPreview:IsShown(), "preview shown")
 assert(PlayerHousingPreviewModel.modelPath == PlayerHousing_Models[901105][1], "chair model: " .. tostring(PlayerHousingPreviewModel.modelPath))
 PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
 assert(not PlayerHousingPreview:IsShown(), "preview hidden on leave")
--- Buildings made of world models get their size only.
-PlayerHousing_Models[902200][1] = false
+-- Buildings made of world models get a floor plan, to scale, instead of a model.
+PlayerHousing_Models[902200] = { false, 30, 10, 8 }
 PlayerHousingSlot3.scripts.OnEnter(PlayerHousingSlot3)
 assert(not PlayerHousingPreviewModel:IsShown(), "no model for a world model building")
+assert(PlayerHousingPreviewPlan:IsShown(), "floor plan shown")
+local rect = PlayerHousingPreviewPlanRect
+assert(math.abs(rect.width / rect.height - 3) < 0.01, "30 by 10 yards drawn 3 to 1: " .. rect.width .. "x" .. rect.height)
+assert(PlayerHousingPreviewPlanYou.width >= 10, "the person marker stays visible")
 PlayerHousingSlot3.scripts.OnLeave(PlayerHousingSlot3)
+-- A model piece hides the floor plan again.
+PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)
+assert(not PlayerHousingPreviewPlan:IsShown() and PlayerHousingPreviewModel:IsShown(), "model shown, no floor plan")
+PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
 assert(PlayerHousingFrame.height == 456)
 
 -- Filters and search.
