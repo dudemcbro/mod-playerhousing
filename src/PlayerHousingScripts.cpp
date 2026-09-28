@@ -1,444 +1,360 @@
+#include "HousingMenus.h"
 #include "PlayerHousingMgr.h"
 
-#include "AllMapScript.h"
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Creature.h"
+#include "GameObject.h"
+#include "GlobalScript.h"
+#include "Item.h"
 #include "ItemScript.h"
 #include "Player.h"
+#include "QuestDef.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
+#include "ServerScript.h"
+#include "SpellInfo.h"
+#include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "StringConvert.h"
+#include "StringFormat.h"
 #include "Tokenize.h"
+#include "WorldPacket.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
-#include <string_view>
-#include <utility>
 #include <vector>
 
 using namespace Acore::ChatCommands;
+using namespace Housing;
 
 namespace
 {
-    bool ParsePositiveInteger(char const* code, uint32& outValue)
+    MenuSource FromPlayer(Player* player) { return MenuSource{ SOURCE_PLAYER, player->GetGUID() }; }
+
+    void Reply(Player* player, std::string const& reason)
     {
-        std::string raw = code ? code : "";
-        std::size_t first = raw.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos)
-            return false;
-
-        std::size_t last = raw.find_last_not_of(" \t\r\n");
-        std::string_view trimmed(raw.data() + first, last - first + 1);
-        auto converted = Acore::StringTo<uint32>(trimmed);
-        if (!converted || *converted == 0)
-            return false;
-
-        outValue = *converted;
-        return true;
-    }
-
-    void SendResult(Player* player, std::string const& reason)
-    {
-        if (!player)
-            return;
-
-        ChatHandler(player->GetSession()).PSendSysMessage("Housing: {}", reason);
-    }
-
-    void SendLines(Player* player, std::vector<std::string> const& lines)
-    {
-        if (!player)
-            return;
-
-        ChatHandler handler(player->GetSession());
-        for (std::string const& line : lines)
-            handler.SendSysMessage(line);
+        if (!reason.empty())
+            sPlayerHousingMgr->Say(player, reason);
     }
 
     void EnsureStewardAppearance(Creature* creature)
     {
-        if (!creature || !sPlayerHousingMgr->IsStewardEntry(creature->GetEntry()))
-            return;
-
         uint32 displayId = sPlayerHousingMgr->GetStewardDisplayId();
-        if (!displayId)
-            return;
-
-        if (creature->GetDisplayId() != displayId || creature->GetNativeDisplayId() != displayId)
+        if (creature && displayId && (creature->GetDisplayId() != displayId || creature->GetNativeDisplayId() != displayId))
         {
             creature->SetDisplayId(displayId);
             creature->SetNativeDisplayId(displayId);
         }
     }
+
+    std::string Lower(std::string_view text)
+    {
+        std::string value(text);
+        std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+        return value;
+    }
 }
 
+// Krook, the housing steward: in the capital cities and on every island.
 class npc_playerhousing_steward : public CreatureScript
 {
 public:
     npc_playerhousing_steward() : CreatureScript("npc_playerhousing_steward") { }
 
-    enum StewardAction : uint32
-    {
-        ACTION_ENTER = 1,
-        ACTION_VISIT_CODE = 2,
-        ACTION_LEAVE = 3,
-        ACTION_STATUS = 4,
-        ACTION_UPGRADE = 5,
-
-        ACTION_PRIVACY_MENU = 10,
-        ACTION_SET_PRIVATE = 11,
-        ACTION_SET_PUBLIC = 12,
-
-        ACTION_STYLE_MENU = 20,
-        ACTION_STYLE_HUMAN = 21,
-        ACTION_STYLE_GNOME = 22,
-        ACTION_STYLE_TAUREN = 23,
-        ACTION_STYLE_UNDEAD = 24,
-
-        ACTION_GUEST_MENU = 30,
-        ACTION_INVITE_CODE = 31,
-        ACTION_UNINVITE_CODE = 32,
-
-        ACTION_FURNITURE_MENU = 40,
-        ACTION_CATALOG_LIST = 41,
-        ACTION_UNLOCK_CODE = 42,
-        ACTION_PLACE_SELECT_MENU = 43,
-        ACTION_MOVE_CODE = 44,
-        ACTION_REMOVE_CODE = 45,
-        ACTION_FURNITURE_LIST = 46,
-        ACTION_PLACE_CODE = 47,
-        ACTION_CANCEL_PENDING_PLACE = 48,
-        ACTION_OPEN_VENDOR = 49,
-
-        ACTION_HELP = 60,
-        ACTION_BACK_MAIN = 99
-    };
-
-    static constexpr uint32 ACTION_PLACE_SELECT_BASE = 100000;
-    static constexpr uint32 ACTION_PLACE_SELECT_LIMIT = 200000;
-
-    void BuildMainMenu(Player* player, Creature* creature) const
-    {
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Enter my house", GOSSIP_SENDER_MAIN, ACTION_ENTER);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Visit a player's house", GOSSIP_SENDER_MAIN, ACTION_VISIT_CODE, "Enter character name", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Leave current house", GOSSIP_SENDER_MAIN, ACTION_LEAVE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Show house status", GOSSIP_SENDER_MAIN, ACTION_STATUS);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Upgrade my house", GOSSIP_SENDER_MAIN, ACTION_UPGRADE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Privacy options", GOSSIP_SENDER_MAIN, ACTION_PRIVACY_MENU);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Change house style", GOSSIP_SENDER_MAIN, ACTION_STYLE_MENU);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Guest access list", GOSSIP_SENDER_MAIN, ACTION_GUEST_MENU);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Furniture tools", GOSSIP_SENDER_MAIN, ACTION_FURNITURE_MENU);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "How housing works", GOSSIP_SENDER_MAIN, ACTION_HELP);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-    }
-
-    void BuildPrivacyMenu(Player* player, Creature* creature) const
-    {
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Set house to private", GOSSIP_SENDER_MAIN, ACTION_SET_PRIVATE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Set house to public", GOSSIP_SENDER_MAIN, ACTION_SET_PUBLIC);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-    }
-
-    void BuildStyleMenu(Player* player, Creature* creature) const
-    {
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Human", GOSSIP_SENDER_MAIN, ACTION_STYLE_HUMAN);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Gnome", GOSSIP_SENDER_MAIN, ACTION_STYLE_GNOME);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Tauren", GOSSIP_SENDER_MAIN, ACTION_STYLE_TAUREN);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Undead", GOSSIP_SENDER_MAIN, ACTION_STYLE_UNDEAD);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-    }
-
-    void BuildGuestMenu(Player* player, Creature* creature) const
-    {
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Invite guest by name", GOSSIP_SENDER_MAIN, ACTION_INVITE_CODE, "Enter character name", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Remove guest by name", GOSSIP_SENDER_MAIN, ACTION_UNINVITE_CODE, "Enter character name", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-    }
-
-    void BuildFurnitureMenu(Player* player, Creature* creature) const
-    {
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Browse Krook's Cranny furniture", GOSSIP_SENDER_MAIN, ACTION_OPEN_VENDOR);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Show available catalog", GOSSIP_SENDER_MAIN, ACTION_CATALOG_LIST);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Unlock catalog item by ID", GOSSIP_SENDER_MAIN, ACTION_UNLOCK_CODE, "Enter catalog ID", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Select unlocked furniture to place", GOSSIP_SENDER_MAIN, ACTION_PLACE_SELECT_MENU);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Select furniture by catalog ID (advanced)", GOSSIP_SENDER_MAIN, ACTION_PLACE_CODE, "Enter catalog ID", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Cancel pending targeted placement", GOSSIP_SENDER_MAIN, ACTION_CANCEL_PENDING_PLACE);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Move furniture placement by ID", GOSSIP_SENDER_MAIN, ACTION_MOVE_CODE, "Enter placement ID", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Remove furniture placement by ID", GOSSIP_SENDER_MAIN, ACTION_REMOVE_CODE, "Enter placement ID", 0, true);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "List placed furniture", GOSSIP_SENDER_MAIN, ACTION_FURNITURE_LIST);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-    }
-
-    void BuildPlacementSelectionMenu(Player* player, Creature* creature) const
-    {
-        ClearGossipMenuFor(player);
-
-        std::vector<std::pair<uint32, std::string>> choices;
-        std::string reason;
-        if (!sPlayerHousingMgr->ListPlacementChoices(player, choices, reason))
-        {
-            SendResult(player, reason);
-        }
-        else
-        {
-            for (auto const& [catalogId, displayName] : choices)
-            {
-                if (catalogId >= (ACTION_PLACE_SELECT_LIMIT - ACTION_PLACE_SELECT_BASE))
-                    continue;
-
-                std::string label = displayName + " (id " + std::to_string(catalogId) + ")";
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, label, GOSSIP_SENDER_MAIN, ACTION_PLACE_SELECT_BASE + catalogId);
-            }
-        }
-
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_FURNITURE_MENU);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-    }
-
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         EnsureStewardAppearance(creature);
-        BuildMainMenu(player, creature);
+        HousingMenus::ShowHome(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() });
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
-        std::string reason;
-        std::vector<std::string> lines;
-
-        if (action >= ACTION_PLACE_SELECT_BASE && action < ACTION_PLACE_SELECT_LIMIT)
-        {
-            uint32 catalogId = action - ACTION_PLACE_SELECT_BASE;
-            if (!sPlayerHousingMgr->BeginSpellPlacement(player, catalogId, reason))
-                SendResult(player, reason);
-            else
-                SendResult(player, reason);
-
-            BuildFurnitureMenu(player, creature);
-            return true;
-        }
-
-        switch (action)
-        {
-            case ACTION_ENTER:
-                if (!sPlayerHousingMgr->EnterOwnHouse(player, reason))
-                    SendResult(player, reason);
-                CloseGossipMenuFor(player);
-                return true;
-            case ACTION_LEAVE:
-                if (!sPlayerHousingMgr->LeaveHouse(player, reason))
-                    SendResult(player, reason);
-                CloseGossipMenuFor(player);
-                return true;
-            case ACTION_STATUS:
-                if (sPlayerHousingMgr->GetHouseStatus(player, lines, reason))
-                    SendLines(player, lines);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_UPGRADE:
-                if (!sPlayerHousingMgr->UpgradeHouse(player, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_PRIVACY_MENU:
-                BuildPrivacyMenu(player, creature);
-                return true;
-            case ACTION_SET_PRIVATE:
-                if (!sPlayerHousingMgr->SetPrivacy(player, true, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_SET_PUBLIC:
-                if (!sPlayerHousingMgr->SetPrivacy(player, false, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_STYLE_MENU:
-                BuildStyleMenu(player, creature);
-                return true;
-            case ACTION_STYLE_HUMAN:
-                if (!sPlayerHousingMgr->SetStyle(player, "human", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_STYLE_GNOME:
-                if (!sPlayerHousingMgr->SetStyle(player, "gnome", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_STYLE_TAUREN:
-                if (!sPlayerHousingMgr->SetStyle(player, "tauren", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_STYLE_UNDEAD:
-                if (!sPlayerHousingMgr->SetStyle(player, "undead", reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_GUEST_MENU:
-                BuildGuestMenu(player, creature);
-                return true;
-            case ACTION_FURNITURE_MENU:
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_OPEN_VENDOR:
-                if (creature->IsVendor())
-                {
-                    player->GetSession()->SendListInventory(creature->GetGUID());
-                    CloseGossipMenuFor(player);
-                }
-                else
-                {
-                    SendResult(player, "Vendor inventory is not available on this steward.");
-                    BuildFurnitureMenu(player, creature);
-                }
-                return true;
-            case ACTION_PLACE_SELECT_MENU:
-                BuildPlacementSelectionMenu(player, creature);
-                return true;
-            case ACTION_CANCEL_PENDING_PLACE:
-                if (!sPlayerHousingMgr->CancelSpellPlacement(player, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_CATALOG_LIST:
-                if (sPlayerHousingMgr->ListCatalog(player, lines, reason))
-                    SendLines(player, lines);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_FURNITURE_LIST:
-                if (sPlayerHousingMgr->ListFurniture(player, lines, reason))
-                    SendLines(player, lines);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_HELP:
-                ChatHandler(player->GetSession()).SendSysMessage("Housing quickstart:");
-                ChatHandler(player->GetSession()).SendSysMessage("- Starter house is free at stage 0.");
-                ChatHandler(player->GetSession()).SendSysMessage("- Upgrade cost grows x3 each stage (up to stage 6).");
-                ChatHandler(player->GetSession()).SendSysMessage("- Buy furniture from Krook's Cranny, then right click the item to place.");
-                ChatHandler(player->GetSession()).SendSysMessage("- Guests can visit, but only owner can edit.");
-                BuildMainMenu(player, creature);
-                return true;
-            case ACTION_BACK_MAIN:
-                BuildMainMenu(player, creature);
-                return true;
-            default:
-                CloseGossipMenuFor(player);
-                return true;
-        }
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+        return true;
     }
 
-    bool OnGossipSelectCode(Player* player, Creature* creature, uint32 /*sender*/, uint32 action, const char* code) override
+    bool OnGossipSelectCode(Player* player, Creature* creature, uint32 sender, uint32 action, char const* code) override
     {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, code);
+        return true;
+    }
+
+    // Taking "Home Sweet Island" from Krook on the island itself: already there.
+    bool OnQuestAccept(Player* player, Creature* /*creature*/, Quest const* quest) override
+    {
+        if (quest->GetQuestId() == QUEST_TOUR_HOME && sPlayerHousingMgr->IsOnOwnIsland(player))
+            PlayerHousingMgr::QuestEvent(player, QUEST_TOUR_HOME);
+        return false;
+    }
+};
+
+// A stand's figure. The owner gets the stand's menu (dress it, turn it, pick it up); guests
+// see what it's wearing.
+class npc_playerhousing_mannequin : public CreatureScript
+{
+public:
+    npc_playerhousing_mannequin() : CreatureScript("npc_playerhousing_mannequin") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        MenuSource source{ SOURCE_CREATURE, creature->GetGUID() };
+        uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, creature->GetGUID());
+        if (!placementId)
+            return true;
+
+        if (sPlayerHousingMgr->CanDecorate(player))
+            HousingMenus::ShowPiece(player, source, placementId);
+        else
+            HousingMenus::ShowStandToGuest(player, source, placementId);
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+        return true;
+    }
+};
+
+// A figurine: its owner (and roommates) get its piece menu; visitors hear what it is.
+class npc_playerhousing_figurine : public CreatureScript
+{
+public:
+    npc_playerhousing_figurine() : CreatureScript("npc_playerhousing_figurine") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        MenuSource source{ SOURCE_CREATURE, creature->GetGUID() };
+        uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, creature->GetGUID());
+        if (!placementId)
+            return true;
+
+        if (sPlayerHousingMgr->CanDecorate(player))
+            HousingMenus::ShowPiece(player, source, placementId);
+        else
+            Reply(player, Acore::StringFormat("{}: a trophy of {}'s adventures.", creature->GetName(),
+                sPlayerHousingMgr->NameOf(sPlayerHousingMgr->GetIslandOwner(player))));
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+        return true;
+    }
+};
+
+// Incoming packets, for two things. Items owed for placed pieces are settled first. And a
+// mannequin's armor reaches the client as mirror image data, which the client asks for when
+// the figure comes into view: the core only answers for real mirror images (spells), so the
+// module answers for mannequins.
+class mod_playerhousing_serverscript : public ServerScript
+{
+public:
+    mod_playerhousing_serverscript() : ServerScript("mod_playerhousing_serverscript", { SERVERHOOK_CAN_PACKET_RECEIVE }) { }
+
+    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    {
+        // An item used to place a piece is taken before anything else the player sends is
+        // handled: moving it to the bank or the mail in the same breath doesn't keep it.
+        if (sPlayerHousingMgr->HasPendingConsumes())
+            if (Player* player = session->GetPlayer(); player && player->IsInWorld())
+                sPlayerHousingMgr->ProcessPendingConsumes(player);
+
+        if (packet.GetOpcode() != CMSG_GET_MIRRORIMAGE_DATA || packet.size() < sizeof(uint64))
+            return true;
+
+        return !sPlayerHousingMgr->SendMannequinLook(session, ObjectGuid(packet.read<uint64>(0)));
+    }
+};
+
+// The House Key: its spell is caught in spell_playerhousing_key, which opens the Home menu.
+class item_playerhousing_key : public ItemScript
+{
+public:
+    item_playerhousing_key() : ItemScript("item_playerhousing_key") { }
+
+    bool OnUse(Player* /*player*/, Item* /*item*/, SpellCastTargets const& /*targets*/) override
+    {
+        return false;
+    }
+
+    void OnGossipSelect(Player* player, Item* item, uint32 sender, uint32 action) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_ITEM, item->GetGUID() }, sender, action, nullptr);
+    }
+
+    void OnGossipSelectCode(Player* player, Item* item, uint32 sender, uint32 action, char const* code) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_ITEM, item->GetGUID() }, sender, action, code);
+    }
+};
+
+// Furnishings and buildings: using one brings up the targeting circle (Flare); the chosen
+// spot is caught in spell_playerhousing_place before anything is cast.
+class item_playerhousing_piece : public ItemScript
+{
+public:
+    item_playerhousing_piece() : ItemScript("item_playerhousing_piece") { }
+
+    bool OnUse(Player* /*player*/, Item* /*item*/, SpellCastTargets const& /*targets*/) override
+    {
+        return false;
+    }
+};
+
+// Places the piece where the targeting circle was clicked, then cancels the cast silently:
+// no flare, no global cooldown, no stealth reveal. Hunters' own Flare is left alone. The core
+// has already checked range and line of sight to the spot by the time this runs.
+class spell_playerhousing_place : public SpellScript
+{
+    PrepareSpellScript(spell_playerhousing_place);
+
+    SpellCastResult CheckCast()
+    {
+        Player* player = GetCaster() ? GetCaster()->ToPlayer() : nullptr;
+        Item* item = GetCastItem();
+        bool mover = item && PlayerHousingMgr::IsMoverItem(item->GetEntry());
+        if (!player || !item || !sPlayerHousingMgr->IsEnabled() || (!mover && !sPlayerHousingMgr->GetPiece(item->GetEntry())))
+            return SPELL_CAST_OK;
+
         std::string reason;
-
-        if (action == ACTION_VISIT_CODE)
+        if (WorldLocation const* destination = GetExplTargetDest())
         {
-            std::string ownerName = code ? code : "";
-            if (!sPlayerHousingMgr->VisitHouse(player, ownerName, reason))
-                SendResult(player, reason);
-            CloseGossipMenuFor(player);
+            Position target;
+            target.Relocate(destination->GetPositionX(), destination->GetPositionY(), destination->GetPositionZ());
+            uint32 itemEntry = item->GetEntry();
+            if (mover)
+            {
+                sPlayerHousingMgr->HandleMoveCast(player, item, target, reason);
+                Reply(player, reason);
+                return SPELL_FAILED_DONT_REPORT;
+            }
+            bool placed = sPlayerHousingMgr->HandlePlacementCast(player, item, target, reason);
+            sPlayerHousingMgr->SendAddonState(player);
+            // The preview: the piece stands where it'll be, and its menu offers to keep it,
+            // adjust it or take it back.
+            if (placed && sPlayerHousingMgr->ShouldAdjustAfterPlacing(player, itemEntry))
+                if (uint32 placementId = sPlayerHousingMgr->GetSelectedPlacement(player))
+                    HousingMenus::ShowPiece(player, FromPlayer(player), placementId, true);
+        }
+        else
+            reason = "Click a spot with the targeting circle to place it.";
+
+        Reply(player, reason);
+        return SPELL_FAILED_DONT_REPORT;
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_playerhousing_place::CheckCast);
+    }
+};
+
+class spell_playerhousing_key : public SpellScript
+{
+    PrepareSpellScript(spell_playerhousing_key);
+
+    SpellCastResult CheckCast()
+    {
+        Player* player = GetCaster() ? GetCaster()->ToPlayer() : nullptr;
+        Item* item = GetCastItem();
+        if (!player || !item || item->GetEntry() != HOUSE_KEY_ITEM)
+            return SPELL_CAST_OK;
+
+        if (!sPlayerHousingMgr->IsEnabled())
+        {
+            Reply(player, "Housing is disabled on this server.");
+            return SPELL_FAILED_DONT_REPORT;
+        }
+
+        HousingMenus::ShowHome(player, MenuSource{ SOURCE_ITEM, item->GetGUID() });
+        return SPELL_FAILED_DONT_REPORT;
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_playerhousing_key::CheckCast);
+    }
+};
+
+// Every placed piece and snap marker. While the owner decorates, clicking a piece opens its
+// menu; otherwise pieces behave like the real thing (chairs seat, mailboxes open).
+class go_playerhousing_piece : public GameObjectScript
+{
+public:
+    go_playerhousing_piece() : GameObjectScript("go_playerhousing_piece") { }
+
+    bool OnGossipHello(Player* player, GameObject* go) override
+    {
+        if (go->GetEntry() == HOOK_MARKER_GO)
+        {
+            if (sPlayerHousingMgr->IsDecorating(player))
+                if (uint32 surface = sPlayerHousingMgr->GetSurfaceForMarker(player, go->GetGUID()))
+                    HousingMenus::ShowHook(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, surface);
             return true;
         }
 
-        if (action == ACTION_INVITE_CODE)
+        uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, go->GetGUID());
+        if (!placementId)
+            return false;
+
+        if (sPlayerHousingMgr->IsDecorating(player))
         {
-            std::string guestName = code ? code : "";
-            if (!sPlayerHousingMgr->InviteGuest(player, guestName, reason))
-                SendResult(player, reason);
-            else
-                SendResult(player, reason);
-            BuildGuestMenu(player, creature);
+            HousingMenus::ShowPiece(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
             return true;
         }
 
-        if (action == ACTION_UNINVITE_CODE)
+        // A Bank Chest opens for its owner only (it's their bank).
+        if (std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId))
         {
-            std::string guestName = code ? code : "";
-            if (!sPlayerHousingMgr->RemoveGuest(player, guestName, reason))
-                SendResult(player, reason);
-            else
-                SendResult(player, reason);
-            BuildGuestMenu(player, creature);
+            PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(placement->itemEntry);
+            if (piece && piece->HasFlag(PIECE_FLAG_CHEST))
+            {
+                if (sPlayerHousingMgr->IsOnOwnIsland(player))
+                    HousingMenus::ShowChest(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
+                else
+                    Reply(player, "The chest is locked: it holds its owner's bank.");
+                return true;
+            }
+            if (piece && piece->HasFlag(PIECE_FLAG_MUSIC))
+            {
+                if (sPlayerHousingMgr->IsOnOwnIsland(player))
+                    HousingMenus::ShowMusicBox(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() });
+                else
+                {
+                    HouseRecord house;
+                    char const* track = sPlayerHousingMgr->GetHouseRecord(sPlayerHousingMgr->GetIslandOwner(player), house) && house.music
+                        ? PlayerHousingMgr::MusicName(house.music) : nullptr;
+                    Reply(player, track ? Acore::StringFormat("The music box is playing {}.", track) : std::string("The music box is quiet."));
+                }
+                return true;
+            }
+        }
+
+        if (sPlayerHousingMgr->CanDecorate(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
+        {
+            sPlayerHousingMgr->SelectPlacement(player, placementId);
+            Reply(player, "To change this, start decorating: House Key, Start decorating.");
             return true;
         }
 
-        uint32 numericId = 0;
-        if (!ParsePositiveInteger(code, numericId))
-        {
-            SendResult(player, "Value must be a positive number.");
-            BuildFurnitureMenu(player, creature);
-            return true;
-        }
+        return false;
+    }
 
-        switch (action)
-        {
-            case ACTION_UNLOCK_CODE:
-                if (!sPlayerHousingMgr->UnlockCatalog(player, numericId, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_PLACE_CODE:
-                if (!sPlayerHousingMgr->BeginSpellPlacement(player, numericId, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_MOVE_CODE:
-                if (!sPlayerHousingMgr->MoveFurniture(player, numericId, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            case ACTION_REMOVE_CODE:
-                if (!sPlayerHousingMgr->RemoveFurniture(player, numericId, reason))
-                    SendResult(player, reason);
-                else
-                    SendResult(player, reason);
-                BuildFurnitureMenu(player, creature);
-                return true;
-            default:
-                BuildMainMenu(player, creature);
-                return true;
-        }
+    bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 action) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, sender, action, nullptr);
+        return true;
+    }
+
+    bool OnGossipSelectCode(Player* player, GameObject* go, uint32 sender, uint32 action, char const* code) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, sender, action, code);
+        return true;
     }
 };
 
@@ -453,32 +369,6 @@ public:
     }
 };
 
-class item_playerhousing_furniture : public ItemScript
-{
-public:
-    item_playerhousing_furniture() : ItemScript("item_playerhousing_furniture") { }
-
-    bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/) override
-    {
-        if (!player || !item)
-            return true;
-
-        std::string reason;
-        if (!sPlayerHousingMgr->BeginItemPlacement(player, item, reason))
-        {
-            if (!reason.empty())
-                ChatHandler(player->GetSession()).PSendSysMessage("Housing: {}", reason);
-            return true;
-        }
-
-        if (!reason.empty())
-            ChatHandler(player->GetSession()).PSendSysMessage("Housing: {}", reason);
-
-        // Allow default item spell cast to proceed; furniture items cast Flare for point selection.
-        return false;
-    }
-};
-
 class mod_playerhousing_commandscript : public CommandScript
 {
 public:
@@ -488,130 +378,429 @@ public:
     {
         static ChatCommandTable rootTable =
         {
-            { "krook", HandleKrookCommand, SEC_PLAYER, Console::No }
+            { "house", HandleHouseCommand, SEC_PLAYER, Console::No },
+            { "krook", HandleHouseCommand, SEC_PLAYER, Console::No }
         };
-
         return rootTable;
     }
 
-    static void SendUsage(ChatHandler* handler)
+    static void SendUsage(ChatHandler* handler, bool gm)
     {
-        if (!handler)
-            return;
-
-        handler->SendSysMessage("Krook commands:");
-        handler->SendSysMessage(".krook add - spawn a housing steward near you");
-        handler->SendSysMessage(".krook add <catalogId> - select furniture for Flare placement");
-        handler->SendSysMessage(".krook leave - leave your current house");
-        handler->SendSysMessage(".krook status - show current house status");
+        handler->SendSysMessage("Housing commands (.house alone opens the Home menu):");
+        handler->SendSysMessage(".house home | leave | unstuck | key");
+        handler->SendSysMessage(".house decorate [on|off] | undo | redo | packup");
+        handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
+        handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
+        handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
+        handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name> | like | visitors");
+        handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
+        handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
+        handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
+        handler->SendSysMessage(".house report <what's wrong> (while visiting)");
+        if (gm)
+        {
+            handler->SendSysMessage("GM: .house unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
+            handler->SendSysMessage("GM: .house reports [all] | close <id> | inspect <player> | hide|unhide <player> | cleargreeting <player> | gmpackup <player>");
+        }
     }
 
-    static bool HandleKrookCommand(ChatHandler* handler, char const* args)
+    static Player* GmTarget(ChatHandler* handler, Player* self, std::vector<std::string_view> const& tokens, size_t index)
+    {
+        if (tokens.size() > index)
+            if (Player* named = ObjectAccessor::FindPlayerByName(std::string(tokens[index]), true))
+                return named;
+        if (Player* selected = handler->getSelectedPlayer())
+            return selected;
+        return self;
+    }
+
+    static bool HandleHouseCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler ? handler->GetPlayer() : nullptr;
         if (!player)
         {
             if (handler)
             {
-                handler->SendSysMessage("Krook: this command can only be used in-game.");
+                handler->SendSysMessage("This command can only be used in-game.");
                 handler->SetSentErrorMessage(true);
             }
             return false;
         }
 
+        bool gm = player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
         std::vector<std::string_view> tokens = Acore::Tokenize(args ? args : "", ' ', false);
         if (tokens.empty())
         {
-            SendUsage(handler);
+            HousingMenus::ShowHome(player, FromPlayer(player));
             return true;
         }
 
-        std::string subcommand(tokens[0]);
+        auto number = [&](size_t index) -> uint32
+        {
+            if (tokens.size() <= index)
+                return 0;
+            return Acore::StringTo<uint32>(tokens[index]).value_or(0);
+        };
+        auto decimal = [&](size_t index, float fallback) -> float
+        {
+            if (tokens.size() <= index)
+                return fallback;
+            // nan and inf read as numbers too; they aren't turns or distances.
+            std::optional<float> value = Acore::StringTo<float>(tokens[index]);
+            return value && std::isfinite(*value) ? *value : fallback;
+        };
+        auto restFrom = [&](size_t index) -> std::string
+        {
+            std::string text;
+            for (size_t i = index; i < tokens.size(); ++i)
+                text += (text.empty() ? "" : " ") + std::string(tokens[i]);
+            return text;
+        };
+
+        std::string sub = Lower(tokens[0]);
         std::string reason;
+        PlayerHousingMgr* mgr = sPlayerHousingMgr;
 
-        if (subcommand == "add")
+        // The addon's state request is quiet and cheap; everything else counts.
+        if (sub != "state" && !gm && mgr->CommandFlood(player))
         {
-            if (tokens.size() == 1)
-            {
-                float spawnDistance = 2.5f;
-                float spawnAngle = player->GetOrientation();
-                float spawnX = player->GetPositionX() + (std::cos(spawnAngle) * spawnDistance);
-                float spawnY = player->GetPositionY() + (std::sin(spawnAngle) * spawnDistance);
-                float spawnZ = player->GetMap()->GetHeight(PHASEMASK_NORMAL, spawnX, spawnY, player->GetPositionZ() + 5.0f, true, 50.0f);
-                if (!std::isfinite(spawnZ) || spawnZ < -50000.0f)
-                    spawnZ = player->GetPositionZ();
-
-                uint32 stewardEntry = sPlayerHousingMgr->GetStewardEntry();
-                if (Creature* steward = player->SummonCreature(stewardEntry, spawnX, spawnY, spawnZ + 0.35f, spawnAngle, TEMPSUMMON_MANUAL_DESPAWN, 0))
-                {
-                    EnsureStewardAppearance(steward);
-                    handler->SendSysMessage("Housing: spawned a steward near you.");
-                    return true;
-                }
-
-                handler->SendSysMessage("Housing: could not spawn steward.");
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            if (tokens.size() > 2)
-            {
-                handler->SendSysMessage("Usage: .krook add <catalogId>");
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            auto catalogId = Acore::StringTo<uint32>(tokens[1]);
-            if (!catalogId || *catalogId == 0)
-            {
-                handler->PSendSysMessage("Krook: invalid catalog id '{}'.", tokens[1]);
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            if (!sPlayerHousingMgr->BeginSpellPlacement(player, *catalogId, reason))
-            {
-                handler->PSendSysMessage("Housing: {}", reason);
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            handler->PSendSysMessage("Housing: {}", reason);
+            Reply(player, "Too many housing commands at once: give it a moment.");
             return true;
         }
 
-        if (subcommand == "leave")
+        if (sub == "state")
         {
-            if (!sPlayerHousingMgr->LeaveHouse(player, reason))
-            {
-                handler->PSendSysMessage("Housing: {}", reason);
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
+            // Quiet: for the client addon.
+            mgr->SendAddonState(player);
+            return true;
+        }
+        else if (sub == "home" || sub == "go")
+            mgr->RequestGoHome(player, reason);
+        else if (sub == "leave")
+            mgr->LeaveHouse(player, reason);
+        else if (sub == "unstuck")
+            mgr->Unstuck(player, reason);
+        else if (sub == "key")
+            mgr->GiveHouseKey(player, reason);
+        else if (sub == "decorate")
+        {
+            std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            bool on = mode == "on" ? true : (mode == "off" ? false : !mgr->IsDecorating(player));
+            mgr->SetDecorating(player, on, reason);
+        }
+        else if (sub == "undo")
+            mgr->Undo(player, reason);
+        else if (sub == "redo")
+            mgr->Redo(player, reason);
+        else if (sub == "packup")
+            mgr->PackUpEverything(player, reason);
+        else if (sub == "pickup")
+        {
+            bool inside = tokens.size() > 1 && Lower(tokens.back()) == "inside";
+            mgr->PickUp(player, number(1), inside, reason);
+        }
+        else if (sub == "rotate" || sub == "turn")
+            mgr->Rotate(player, number(2), decimal(1, 45.0f), reason);
+        else if (sub == "move")
+            mgr->StartMove(player, number(1), reason);
+        else if (sub == "face")
+            mgr->FaceMe(player, number(1), reason);
+        else if (sub == "here")
+            mgr->MoveHere(player, number(1), reason);
+        else if (sub == "nudge" || sub == "up" || sub == "down")
+        {
+            std::string direction = sub == "nudge" ? (tokens.size() > 1 ? Lower(tokens[1]) : "") : sub;
+            size_t distanceIndex = sub == "nudge" ? 2 : 1;
+            bool vertical = direction == "up" || direction == "down";
+            float distance = decimal(distanceIndex, vertical ? 0.1f : 0.25f);
+            uint32 id = number(distanceIndex + 1);
+            float forward = 0.0f, left = 0.0f, up = 0.0f;
+            if (direction == "forward") forward = distance;
+            else if (direction == "back") forward = -distance;
+            else if (direction == "left") left = distance;
+            else if (direction == "right") left = -distance;
+            else if (direction == "up") up = distance;
+            else if (direction == "down") up = -distance;
+            else
+                reason = "Nudge which way? forward, back, left, right, up or down.";
 
-            handler->SendSysMessage("Housing: Leaving house.");
+            if (reason.empty())
+                mgr->Nudge(player, id, forward, left, up, reason);
+        }
+        else if (sub == "size" || sub == "resize")
+        {
+            std::string how = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            uint32 id = number(2);
+            if (how == "bigger" || how == "up")
+                mgr->Resize(player, id, 10.0f, true, reason);
+            else if (how == "smaller" || how == "down")
+                mgr->Resize(player, id, -10.0f, true, reason);
+            else if (how == "normal" || how == "reset")
+                mgr->Resize(player, id, 100.0f, false, reason);
+            else if (float percent = decimal(1, 0.0f); percent > 0.0f)
+                mgr->Resize(player, id, percent, false, reason);
+            else
+                reason = Acore::StringFormat("Usage: .house size <bigger|smaller|normal|percent> [id]. Sizes go from {:.0f}% to {:.0f}%.",
+                    mgr->GetMinSize() * 100.0f, mgr->GetMaxSize() * 100.0f);
+        }
+        else if (sub == "tilt")
+        {
+            std::string direction = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            float degrees = decimal(2, 5.0f);
+            uint32 id = number(3);
+            if (direction == "forward")
+                mgr->Tilt(player, id, degrees, 0.0f, false, reason);
+            else if (direction == "back")
+                mgr->Tilt(player, id, -degrees, 0.0f, false, reason);
+            else if (direction == "right")
+                mgr->Tilt(player, id, 0.0f, degrees, false, reason);
+            else if (direction == "left")
+                mgr->Tilt(player, id, 0.0f, -degrees, false, reason);
+            else if (direction == "straight" || direction == "level")
+                mgr->Tilt(player, number(2), 0.0f, 0.0f, true, reason);
+            else
+                reason = "Usage: .house tilt <forward|back|left|right|straight> [degrees] [id]. Forward tips its front down; left and right are its own.";
+        }
+        else if (sub == "report")
+            mgr->ReportIsland(player, restFrom(1), reason);
+        else if (gm && sub == "reports")
+        {
+            bool all = tokens.size() > 1 && Lower(tokens[1]) == "all";
+            auto reports = mgr->GetReports(all, 20);
+            if (reports.empty())
+                reason = all ? "No reports yet." : "No open reports.";
+            for (IslandReport const& report : reports)
+                handler->PSendSysMessage("#{} {}: {}'s island, reported by {}: {}{}", report.id, report.when, mgr->NameOf(report.ownerGuid),
+                    mgr->NameOf(report.reporterGuid), report.reason, report.closed ? " (closed)" : "");
+        }
+        else if (gm && sub == "close")
+            mgr->CloseReport(player, number(1), reason);
+        else if (gm && (sub == "inspect" || sub == "hide" || sub == "unhide" || sub == "cleargreeting" || sub == "gmpackup"))
+        {
+            ObjectGuid::LowType target = 0;
+            std::string name;
+            if (tokens.size() < 2 || !mgr->ResolvePlayerGuid(std::string(tokens[1]), target, name))
+                reason = Acore::StringFormat("Usage: .house {} <player>", sub);
+            else if (sub == "inspect")
+                mgr->GmInspect(player, target, reason);
+            else if (sub == "hide" || sub == "unhide")
+                mgr->GmSetHidden(player, target, sub == "hide", reason);
+            else if (sub == "cleargreeting")
+                mgr->GmClearGreeting(player, target, reason);
+            else
+                mgr->GmPackUp(player, target, reason);
+        }
+        else if (sub == "like")
+            mgr->ToggleLike(player, reason);
+        else if (sub == "visitors")
+        {
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            auto log = mgr->GetVisitorLog(self, 20);
+            reason = Acore::StringFormat("{} visitors this week, {} likes.{}", mgr->CountVisitorsThisWeek(self), mgr->CountLikes(self),
+                log.empty() ? " Nobody has visited yet." : "");
+            for (auto const& [name, when] : log)
+                handler->PSendSysMessage("{}, {}", name, when);
+        }
+        else if (sub == "roommate" || sub == "unroommate")
+        {
+            ObjectGuid::LowType guestGuid = 0;
+            std::string name;
+            if (tokens.size() < 2)
+                reason = Acore::StringFormat("Usage: .house {} <name>", sub);
+            else if (!mgr->ResolvePlayerGuid(std::string(tokens[1]), guestGuid, name))
+                reason = "No character with that name.";
+            else
+                mgr->SetRoommate(player, guestGuid, sub == "roommate", reason);
+        }
+        else if (sub == "layout" || sub == "layouts")
+        {
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            auto find = [&](size_t index) -> uint32
+            {
+                std::string name = tokens.size() > index ? std::string(tokens[index]) : "";
+                if (what == "send" && tokens.size() > 3)
+                    name = std::string(tokens[2]);
+                else
+                    name = restFrom(index);
+                std::optional<SavedLayout> layout = mgr->FindSavedLayout(self, name);
+                if (!layout)
+                    reason = name.empty() ? "Which layout? .house layout list shows them." : "You have no layout called " + name + ".";
+                return layout ? layout->id : 0;
+            };
+            if (what.empty())
+            {
+                HousingMenus::ShowSavedLayouts(player, FromPlayer(player));
+                return true;
+            }
+            else if (what == "save")
+                mgr->SaveLayout(player, 0, restFrom(2), reason);
+            else if (what == "load" || what == "switch" || what == "set")
+            {
+                if (uint32 id = find(2))
+                    mgr->SwitchLayout(player, id, reason);
+            }
+            else if (what == "delete")
+            {
+                if (uint32 id = find(2))
+                    mgr->DeleteLayout(player, id, reason);
+            }
+            else if (what == "send")
+            {
+                if (tokens.size() < 4)
+                    reason = "Usage: .house layout send <layout> <player>";
+                else if (uint32 id = find(2))
+                    mgr->SendLayout(player, id, std::string(tokens[3]), reason);
+            }
+            else if (what == "list")
+            {
+                std::vector<SavedLayout> layouts = mgr->GetSavedLayouts(self);
+                if (layouts.empty())
+                    reason = "No saved layouts yet: .house layout save <name>.";
+                for (SavedLayout const& layout : layouts)
+                    handler->PSendSysMessage("#{} {} ({} pieces, {})", layout.id, layout.name, layout.pieces, layout.savedAt);
+            }
+            else
+                reason = "Usage: .house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]";
+        }
+        else if (sub == "another" || sub == "copy")
+            mgr->PlaceAnother(player, number(1), reason);
+        else if (sub == "grid")
+        {
+            std::string size = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (size == "off" || size == "0")
+                mgr->SetGridSize(player, 0.0f, reason);
+            else if (float yards = decimal(1, 0.0f); yards > 0.0f)
+                mgr->SetGridSize(player, yards, reason);
+            else if (float current = mgr->GetGridSize(player->GetGUID().GetCounter()); current > 0.0f)
+                reason = Acore::StringFormat("The grid is {} yards. Usage: .house grid <off|yards> (0.25 to 4).", PlayerHousingMgr::FormatYards(current));
+            else
+                reason = "The grid is off. Usage: .house grid <off|yards> (0.25 to 4).";
+        }
+        else if (sub == "select")
+        {
+            uint32 id = number(1);
+            if (!id)
+            {
+                auto nearby = mgr->GetNearbyPlacements(player, 25.0f);
+                id = nearby.empty() ? 0 : nearby.front().first.id;
+            }
+            if (id && mgr->GetPlacement(player, id))
+            {
+                mgr->SelectPlacement(player, id);
+                reason = "Selected " + mgr->GetPiece(mgr->GetPlacement(player, id)->itemEntry)->name + ".";
+                mgr->SendAddonState(player);
+            }
+            else
+                reason = "No piece with that number nearby.";
+        }
+        else if (sub == "list")
+        {
+            auto nearby = mgr->GetNearbyPlacements(player, 40.0f);
+            if (nearby.empty())
+                reason = "No pieces within 40 yards.";
+            for (auto const& [placement, distance] : nearby)
+                handler->PSendSysMessage("#{} {} ({:.0f} yd)", placement.id, mgr->GetPiece(placement.itemEntry)->name, distance);
+        }
+        else if (sub == "collection")
+        {
+            if (tokens.size() > 1)
+                HousingMenus::ShowCollectionSearch(player, FromPlayer(player), restFrom(1));
+            else
+                HousingMenus::ShowCollection(player, FromPlayer(player));
+        }
+        else if (sub == "storage")
+            HousingMenus::ShowStorage(player, FromPlayer(player));
+        else if (sub == "visit")
+        {
+            if (tokens.size() > 1)
+                mgr->VisitHouseByName(player, std::string(tokens[1]), reason);
+            else
+                HousingMenus::ShowVisit(player, FromPlayer(player));
+        }
+        else if (sub == "invite")
+        {
+            std::string who = tokens.size() > 1 ? std::string(tokens[1]) : "target";
+            if (Lower(who) == "target")
+                mgr->InviteTarget(player, reason);
+            else if (Lower(who) == "party")
+                mgr->InviteParty(player, reason);
+            else
+                mgr->InviteGuestByName(player, who, reason);
+        }
+        else if (sub == "uninvite")
+        {
+            if (tokens.size() > 1)
+                mgr->RemoveGuestByName(player, std::string(tokens[1]), reason);
+            else
+                reason = "Usage: .house uninvite <name>";
+        }
+        else if (sub == "privacy")
+        {
+            std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (mode == "private")
+                mgr->SetPrivacy(player, PRIVACY_PRIVATE, reason);
+            else if (mode == "friends" || mode == "guild")
+                mgr->SetPrivacy(player, PRIVACY_FRIENDS, reason);
+            else if (mode == "public")
+                mgr->SetPrivacy(player, PRIVACY_PUBLIC, reason);
+            else
+                mgr->CyclePrivacy(player, reason);
+        }
+        else if (sub == "adjust")
+        {
+            std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (mode == "all" || mode == "everything")
+                mgr->SetAdjustMode(player, ADJUST_ALL, reason);
+            else if (mode == "buildings")
+                mgr->SetAdjustMode(player, ADJUST_BUILDINGS, reason);
+            else if (mode == "off" || mode == "never")
+                mgr->SetAdjustMode(player, ADJUST_NEVER, reason);
+            else
+                reason = Acore::StringFormat("The adjust menu opens {}. Usage: .house adjust <all|buildings|off>",
+                    PlayerHousingMgr::AdjustModeName(mgr->GetAdjustMode(player->GetGUID().GetCounter())));
+        }
+        else if (sub == "greeting")
+        {
+            std::string text = restFrom(1);
+            mgr->SetGreeting(player, Lower(text) == "clear" ? "" : text, reason);
+        }
+        else if (gm && (sub == "unlock" || sub == "relock"))
+        {
+            if (tokens.size() < 2)
+                reason = "Usage: .house unlock|relock <item|name|all> [player]";
+            else
+                mgr->GmUnlock(GmTarget(handler, player, tokens, 2), std::string(tokens[1]), sub == "unlock", reason);
+        }
+        else if (gm && sub == "unlocks")
+        {
+            Player* target = GmTarget(handler, player, tokens, 1);
+            uint32 unlocked = 0;
+            uint32 total = 0;
+            mgr->CollectionCounts(target, -1, unlocked, total);
+            reason = Acore::StringFormat("{} has {} of {} pieces unlocked.", target->GetName(), unlocked, total);
+        }
+        else if (gm && sub == "add")
+        {
+            float angle = player->GetOrientation();
+            float x = player->GetPositionX() + std::cos(angle) * 2.5f;
+            float y = player->GetPositionY() + std::sin(angle) * 2.5f;
+            if (Creature* steward = player->SummonCreature(mgr->GetStewardEntry(), x, y, player->GetPositionZ(), angle + float(M_PI), TEMPSUMMON_TIMED_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
+            {
+                EnsureStewardAppearance(steward);
+                reason = "Krook will wait here for ten minutes.";
+            }
+            else
+                reason = "Could not summon Krook.";
+        }
+        else
+        {
+            SendUsage(handler, gm);
             return true;
         }
 
-        if (subcommand == "status")
-        {
-            std::vector<std::string> lines;
-            if (!sPlayerHousingMgr->GetHouseStatus(player, lines, reason))
-            {
-                handler->PSendSysMessage("Housing: {}", reason);
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            for (std::string const& line : lines)
-                handler->SendSysMessage(line);
-            return true;
-        }
-
-        handler->PSendSysMessage("Krook: unknown subcommand '{}'.", subcommand);
-        SendUsage(handler);
-        handler->SetSentErrorMessage(true);
-        return false;
+        Reply(player, reason);
+        return true;
     }
 };
 
@@ -620,57 +809,100 @@ class mod_playerhousing_playerscript : public PlayerScript
 public:
     mod_playerhousing_playerscript() : PlayerScript("mod_playerhousing_playerscript") { }
 
-    void OnPlayerLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override { sPlayerHousingMgr->OnPlayerLogin(player); }
+    void OnPlayerBeforeLogout(Player* player) override { sPlayerHousingMgr->OnPlayerLogout(player); }
+    void OnPlayerUpdate(Player* player, uint32 diffMs) override { sPlayerHousingMgr->OnPlayerUpdate(player, diffMs); }
+    void OnPlayerMapChanged(Player* player) override { sPlayerHousingMgr->OnPlayerMapChanged(player); }
+    void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override { sPlayerHousingMgr->OnPlayerDelete(guid); }
+    void OnPlayerDeleteFromDB(CharacterDatabaseTransaction /*trans*/, uint32 guid) override { sPlayerHousingMgr->OnPlayerDeleteFromDB(guid); }
+
+    void OnPlayerGossipSelect(Player* player, uint32 menuId, uint32 sender, uint32 action) override
     {
-        sPlayerHousingMgr->OnPlayerLogin(player);
+        if (menuId == PLAYER_MENU_ID)
+            HousingMenus::HandleSelect(player, FromPlayer(player), sender, action, nullptr);
     }
 
-    void OnPlayerBeforeLogout(Player* player) override
+    void OnPlayerGossipSelectCode(Player* player, uint32 menuId, uint32 sender, uint32 action, char const* code) override
     {
-        sPlayerHousingMgr->OnPlayerLogout(player);
+        if (menuId == PLAYER_MENU_ID)
+            HousingMenus::HandleSelect(player, FromPlayer(player), sender, action, code);
     }
 
-    void OnPlayerUpdate(Player* player, uint32 diffMs) override
+    // Progress that unlocks pieces for the Collection.
+    void OnPlayerAchievementComplete(Player* player, AchievementEntry const* achievement) override
     {
-        sPlayerHousingMgr->OnPlayerUpdate(player, diffMs);
+        sPlayerHousingMgr->EvaluateUnlocks(player, RULE_ACHIEVEMENT, achievement->ID, true);
     }
 
-    void OnPlayerMapChanged(Player* player) override
+    void OnPlayerReputationRankChange(Player* player, uint32 factionId, ReputationRank newRank, ReputationRank /*oldRank*/, bool increased) override
     {
-        sPlayerHousingMgr->OnPlayerMapChanged(player);
+        if (increased)
+            sPlayerHousingMgr->EvaluateUnlocks(player, RULE_REPUTATION, factionId, true, uint32(newRank));
     }
 
-    void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
     {
-        std::string reason;
-        if (sPlayerHousingMgr->HandlePlacementSpellCast(player, spell, reason) && !reason.empty())
-            ChatHandler(player->GetSession()).PSendSysMessage("Housing: {}", reason);
+        if (quest)
+            sPlayerHousingMgr->EvaluateUnlocks(player, RULE_QUEST, quest->GetQuestId(), true);
     }
 
-    void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override
+    void OnPlayerCreatureKill(Player* killer, Creature* killed) override
     {
-        sPlayerHousingMgr->OnPlayerDelete(guid);
+        if (killed)
+            sPlayerHousingMgr->OnCreatureKilled(killer, killed->GetEntry());
     }
 
+    void OnPlayerCreatureKilledByPet(Player* owner, Creature* killed) override
+    {
+        if (killed)
+            sPlayerHousingMgr->OnCreatureKilled(owner, killed->GetEntry());
+    }
+
+    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
+    {
+        sPlayerHousingMgr->EvaluateUnlocks(player, RULE_EXPLORE, newZone, true);
+    }
+
+    void OnPlayerUpdateArea(Player* player, uint32 /*oldArea*/, uint32 newArea) override
+    {
+        sPlayerHousingMgr->EvaluateUnlocks(player, RULE_EXPLORE, newArea, true);
+    }
+
+    void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
+    {
+        sPlayerHousingMgr->EvaluateUnlocks(player, RULE_LEVEL, 0, true, player->GetLevel());
+    }
+
+    void OnPlayerUpdateSkill(Player* player, uint32 skillId, uint32 /*value*/, uint32 /*max*/, uint32 /*step*/, uint32 newValue) override
+    {
+        sPlayerHousingMgr->EvaluateUnlocks(player, RULE_SKILL, skillId, true, newValue);
+    }
 };
 
-class mod_playerhousing_allmapscript : public AllMapScript
+class mod_playerhousing_globalscript : public GlobalScript
 {
 public:
-    mod_playerhousing_allmapscript() : AllMapScript("mod_playerhousing_allmapscript") { }
+    mod_playerhousing_globalscript() : GlobalScript("mod_playerhousing_globalscript", { GLOBALHOOK_ON_BEFORE_WORLDOBJECT_SET_PHASEMASK }) { }
 
-    void OnDestroyMap(Map* map) override
+    void OnBeforeWorldObjectSetPhaseMask(WorldObject const* /*worldObject*/, uint32& oldPhaseMask, uint32& newPhaseMask, bool& useCombinedPhases, bool& /*update*/) override
     {
-        sPlayerHousingMgr->OnDestroyMap(map);
+        sPlayerHousingMgr->OnBeforeSetPhaseMask(oldPhaseMask, newPhaseMask, useCombinedPhases);
     }
 };
 
 void Addmod_playerhousingScripts()
 {
-    new item_playerhousing_furniture();
-    new mod_playerhousing_commandscript();
-    new mod_playerhousing_worldscript();
-    new mod_playerhousing_playerscript();
-    new mod_playerhousing_allmapscript();
     new npc_playerhousing_steward();
+    new npc_playerhousing_mannequin();
+    new mod_playerhousing_serverscript();
+    new item_playerhousing_key();
+    new item_playerhousing_piece();
+    RegisterSpellScript(spell_playerhousing_place);
+    RegisterSpellScript(spell_playerhousing_key);
+    new go_playerhousing_piece();
+    new npc_playerhousing_figurine();
+    new mod_playerhousing_worldscript();
+    new mod_playerhousing_commandscript();
+    new mod_playerhousing_playerscript();
+    new mod_playerhousing_globalscript();
 }

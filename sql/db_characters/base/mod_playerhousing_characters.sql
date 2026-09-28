@@ -1,22 +1,36 @@
+-- mod-playerhousing: character data. Re-applying is safe; for databases created by older
+-- versions, mod_playerhousing_characters_hotfix.sql adds the columns they lack.
+
+-- One island per character. is_private holds the privacy level: 0 public, 1 private,
+-- 2 friends and guild. style_id and stage are unused since house levels were removed.
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_house` (
   `owner_guid` int unsigned NOT NULL,
   `style_id` tinyint unsigned NOT NULL DEFAULT 1,
   `stage` tinyint unsigned NOT NULL DEFAULT 0,
   `is_private` tinyint unsigned NOT NULL DEFAULT 1,
+  `flags` int unsigned NOT NULL DEFAULT 0,
+  `greeting` varchar(255) NOT NULL DEFAULT '',
+  `weather` tinyint unsigned NOT NULL DEFAULT 0,
+  `time_of_day` tinyint unsigned NOT NULL DEFAULT 0,  -- 0: the server's clock
+  `music` int unsigned NOT NULL DEFAULT 0,             -- SoundEntries id
+  `last_home` timestamp NULL DEFAULT NULL,             -- the owner's last arrival, for "visits since"
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`),
   KEY `idx_mod_playerhousing_house_style` (`style_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Guest lists.
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_acl` (
   `owner_guid` int unsigned NOT NULL,
   `guest_guid` int unsigned NOT NULL,
+  `roommate` tinyint unsigned NOT NULL DEFAULT 0,  -- may decorate
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`,`guest_guid`),
   KEY `idx_mod_playerhousing_acl_guest` (`guest_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Old catalog unlocks. The worldserver converts them into Collection unlocks at startup.
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_unlock` (
   `owner_guid` int unsigned NOT NULL,
   `catalog_id` int unsigned NOT NULL,
@@ -25,112 +39,133 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_unlock` (
   KEY `idx_mod_playerhousing_unlock_catalog` (`catalog_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Placed pieces. source_item_entry is the piece (its item); the spawn_* columns are unused
+-- leftovers of the old catalog.
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `owner_guid` int unsigned NOT NULL,
   `placement_id` int unsigned NOT NULL,
-  `catalog_id` int unsigned NOT NULL DEFAULT 0,
+  `catalog_id` int unsigned NOT NULL DEFAULT 0,  -- old catalog entry, for converting old placements
   `source_item_entry` int unsigned NOT NULL DEFAULT 0,
   `map_id` int unsigned NOT NULL DEFAULT 0,
-  `spawn_type` tinyint unsigned NOT NULL DEFAULT 0,
-  `spawn_entry` int unsigned NOT NULL DEFAULT 0,
-  `display_id` int unsigned NOT NULL DEFAULT 0,
   `scale` float NOT NULL DEFAULT 1,
-  `collision_radius` float NOT NULL DEFAULT 1,
-  `min_distance` float NOT NULL DEFAULT 1.5,
   `pos_x` float NOT NULL,
   `pos_y` float NOT NULL,
   `pos_z` float NOT NULL,
   `orientation` float NOT NULL,
-  `placed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `look` int unsigned NOT NULL DEFAULT 0,
+  `parent_id` int unsigned NOT NULL DEFAULT 0,  -- the surface it stands on
+  `pitch` float NOT NULL DEFAULT 0,             -- tilt, radians
+  `roll` float NOT NULL DEFAULT 0,
+  `placed_by` int unsigned NOT NULL DEFAULT 0,  -- a roommate who placed it (0: the owner)
   PRIMARY KEY (`owner_guid`,`placement_id`),
   KEY `idx_mod_playerhousing_placement_catalog` (`catalog_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `source_item_entry` int unsigned NOT NULL DEFAULT 0 AFTER `catalog_id`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'source_item_entry'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- Gear on stands (mannequins). The items stay in item_instance, out of the owner's
+-- inventory, the way mail keeps its items; taking them off puts them back in the bags.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement_gear` (
+  `owner_guid` int unsigned NOT NULL,
+  `placement_id` int unsigned NOT NULL,
+  `slot` tinyint unsigned NOT NULL,
+  `item_guid` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  PRIMARY KEY (`owner_guid`, `placement_id`, `slot`),
+  UNIQUE KEY `idx_mod_playerhousing_gear_item` (`item_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `map_id` int unsigned NOT NULL DEFAULT 0 AFTER `source_item_entry`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'map_id'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- House Storage: pieces that came back while the owner's bags were full.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_storage` (
+  `owner_guid` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  `count` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`owner_guid`,`item_entry`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `spawn_type` tinyint unsigned NOT NULL DEFAULT 0 AFTER `map_id`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'spawn_type'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- The Collection: what an account (guid 0) or a single character has unlocked.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_collection` (
+  `account_id` int unsigned NOT NULL,
+  `guid` int unsigned NOT NULL DEFAULT 0,
+  `item_entry` int unsigned NOT NULL,
+  `unlocked_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `seen` tinyint unsigned NOT NULL DEFAULT 0,  -- 0: shown as new in the Collection
+  PRIMARY KEY (`account_id`,`guid`,`item_entry`),
+  KEY `idx_mod_playerhousing_collection_guid` (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `spawn_entry` int unsigned NOT NULL DEFAULT 0 AFTER `spawn_type`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'spawn_entry'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- Per character: flags (1 key given, 2 past progress credited, 4 greeted by Krook) and
+-- one-time tips already shown.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_character` (
+  `guid` int unsigned NOT NULL,
+  `flags` int unsigned NOT NULL DEFAULT 0,
+  `tips` int unsigned NOT NULL DEFAULT 0,
+  `grid` tinyint unsigned NOT NULL DEFAULT 0,   -- grid snapping, in quarter yards (0: off)
+  PRIMARY KEY (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `display_id` int unsigned NOT NULL DEFAULT 0 AFTER `spawn_entry`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'display_id'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- Saved layouts: where every piece stood, to set out again. They hold no items.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_layout` (
+  `owner_guid` int unsigned NOT NULL,
+  `layout_id` int unsigned NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `source` varchar(12) NOT NULL DEFAULT '',    -- who sent it, or whose island it was copied from
+  `saved_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`owner_guid`,`layout_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `scale` float NOT NULL DEFAULT 1 AFTER `display_id`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'scale'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_piece` (
+  `owner_guid` int unsigned NOT NULL,
+  `layout_id` int unsigned NOT NULL,
+  `placement_id` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  `pos_x` float NOT NULL,
+  `pos_y` float NOT NULL,
+  `pos_z` float NOT NULL,
+  `orientation` float NOT NULL,
+  `scale` float NOT NULL DEFAULT 1,
+  `pitch` float NOT NULL DEFAULT 0,
+  `roll` float NOT NULL DEFAULT 0,
+  `look` int unsigned NOT NULL DEFAULT 0,
+  `parent_id` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`owner_guid`,`layout_id`,`placement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `collision_radius` float NOT NULL DEFAULT 1 AFTER `scale`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'collision_radius'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- Likes: one per account per island.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_like` (
+  `owner_guid` int unsigned NOT NULL,
+  `liker_account` int unsigned NOT NULL,
+  `liker_guid` int unsigned NOT NULL,
+  `liked_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`owner_guid`,`liker_account`),
+  KEY `idx_mod_playerhousing_like_guid` (`liker_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-SET @ph_stmt = (
-  SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `min_distance` float NOT NULL DEFAULT 1.5 AFTER `collision_radius`',
-    'SELECT 1')
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'min_distance'
-);
-PREPARE ph_stmt FROM @ph_stmt;
-EXECUTE ph_stmt;
-DEALLOCATE PREPARE ph_stmt;
+-- Visitor log: the last 50 arrivals on each island.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_visit_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `owner_guid` int unsigned NOT NULL,
+  `visitor_guid` int unsigned NOT NULL,
+  `visited_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_mod_playerhousing_visit_log_owner` (`owner_guid`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Reports of islands, for the GMs (.house reports).
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_report` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `owner_guid` int unsigned NOT NULL,
+  `reporter_guid` int unsigned NOT NULL,
+  `reporter_account` int unsigned NOT NULL,
+  `reason` varchar(255) NOT NULL DEFAULT '',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `closed_at` timestamp NULL DEFAULT NULL,
+  `closed_by` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_mod_playerhousing_report_owner` (`owner_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One-off conversions already done.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_meta` (
+  `meta_key` varchar(32) NOT NULL,
+  `meta_value` int NOT NULL DEFAULT 0,
+  PRIMARY KEY (`meta_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

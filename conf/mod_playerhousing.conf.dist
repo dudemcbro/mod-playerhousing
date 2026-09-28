@@ -4,88 +4,113 @@
 
 ###############################################################################
 # PlayerHousing.Enable
-#    Enables or disables the entire housing module.
-#    Default: 1 (enabled)
+#    Enables or disables the whole module.
+#    Default: 1
 ###############################################################################
 PlayerHousing.Enable = 1
 
 ###############################################################################
-# PlayerHousing.AutoProvisionOnLogin
-#    Creates the starter house the first time a player logs in after install.
-#    Default: 1 (enabled)
+# PlayerHousing.FreeMode
+#    Test servers: copies from the Collection cost nothing, and the House Key
+#    takes you home instantly.
+#    Default: 0
 ###############################################################################
-PlayerHousing.AutoProvisionOnLogin = 1
+PlayerHousing.FreeMode = 0
+
+###############################################################################
+# PlayerHousing.UnlockAll
+#    Test servers: the whole Collection is unlocked for everyone, and the
+#    Collection offers "one of everything". Leave it off to test the unlocks
+#    themselves (GMs: .house unlock / relock).
+#    Default: 0
+###############################################################################
+PlayerHousing.UnlockAll = 0
+
+###############################################################################
+# PlayerHousing.Layout
+#    Which island layout to use (table mod_playerhousing_layout):
+#      cleared     GM Island without its guild hall. Needs the matching server
+#                  data and client patch, see tools/gm-island-cleared.
+#      guildhouse  GM Island as it ships, landing in the guild hall.
+#    Default: cleared
+###############################################################################
+PlayerHousing.Layout = "cleared"
+
+###############################################################################
+# PlayerHousing.DefaultPrivacy
+#    Who may visit a new island: private (the owner's guest list), friends
+#    (friends, guild and guests) or public (anyone).
+#    Default: private
+###############################################################################
+PlayerHousing.DefaultPrivacy = "private"
 
 ###############################################################################
 # PlayerHousing.GmBypassPrivate
-#    If enabled, GMs can visit private houses without invite.
-#    Default: 0 (disabled)
+#    GMs (in GM mode) can visit any island.
+#    Default: 0
 ###############################################################################
 PlayerHousing.GmBypassPrivate = 0
 
 ###############################################################################
-# PlayerHousing.DefaultPrivate
-#    Default privacy for newly-created houses.
-#    1 = private, 0 = public
-#    Default: 1
+# PlayerHousing.MaxFurnishings
+# PlayerHousing.MaxBuildings
+#    How many furnishings and buildings one island can hold. Every open island
+#    shares the same few map cells, so these keep the server quick when many
+#    islands are occupied at once.
+#    Default: 200, 10
 ###############################################################################
-PlayerHousing.DefaultPrivate = 1
+PlayerHousing.MaxFurnishings = 200
+PlayerHousing.MaxBuildings = 10
 
 ###############################################################################
-# PlayerHousing.MapId
-#    Fallback instance map id used if a style has map_id = 0.
-#    Must be a dungeon-style instance map (not battleground/arena).
-#    Recommended/default: 658 (Pit of Saron).
-#    Default: 658
+# PlayerHousing.Size.Min
+# PlayerHousing.Size.Max
+#    How small and how big players may make a piece, as a multiple of its
+#    normal size. 1 and 1 turn resizing off.
+#    Default: 0.5, 2
 ###############################################################################
-PlayerHousing.MapId = 658
+PlayerHousing.Size.Min = 0.5
+PlayerHousing.Size.Max = 2
+
+###############################################################################
+# PlayerHousing.Tilt.Max
+#    How far players may tilt a piece, in degrees each way (forward and back,
+#    left and right). 0 turns tilting off. Mannequins always stand upright.
+#    Default: 45
+###############################################################################
+PlayerHousing.Tilt.Max = 45
+
+###############################################################################
+# PlayerHousing.SavedLayouts
+#    How many layouts each character can save (snapshots of where everything
+#    stands, to set out again or send to a friend). 0 turns them off. Up to 20.
+#    Default: 5
+###############################################################################
+PlayerHousing.SavedLayouts = 5
+
+###############################################################################
+# PlayerHousing.Catalog
+#    curated     the pieces earned through progression (default)
+#    everything  also every other object model in the game (about 2,000), one
+#                piece each, everyone's from the start, in the Collection's
+#                Catalog (search it by name). Needs
+#                sql/db_world/base/mod_playerhousing_world_catalog.sql applied.
+#    Default: curated
+###############################################################################
+PlayerHousing.Catalog = "curated"
+
+###############################################################################
+# PlayerHousing.HouseKey.DelaySeconds
+#    How long "Go home" takes (moving or combat cancels). 0 = instant.
+#    FreeMode always goes instantly.
+#    Default: 5
+###############################################################################
+PlayerHousing.HouseKey.DelaySeconds = 5
 
 ###############################################################################
 # PlayerHousing.StewardEntry
-#    Creature entry for the housing steward NPC.
-#    Default: 900200
+# PlayerHousing.StewardDisplayId
+#    Krook, the housing steward, and the model Krook uses (25384: Wolvar orphan).
 ###############################################################################
 PlayerHousing.StewardEntry = 900200
-
-###############################################################################
-# PlayerHousing.StewardDisplayId
-#    Display id forced on all housing stewards (city + instanced).
-#    Default: 25384 (Wolvar orphan)
-###############################################################################
 PlayerHousing.StewardDisplayId = 25384
-
-###############################################################################
-# PlayerHousing.DefaultStyle
-#    Initial style code for new houses.
-#    Supported by base SQL: human, gnome, tauren, undead
-#    Default: human
-###############################################################################
-PlayerHousing.DefaultStyle = "human"
-
-###############################################################################
-# PlayerHousing.Placement.MaxSlopeDegrees
-#    Maximum terrain slope allowed for furniture placement.
-#    Default: 35
-###############################################################################
-PlayerHousing.Placement.MaxSlopeDegrees = 35
-
-###############################################################################
-# PlayerHousing.Placement.SlopeSampleDistance
-#    Distance used to sample terrain slope around target.
-#    Default: 0.75
-###############################################################################
-PlayerHousing.Placement.SlopeSampleDistance = 0.75
-
-###############################################################################
-# PlayerHousing.Placement.DefaultMinDistance
-#    Default min-distance buffer for catalog-based placements.
-#    Default: 1.5
-###############################################################################
-PlayerHousing.Placement.DefaultMinDistance = 1.5
-
-###############################################################################
-# PlayerHousing.Placement.DefaultCollisionRadius
-#    Default collision radius for catalog-based placements.
-#    Default: 1.0
-###############################################################################
-PlayerHousing.Placement.DefaultCollisionRadius = 1.0
