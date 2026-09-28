@@ -234,6 +234,16 @@ assert(PlayerHousingSpotButton.text == "Now place the copy", PlayerHousingSpotBu
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t14\tBarrel\t6\t200\t1\t10\tplaced Barrel\tKrookowner\t\t0\t0\t0", "WHISPER", "Krookowner")
 assert(not PlayerHousingSpotButton:IsShown(), "spot button gone once the copy is placed")
 
+-- A roommate on someone else's island gets the decorating controls too.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t1\t21\tTiny Table\t7\t200\t1\t10\tnudged Tiny Table\tKrookfriend\t\t0\t0\t0\t1", "WHISPER", "Krookowner")
+assert(PlayerHousingSelected:IsShown(), "a roommate sees the selected piece")
+assert(PlayerHousingButton3.enabled == true and PlayerHousingButton2.enabled == true, "a roommate can undo and decorate")
+assert(PlayerHousingFrame and PlayerHousingButton1.text == "Leave")
+-- A plain visitor doesn't.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t0\t0\t\t0\t200\t0\t10\t\tKrookfriend\t\t0\t0\t0\t0", "WHISPER", "Krookowner")
+assert(not PlayerHousingSelected:IsShown() and PlayerHousingButton2.enabled == false, "a visitor can't decorate")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+
 -- Combat: the grid waits, the window can't toggle.
 combat = true
 fire("BAG_UPDATE")

@@ -8,6 +8,7 @@
 #include "Log.h"
 #include "Mail.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "StringFormat.h"
@@ -193,10 +194,15 @@ bool PlayerHousingMgr::MoveGearToStand(Player* player, ObjectGuid::LowType owner
     return true;
 }
 
-void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, GearItem const& gear)
+void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType islandOwner, ObjectGuid::LowType gearOwner, uint32 placementId, uint8 slot,
+    GearItem const& gear)
 {
     std::string deleteRow = Acore::StringFormat(
-        "DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={} AND placement_id={} AND slot={}", ownerGuid, placementId, uint32(slot));
+        "DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={} AND placement_id={} AND slot={}", islandOwner, placementId, uint32(slot));
+    ObjectGuid::LowType ownerGuid = gearOwner;
+    // Someone else's gear (a roommate's mannequin picked up by the owner) goes by mail.
+    if (player && player->GetGUID().GetCounter() != gearOwner)
+        player = nullptr;
 
     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(gear.itemEntry);
     QueryResult result = proto ? CharacterDatabase.Query(
@@ -225,11 +231,12 @@ void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType ownerGuid,
         return;
     }
 
-    // Bags full: Krook mails it, so nothing is ever lost.
+    // Bags full (or not there to take it): Krook mails it, so nothing is ever lost.
     MailDraft(Acore::StringFormat("Your {}", proto->Name1),
-              "Your bags were full when this came off your mannequin, so I sent it on. Krook")
+              "This came off your mannequin while your bags were full (or you weren't there), so I sent it on. Krook")
         .AddItem(item)
-        .SendMailTo(trans, MailReceiver(player, ownerGuid), MailSender(MAIL_CREATURE, _stewardEntry));
+        .SendMailTo(trans, MailReceiver(player ? player : ObjectAccessor::FindPlayerByLowGUID(ownerGuid), ownerGuid),
+            MailSender(MAIL_CREATURE, _stewardEntry));
     CharacterDatabase.CommitTransaction(trans);
     ++_report.gearMailed;
 }
@@ -366,6 +373,13 @@ bool PlayerHousingMgr::ChangeStand(Player* player, uint32 placementId, Placement
     if (itr == session->placements.end())
     {
         reason = "That stand isn't here any more.";
+        return false;
+    }
+
+    // Gear on a stand belongs to whoever placed the stand, so only they dress it.
+    if (ItemOwnerOf(*session, itr->second) != player->GetGUID().GetCounter())
+    {
+        reason = Acore::StringFormat("Only {} can dress this mannequin: it holds their gear.", NameOf(ItemOwnerOf(*session, itr->second)));
         return false;
     }
 

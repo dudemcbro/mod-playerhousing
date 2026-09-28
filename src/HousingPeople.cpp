@@ -195,8 +195,57 @@ bool PlayerHousingMgr::InviteParty(Player* player, std::string& reason)
 
 bool PlayerHousingMgr::RemoveGuest(Player* player, ObjectGuid::LowType guestGuid, std::string& reason)
 {
-    CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} AND guest_guid={}", player->GetGUID().GetCounter(), guestGuid);
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} AND guest_guid={}", self, guestGuid);
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto sessionItr = _sessionsByOwner.find(self);
+        if (sessionItr != _sessionsByOwner.end())
+            sessionItr->second.roommates.erase(guestGuid);
+    }
     reason = Acore::StringFormat("Removed {} from your guest list.", NameOf(guestGuid));
+    return true;
+}
+
+bool PlayerHousingMgr::IsRoommate(ObjectGuid::LowType ownerGuid, ObjectGuid::LowType guid) const
+{
+    return bool(CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_acl WHERE owner_guid={} AND guest_guid={} AND roommate=1", ownerGuid, guid));
+}
+
+bool PlayerHousingMgr::SetRoommate(Player* owner, ObjectGuid::LowType guestGuid, bool roommate, std::string& reason)
+{
+    ObjectGuid::LowType self = owner->GetGUID().GetCounter();
+    if (guestGuid == self)
+    {
+        reason = "That's you.";
+        return false;
+    }
+
+    // A roommate is a guest who may decorate: making one puts them on the guest list too.
+    if (roommate)
+        CharacterDatabase.DirectExecute(
+            "INSERT INTO mod_playerhousing_acl (owner_guid, guest_guid, roommate) VALUES ({}, {}, 1) ON DUPLICATE KEY UPDATE roommate=1", self, guestGuid);
+    else
+        CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_acl SET roommate=0 WHERE owner_guid={} AND guest_guid={}", self, guestGuid);
+
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto sessionItr = _sessionsByOwner.find(self);
+        if (sessionItr != _sessionsByOwner.end())
+        {
+            if (roommate)
+                sessionItr->second.roommates.insert(guestGuid);
+            else
+                sessionItr->second.roommates.erase(guestGuid);
+        }
+    }
+
+    std::string name = NameOf(guestGuid);
+    if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid))
+        Say(guest, roommate ? Acore::StringFormat("{} made you a roommate: you can decorate their island (House Key, Start decorating there).", owner->GetName())
+                            : Acore::StringFormat("You're no longer a roommate on {}'s island (still a guest).", owner->GetName()));
+    reason = roommate ? Acore::StringFormat("{} is now a roommate: they can place their own pieces and change yours. Their pieces stay theirs.", name)
+                      : Acore::StringFormat("{} is a guest again, no longer decorating.", name);
     return true;
 }
 
@@ -216,13 +265,14 @@ bool PlayerHousingMgr::RemoveGuestByName(Player* player, std::string const& name
 std::vector<VisitEntry> PlayerHousingMgr::GetGuests(ObjectGuid::LowType ownerGuid) const
 {
     std::vector<VisitEntry> guests;
-    if (QueryResult result = CharacterDatabase.Query("SELECT guest_guid FROM mod_playerhousing_acl WHERE owner_guid={}", ownerGuid))
+    if (QueryResult result = CharacterDatabase.Query("SELECT guest_guid, roommate FROM mod_playerhousing_acl WHERE owner_guid={}", ownerGuid))
     {
         do
         {
             VisitEntry entry;
             entry.ownerGuid = (*result)[0].Get<uint32>();
             entry.ownerName = NameOf(entry.ownerGuid);
+            entry.roommate = (*result)[1].Get<uint8>() != 0;
             guests.push_back(entry);
         } while (result->NextRow());
     }

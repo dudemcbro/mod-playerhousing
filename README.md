@@ -156,6 +156,18 @@ and friends, the ones you're invited to, and public ones. Only islands you're al
 are shown, so every entry works with one click. Visitors can use chairs and stations but
 can't change anything. The owner is told when someone arrives.
 
+### Roommates
+
+Island settings, Guests, click a guest: **Make them a roommate** (or `.house roommate
+<name>`). A roommate can decorate your island with you: place their own pieces, and move,
+turn, resize or pick up yours, with their own undo. What they can't do: pack up the
+island, set out a layout, change your settings, or dress a mannequin that isn't theirs.
+
+Every piece remembers who placed it and goes back to them when picked up: a roommate's
+piece you pick up lands in their House Storage (and undo takes it back out), and yours
+land in yours. Gear on a roommate's mannequin goes back to them by mail. "Make them a
+guest only" (or `.house unroommate <name>`) ends it; their pieces stay where they are.
+
 ### Commands
 
 Everything is also in the menus; these are shortcuts. `.krook` works the same as `.house`.
@@ -182,6 +194,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house packup` | Pick up everything (undoable) |
 | `.house collection [search]`, `storage`, `visit [name]` | Open those menus, search the Collection, or visit someone by name |
 | `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
+| `.house roommate <name>`, `unroommate <name>` | Let a guest decorate, or stop |
 | `.house privacy <private\|friends\|public>` | Who can visit |
 | `.house greeting <text\|clear>` | The message visitors see |
 | `.house adjust <all\|buildings\|off>` | When a piece's menu opens by itself after placing |

@@ -1050,6 +1050,52 @@ def main():
     _, msgs = guest.gossip_select("Get the ")
     wait_for(lambda: guest.count_item(MANNEQUIN) >= 1, 3, guest)
     check("and gets them", guest.count_item(MANNEQUIN) >= 1 and has(msgs, "Got "), joined(msgs))
+
+    # Roommates: a guest the owner lets decorate. Their pieces stay theirs.
+    mark = guest.message_mark()
+    msgs = owner.command(".house roommate %s" % args.guest_char)
+    guest.pump(1.0)
+    check("the owner makes the guest a roommate, who is told", has(msgs, "is now a roommate") and has(guest.messages_since(mark), "made you a roommate")
+          and db("SELECT roommate FROM mod_playerhousing_acl WHERE owner_guid=%d AND guest_guid=%d" % (owner_guid, guest_guid)) == [["1"]],
+          joined(msgs) + " / " + joined(guest.messages_since(mark)))
+    guest.command(".house")
+    check("a roommate's Home menu offers decorating", "Start decorating" in options(guest.last_gossip)
+          and options(guest.last_gossip)[0] == "You're a roommate on %s's island" % args.owner_char, str(options(guest.last_gossip)))
+    msgs = guest.command(".house decorate on")
+    check("a roommate can decorate", has(msgs, "Decorating"), joined(msgs))
+    before = {p["id"] for p in placements(owner_guid)}
+    guest_chairs = guest.count_item(CHAIR)
+    spot = (guest.pos[0] + 2.0, guest.pos[1], guest.pos[2])
+    msgs = guest.use_item(CHAIR, spell_of(CHAIR), spot)
+    placed = [p for p in placements(owner_guid) if p["id"] not in before]
+    placed_by = db("SELECT placed_by FROM mod_playerhousing_placement WHERE owner_guid=%d AND placement_id=%d" % (owner_guid, placed[0]["id"])) if placed else []
+    check("a roommate places their own chair on the owner's island", len(placed) == 1 and placed[0]["item"] == CHAIR
+          and placed_by == [[str(guest_guid)]], joined(msgs) + " " + str(placed_by))
+    table = placement_of(owner_guid, TABLE)
+    msgs = guest.command(".house nudge forward 0.25 %d" % table["id"]) if table else []
+    moved = placement_of(owner_guid, TABLE)
+    check("and moves the owner's pieces", moved is not None and math.dist((moved["x"], moved["y"]), (table["x"], table["y"])) > 0.2
+          and has(msgs, "Nudged Tiny Table"), joined(msgs))
+    msgs = guest.command(".house undo")
+    back = placement_of(owner_guid, TABLE)
+    check("with their own undo", back is not None and math.dist((back["x"], back["y"]), (table["x"], table["y"])) < 0.01, joined(msgs))
+    msgs = guest.command(".house packup")
+    check("but can't pack up the island", has(msgs, "Only the island's owner") and len(placements(owner_guid)) == len(before) + 1, joined(msgs))
+    if placed:
+        msgs = owner.command(".house pickup %d" % placed[0]["id"])
+        check("the owner picking up a roommate's piece sends it to the roommate's House Storage", storage(guest_guid).get(CHAIR) == 1
+              and has(msgs, "House Storage of whoever placed it"), joined(msgs) + " " + str(storage(guest_guid)))
+        msgs = owner.command(".house undo")
+        check("and undo takes it back out", placement_of(owner_guid, CHAIR) is not None and not storage(guest_guid).get(CHAIR)
+              and len(placements(owner_guid)) == len(before) + 1, joined(msgs))
+        mine = [p for p in placements(owner_guid) if p["id"] not in before]
+        msgs = guest.command(".house pickup %d" % mine[0]["id"]) if mine else []
+        wait_for(lambda: guest.count_item(CHAIR) == guest_chairs, 3, guest)
+        check("a roommate picking up their own piece gets it back in their bags", guest.count_item(CHAIR) == guest_chairs, joined(msgs))
+    guest.command(".house decorate off")
+    msgs = owner.command(".house unroommate %s" % args.guest_char)
+    msgs = guest.command(".house nudge forward 0.25 %d" % table["id"]) if table else []
+    check("once a guest again, no more changes", has(msgs, "Only the owner"), joined(msgs))
     chair_go = nearest_go(guest, live(CHAIR))
     if chair_go:
         stand_next_to(guest, chair_go, 1.5)

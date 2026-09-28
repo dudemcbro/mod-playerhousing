@@ -83,7 +83,7 @@ PlayerHousingMgr::Session const* PlayerHousingMgr::FindSessionOf(Player const* p
     return sessionItr != _sessionsByOwner.end() ? &sessionItr->second : nullptr;
 }
 
-PlayerHousingMgr::Session* PlayerHousingMgr::GetOwnerSession(Player* player, std::string& reason)
+PlayerHousingMgr::Session* PlayerHousingMgr::GetOwnerSession(Player* player, std::string& reason, bool ownerOnly)
 {
     if (!_enabled || !player)
     {
@@ -100,8 +100,13 @@ PlayerHousingMgr::Session* PlayerHousingMgr::GetOwnerSession(Player* player, std
 
     if (owner != player->GetGUID().GetCounter())
     {
-        reason = "Only the owner can change things on this island.";
-        return nullptr;
+        auto islandItr = _sessionsByOwner.find(owner);
+        bool roommate = islandItr != _sessionsByOwner.end() && islandItr->second.roommates.count(player->GetGUID().GetCounter());
+        if (!roommate || ownerOnly)
+        {
+            reason = roommate ? "Only the island's owner can do that." : "Only the owner can change things on this island.";
+            return nullptr;
+        }
     }
 
     auto sessionItr = _sessionsByOwner.find(owner);
@@ -248,6 +253,19 @@ bool PlayerHousingMgr::ReturnItem(Player* player, uint32 itemEntry, bool& toStor
     return true;
 }
 
+bool PlayerHousingMgr::TakeItemFor(Player* player, ObjectGuid::LowType itemOwner, uint32 itemEntry)
+{
+    if (itemOwner == player->GetGUID().GetCounter())
+        return TakeItem(player, itemEntry);
+
+    std::map<uint32, uint32> storage = GetStorage(itemOwner);
+    auto itr = storage.find(itemEntry);
+    if (itr == storage.end() || itr->second == 0)
+        return false;
+    AddToStorage(itemOwner, itemEntry, -1);
+    return true;
+}
+
 bool PlayerHousingMgr::TakeItem(Player* player, uint32 itemEntry)
 {
     uint32 reserved = 0;
@@ -306,10 +324,10 @@ void PlayerHousingMgr::SavePlacement(ObjectGuid::LowType ownerGuid, Placement co
     // The gear on a stand is saved as it moves (see HousingStands.cpp), never from here.
     CharacterDatabase.DirectExecute(
         "REPLACE INTO mod_playerhousing_placement "
-        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look, parent_id, pitch, roll) "
-        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look, parent_id, pitch, roll, placed_by) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
         ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o, placement.look,
-        placement.parent, placement.pitch, placement.roll);
+        placement.parent, placement.pitch, placement.roll, placement.placedBy);
 }
 
 void PlayerHousingMgr::DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const
@@ -548,6 +566,9 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     placement.z = target.GetPositionZ();
     placement.o = NormalizeAngle(std::atan2(player->GetPositionY() - placement.y, player->GetPositionX() - placement.x));
     placement.scale = piece->scale;
+    // A roommate's piece stays theirs: picking it up returns it to them.
+    if (player->GetGUID().GetCounter() != session->ownerGuid)
+        placement.placedBy = player->GetGUID().GetCounter();
     // A new mannequin takes after its owner.
     if (piece->HasFlag(PIECE_FLAG_STAND))
         placement.look = uint32(player->getRace()) | (uint32(player->getGender()) << 8);
@@ -586,7 +607,7 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     ++reserved;
 
     session->placements[placement.id] = placement;
-    session->selected = placement.id;
+    session->selected[player->GetGUID().GetCounter()] = placement.id;
     SavePlacement(session->ownerGuid, placement, session->mapId);
     if (session->decorating)
         SpawnMarkers(*session, map);
@@ -607,13 +628,23 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
     if (exists && !target)
     {
         Placement current = currentItr->second;
+        ObjectGuid::LowType itemOwner = ItemOwnerOf(session, current);
         for (auto const& [slot, gear] : current.gear)
-            ReturnGear(player, session.ownerGuid, placementId, slot, gear);
+            ReturnGear(player, session.ownerGuid, itemOwner, placementId, slot, gear);
         DespawnPlacement(session, map, placementId);
         session.placements.erase(currentItr);
         DeletePlacement(session.ownerGuid, placementId);
-        if (session.selected == placementId)
-            session.selected = 0;
+        for (auto& [who, selected] : session.selected)
+            if (selected == placementId)
+                selected = 0;
+
+        // A piece goes back to whoever placed it: the owner, or a roommate.
+        if (itemOwner != player->GetGUID().GetCounter())
+        {
+            AddToStorage(itemOwner, current.itemEntry, 1);
+            ++_report.toOthers;
+            return true;
+        }
 
         bool toStorage = false;
         ReturnItem(player, current.itemEntry, toStorage);
@@ -636,9 +667,11 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         if (!CheckLimit(session, pieceItr->second, reason))
             return false;
 
-        if (!TakeItem(player, target->itemEntry))
+        if (!TakeItemFor(player, ItemOwnerOf(session, *target), target->itemEntry))
         {
-            reason = Acore::StringFormat("You no longer have {}.", pieceItr->second.name);
+            reason = ItemOwnerOf(session, *target) == player->GetGUID().GetCounter()
+                ? Acore::StringFormat("You no longer have {}.", pieceItr->second.name)
+                : Acore::StringFormat("{} no longer has the {} in House Storage.", NameOf(ItemOwnerOf(session, *target)), pieceItr->second.name);
             return false;
         }
 
@@ -658,7 +691,7 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         session.placements[placementId] = placed;
         session.nextPlacementId = std::max(session.nextPlacementId, placementId + 1);
         SpawnPlacement(session, map, placed);
-        session.selected = placementId;
+        session.selected[player->GetGUID().GetCounter()] = placementId;
         ++_report.placed;
         return true;
     }
@@ -676,7 +709,7 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         // Gear comes off first, so a swap frees the slot, then the new gear goes on.
         for (auto const& [slot, gear] : current.gear)
             if (!sameItem(target->gear, slot, gear.itemGuid))
-                ReturnGear(player, session.ownerGuid, placementId, slot, gear);
+                ReturnGear(player, session.ownerGuid, ItemOwnerOf(session, current), placementId, slot, gear);
         for (auto const& [slot, gear] : target->gear)
         {
             if (sameItem(current.gear, slot, gear.itemGuid))
@@ -692,7 +725,7 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         currentItr->second = applied;
         SavePlacement(session.ownerGuid, applied, session.mapId);
         RespawnPlacement(session, map, placementId);
-        session.selected = placementId;
+        session.selected[player->GetGUID().GetCounter()] = placementId;
         return true;
     }
 
@@ -774,13 +807,21 @@ std::string PlayerHousingMgr::DescribeReturns() const
 
 std::string PlayerHousingMgr::DescribeItemReturns() const
 {
+    std::string mine;
     if (_report.toStorage && _report.toBags)
-        return Acore::StringFormat(" {} went back to your bags and {} to House Storage (bags full).", _report.toBags, _report.toStorage);
-    if (_report.toStorage)
-        return _report.toStorage == 1 ? " It's in your House Storage (bags full)." : " They're in your House Storage (bags full).";
-    if (_report.toBags)
-        return _report.toBags == 1 ? " It's back in your bags." : " They're back in your bags.";
-    return "";
+        mine = Acore::StringFormat(" {} went back to your bags and {} to House Storage (bags full).", _report.toBags, _report.toStorage);
+    else if (_report.toStorage)
+        mine = _report.toStorage == 1 ? " It's in your House Storage (bags full)." : " They're in your House Storage (bags full).";
+    else if (_report.toBags)
+        mine = _report.toBags == 1 ? " It's back in your bags." : " They're back in your bags.";
+
+    // Pieces someone else placed went back to them.
+    if (_report.toOthers == 1)
+        mine += (_report.toBags || _report.toStorage) ? " One piece went back to the House Storage of whoever placed it."
+                                                      : " It went back to the House Storage of whoever placed it.";
+    else if (_report.toOthers > 1)
+        mine += Acore::StringFormat(" {} pieces went back to the House Storage of whoever placed them.", _report.toOthers);
+    return mine;
 }
 
 bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
@@ -790,7 +831,7 @@ bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
     if (!session)
         return false;
 
-    Journal& journal = _journals[session->ownerGuid];
+    Journal& journal = _journals[player->GetGUID().GetCounter()];
     if (journal.undo.empty())
     {
         reason = "Nothing to undo.";
@@ -819,7 +860,7 @@ bool PlayerHousingMgr::Redo(Player* player, std::string& reason)
     if (!session)
         return false;
 
-    Journal& journal = _journals[session->ownerGuid];
+    Journal& journal = _journals[player->GetGUID().GetCounter()];
     if (journal.redo.empty())
     {
         reason = "Nothing to redo.";
@@ -844,8 +885,11 @@ bool PlayerHousingMgr::Redo(Player* player, std::string& reason)
 uint32 PlayerHousingMgr::GetSelectedPlacement(Player const* player) const
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto itr = _sessionsByOwner.find(player->GetGUID().GetCounter());
-    return itr != _sessionsByOwner.end() ? itr->second.selected : 0;
+    Session const* session = FindSessionOf(player);
+    if (!session)
+        return 0;
+    auto itr = session->selected.find(player->GetGUID().GetCounter());
+    return itr != session->selected.end() ? itr->second : 0;
 }
 
 uint32 PlayerHousingMgr::ResolvePlacementArgument(Player* player, uint32 placementId) const
@@ -1208,7 +1252,7 @@ bool PlayerHousingMgr::StartMove(Player* player, uint32 placementId, std::string
     }
 
     _pendingMoves[player->GetGUID()] = PendingMove{ placementId, moverItr->second };
-    session->selected = placementId;
+    session->selected[player->GetGUID().GetCounter()] = placementId;
     reason = Acore::StringFormat("Right-click Move a Piece in your bags, then click where the {} should go.", piece->name);
     SendAddonState(player);
     return true;
@@ -1226,7 +1270,7 @@ bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position c
 
     uint32 placementId = pending->second.placementId;
     std::optional<Placement> placement = GetPlacement(player, placementId);
-    if (!placement || !IsOnOwnIsland(player))
+    if (!placement || !CanDecorate(player))
     {
         CancelMove(player);
         reason = "That piece isn't there any more.";
@@ -1284,9 +1328,11 @@ uint32 PlayerHousingMgr::GetPendingMover(Player const* player) const
 void PlayerHousingMgr::SelectPlacement(Player const* player, uint32 placementId)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto itr = _sessionsByOwner.find(player->GetGUID().GetCounter());
+    if (!CanDecorate(player))
+        return;
+    auto itr = _sessionsByOwner.find(GetIslandOwner(player));
     if (itr != _sessionsByOwner.end() && itr->second.placements.count(placementId))
-        itr->second.selected = placementId;
+        itr->second.selected[player->GetGUID().GetCounter()] = placementId;
 }
 
 ObjectGuid PlayerHousingMgr::GetObjectForPlacement(Player const* player, uint32 placementId) const
@@ -1540,7 +1586,8 @@ bool PlayerHousingMgr::PlaceAnother(Player* player, uint32 placementId, std::str
     }
     if (player->GetItemCount(piece->itemEntry) <= reserved)
     {
-        std::map<uint32, uint32> storage = GetStorage(session->ownerGuid);
+        ObjectGuid::LowType self = player->GetGUID().GetCounter();
+        std::map<uint32, uint32> storage = GetStorage(self);
         auto stored = storage.find(piece->itemEntry);
         if (stored != storage.end() && stored->second > 0)
         {
@@ -1549,7 +1596,7 @@ bool PlayerHousingMgr::PlaceAnother(Player* player, uint32 placementId, std::str
                 reason = "Your bags are full.";
                 return false;
             }
-            AddToStorage(session->ownerGuid, piece->itemEntry, -1);
+            AddToStorage(self, piece->itemEntry, -1);
             got = "Took one out of House Storage. ";
         }
         else
@@ -1618,6 +1665,8 @@ bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, ui
     placement.o = surface.o;
     placement.scale = piece->scale;
     placement.parent = surfacePlacementId;
+    if (player->GetGUID().GetCounter() != session->ownerGuid)
+        placement.placedBy = player->GetGUID().GetCounter();
 
     _report = {};
     std::string failure;
@@ -1639,7 +1688,7 @@ bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, ui
 bool PlayerHousingMgr::PackUpEverything(Player* player, std::string& reason)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session* session = GetOwnerSession(player, reason);
+    Session* session = GetOwnerSession(player, reason, true);
     if (!session)
         return false;
 
@@ -1667,7 +1716,7 @@ bool PlayerHousingMgr::PackUpEverything(Player* player, std::string& reason)
 bool PlayerHousingMgr::OpenBankAtChest(Player* player, uint32 placementId, std::string& reason)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session* session = GetOwnerSession(player, reason);
+    Session* session = GetOwnerSession(player, reason, true);
     if (!session)
         return false;
 

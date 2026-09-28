@@ -224,6 +224,7 @@ namespace Housing
         float roll{0.0f};                 // tilt, radians: + leans it to its right
         uint32 look{0};                   // stands: race | gender << 8
         uint32 parent{0};                 // the surface it stands on: it moves with it
+        uint32 placedBy{0};               // a roommate who placed it (0: the island's owner); it goes back to them
         std::map<uint8, GearItem> gear;   // stands: equipment slot -> item
     };
 
@@ -265,6 +266,7 @@ namespace Housing
     {
         ObjectGuid::LowType ownerGuid{0};
         std::string ownerName;
+        bool roommate{false};  // guest lists: may decorate
     };
 }
 
@@ -302,6 +304,10 @@ public:
     // Where the player stands: 0 when not on anyone's island.
     ObjectGuid::LowType GetIslandOwner(Player const* player) const;
     bool IsOnOwnIsland(Player const* player) const;
+    // On their own island, or on one where they're a roommate.
+    bool CanDecorate(Player const* player) const;
+    bool IsRoommate(ObjectGuid::LowType ownerGuid, ObjectGuid::LowType guid) const;
+    bool SetRoommate(Player* owner, ObjectGuid::LowType guestGuid, bool roommate, std::string& reason);
     bool IsDecorating(Player const* player) const;
 
     // ---- pieces and editing (HousingPieces.cpp)
@@ -466,7 +472,8 @@ private:
         bool initialized{false};
         bool decorating{false};
         uint32 nextPlacementId{1};
-        uint32 selected{0};
+        std::unordered_map<ObjectGuid::LowType, uint32> selected;  // per player decorating
+        std::unordered_set<ObjectGuid::LowType> roommates;         // guests who may decorate
         std::unordered_set<ObjectGuid> occupants;
         std::map<uint32, Housing::Placement> placements;
         std::unordered_map<uint32, SpawnedPiece> spawned;
@@ -488,6 +495,7 @@ private:
         uint32 placed{0};
         uint32 gearToBags{0};
         uint32 gearMailed{0};
+        uint32 toOthers{0};   // pieces someone else placed, sent to their House Storage
         std::vector<std::string> gearMissing;  // couldn't go back on a stand: no longer in the bags
     };
 
@@ -533,7 +541,17 @@ private:
     void UpdatePendingTrip(Player* player);
 
     // HousingPieces.cpp
-    Session* GetOwnerSession(Player* player, std::string& reason);
+    // The island the player may change: their own, or one they're a roommate on (unless
+    // ownerOnly).
+    Session* GetOwnerSession(Player* player, std::string& reason, bool ownerOnly = false);
+    // Who a piece's item goes back to.
+    static ObjectGuid::LowType ItemOwnerOf(Session const& session, Housing::Placement const& placement)
+    {
+        return placement.placedBy ? placement.placedBy : session.ownerGuid;
+    }
+    // The item for a piece coming back: from the player's bags or storage, or (for someone
+    // else's piece) from its owner's House Storage.
+    bool TakeItemFor(Player* player, ObjectGuid::LowType itemOwner, uint32 itemEntry);
     Session const* FindSessionOf(Player const* player) const;
     bool SpawnPlacement(Session& session, Map* map, Housing::Placement const& placement);
     bool SpawnStand(Session& session, Map* map, Housing::Placement const& placement);
@@ -563,7 +581,9 @@ private:
     uint32 FindSurfaceUnder(Session const& session, float x, float y, float z, std::set<uint32> const& exclude = {}) const;
     bool ChangeStand(Player* player, uint32 placementId, Housing::Placement const& after, std::string const& label, std::string& reason);
     bool MoveGearToStand(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, uint32 itemGuid, std::string& reason);
-    void ReturnGear(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, Housing::GearItem const& gear);
+    // Gear back to its owner: into the player's bags when it's theirs, otherwise by mail.
+    void ReturnGear(Player* player, ObjectGuid::LowType islandOwner, ObjectGuid::LowType gearOwner, uint32 placementId, uint8 slot,
+        Housing::GearItem const& gear);
     void LoadGear(ObjectGuid::LowType ownerGuid, std::map<uint32, Housing::Placement>& placements) const;
     void SavePlacement(ObjectGuid::LowType ownerGuid, Housing::Placement const& placement, uint32 mapId) const;
     void DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const;

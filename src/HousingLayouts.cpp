@@ -373,7 +373,7 @@ bool PlayerHousingMgr::GetMissingForLayout(Player* player, uint32 layoutId, std:
 bool PlayerHousingMgr::SwitchLayout(Player* player, uint32 layoutId, std::string& reason)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session* session = GetOwnerSession(player, reason);
+    Session* session = GetOwnerSession(player, reason, true);
     if (!session)
         return false;
 

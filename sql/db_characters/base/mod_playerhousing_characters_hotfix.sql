@@ -156,6 +156,28 @@ PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
 
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_acl` ADD COLUMN `roommate` tinyint unsigned NOT NULL DEFAULT 0 AFTER `guest_guid`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_acl' AND column_name = 'roommate'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `placed_by` int unsigned NOT NULL DEFAULT 0 AFTER `roll`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'placed_by'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
 -- Columns from the house levels version that nothing uses any more.
 
 SET @ph_stmt = (

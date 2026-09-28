@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_house` (
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_acl` (
   `owner_guid` int unsigned NOT NULL,
   `guest_guid` int unsigned NOT NULL,
+  `roommate` tinyint unsigned NOT NULL DEFAULT 0,  -- may decorate
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`,`guest_guid`),
   KEY `idx_mod_playerhousing_acl_guest` (`guest_guid`)
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `parent_id` int unsigned NOT NULL DEFAULT 0,  -- the surface it stands on
   `pitch` float NOT NULL DEFAULT 0,             -- tilt, radians
   `roll` float NOT NULL DEFAULT 0,
+  `placed_by` int unsigned NOT NULL DEFAULT 0,  -- a roommate who placed it (0: the owner)
   PRIMARY KEY (`owner_guid`,`placement_id`),
   KEY `idx_mod_playerhousing_placement_catalog` (`catalog_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

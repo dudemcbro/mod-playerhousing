@@ -89,6 +89,8 @@ namespace
         CMD_TIME_OF_DAY,
         CMD_MUSIC_MENU,
         CMD_MUSIC,            // action: sound id (0: silence)
+        CMD_GUEST_PAGE,       // action: guest guid
+        CMD_GUEST_ROOMMATE,   // action: guest guid
         CMD_CLOSE
     };
 
@@ -514,11 +516,35 @@ namespace
 
         uint32 first = page * PAGE_SIZE;
         for (uint32 i = first; i < guests.size() && i < first + PAGE_SIZE; ++i)
-            Confirm(player, GOSSIP_ICON_DOT, "Remove " + guests[i].ownerName, CMD_GUEST_REMOVE, guests[i].ownerGuid,
-                "Remove " + guests[i].ownerName + " from your guest list?");
+            Add(player, GOSSIP_ICON_DOT, guests[i].ownerName + (guests[i].roommate ? " (roommate)" : ""), CMD_GUEST_PAGE, guests[i].ownerGuid);
 
         Paging(player, CMD_GUESTS, 0, page, uint32(guests.size()));
         Add(player, GOSSIP_ICON_CHAT, "Back", CMD_SETTINGS);
+        Send(player, source, TEXT_GUESTS);
+    }
+
+    void ShowGuestPage(Player* player, MenuSource const& source, ObjectGuid::LowType guestGuid)
+    {
+        std::vector<VisitEntry> guests = sPlayerHousingMgr->GetGuests(player->GetGUID().GetCounter());
+        auto guest = std::find_if(guests.begin(), guests.end(), [guestGuid](VisitEntry const& entry) { return entry.ownerGuid == guestGuid; });
+        if (guest == guests.end())
+        {
+            ShowGuests(player, source, 0);
+            return;
+        }
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, guest->roommate ? guest->ownerName + ": a roommate, who can decorate" : guest->ownerName + ": a guest",
+            CMD_GUEST_PAGE, guestGuid);
+        if (guest->roommate)
+            Add(player, GOSSIP_ICON_INTERACT_1, "Make them a guest only", CMD_GUEST_ROOMMATE, guestGuid);
+        else
+            Confirm(player, GOSSIP_ICON_INTERACT_1, "Make them a roommate (they can decorate)", CMD_GUEST_ROOMMATE, guestGuid,
+                "Let " + guest->ownerName + " place their own pieces here and move, turn or pick up yours? Pieces go back to whoever placed "
+                "them. You can undo their changes only by hand.");
+        Confirm(player, GOSSIP_ICON_DOT, "Remove from the guest list", CMD_GUEST_REMOVE, guestGuid,
+            "Remove " + guest->ownerName + " from your guest list?");
+        Add(player, GOSSIP_ICON_CHAT, "Back to guests", CMD_GUESTS, 0);
         Send(player, source, TEXT_GUESTS);
     }
 
@@ -592,7 +618,7 @@ namespace
     {
         std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
         PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
-        if (!piece || !sPlayerHousingMgr->IsOnOwnIsland(player))
+        if (!piece || !sPlayerHousingMgr->CanDecorate(player))
         {
             CloseGossipMenuFor(player);
             return;
@@ -851,7 +877,22 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
     }
     else if (islandOwner)
     {
-        Add(player, GOSSIP_ICON_CHAT, "You're visiting " + sPlayerHousingMgr->NameOf(islandOwner) + "'s island", CMD_HOME);
+        bool roommate = sPlayerHousingMgr->CanDecorate(player);
+        Add(player, GOSSIP_ICON_CHAT, "You're " + std::string(roommate ? "a roommate on " : "visiting ") + sPlayerHousingMgr->NameOf(islandOwner)
+            + "'s island", CMD_HOME);
+        if (roommate)
+        {
+            bool decorating = sPlayerHousingMgr->IsDecorating(player);
+            Add(player, GOSSIP_ICON_INTERACT_1, decorating ? "Done decorating" : "Start decorating", decorating ? CMD_DECORATE_OFF : CMD_DECORATE_ON);
+            std::string undo = sPlayerHousingMgr->UndoLabel(player);
+            if (!undo.empty())
+                Add(player, GOSSIP_ICON_INTERACT_2, "Undo: " + undo, CMD_UNDO);
+            std::string redo = sPlayerHousingMgr->RedoLabel(player);
+            if (!redo.empty())
+                Add(player, GOSSIP_ICON_INTERACT_2, "Redo: " + redo, CMD_REDO);
+            if (decorating)
+                Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
+        }
         Add(player, GOSSIP_ICON_TAXI, "Go home", CMD_GO_HOME);
         if (sPlayerHousingMgr->GetMaxSavedLayouts() && sPlayerHousingMgr->IsLayoutCopyable(islandOwner))
             Add(player, GOSSIP_ICON_VENDOR, "Save a copy of this island's layout", CMD_LAYOUT_COPY_ISLAND);
@@ -996,7 +1037,7 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
 {
     std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
     PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
-    if (!piece || !sPlayerHousingMgr->IsOnOwnIsland(player))
+    if (!piece || !sPlayerHousingMgr->CanDecorate(player))
     {
         CloseGossipMenuFor(player);
         return;
@@ -1005,15 +1046,20 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     sPlayerHousingMgr->SelectPlacement(player, placementId);
     sPlayerHousingMgr->SendAddonState(player);
 
+    // A roommate's piece goes back to them; only they dress their mannequin.
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType islandOwner = sPlayerHousingMgr->GetIslandOwner(player);
+    ObjectGuid::LowType itemOwner = placement->placedBy ? placement->placedBy : islandOwner;
+    std::string whereTo = itemOwner == self ? "back to your bags" : "back to " + sPlayerHousingMgr->NameOf(itemOwner) + "'s House Storage";
+
     ClearGossipMenuFor(player);
-    Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{} ({})", piece->name, sPlayerHousingMgr->CountsText(player->GetGUID().GetCounter())),
-        CMD_PIECE, placementId);
+    Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{} ({})", piece->name, sPlayerHousingMgr->CountsText(islandOwner)), CMD_PIECE, placementId);
     if (justPlaced)
     {
         Add(player, GOSSIP_ICON_CHAT, "Keep it here", CMD_CLOSE);
         Add(player, GOSSIP_ICON_INTERACT_2, "Take it back (back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
     }
-    if (piece->HasFlag(PIECE_FLAG_STAND))
+    if (piece->HasFlag(PIECE_FLAG_STAND) && itemOwner == self)
     {
         Add(player, GOSSIP_ICON_VENDOR, "Put gear on...", CMD_STAND_DRESS_MENU, placementId);
         for (auto const& [slot, gear] : placement->gear)
@@ -1026,9 +1072,10 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     if (piece->IsBuilding())
         Add(player, GOSSIP_ICON_INTERACT_1, "Pick up...", CMD_PICKUP_MENU, placementId);
     else if (!placement->gear.empty())
-        Add(player, GOSSIP_ICON_INTERACT_1, "Pick up (it and its gear go back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
+        Add(player, GOSSIP_ICON_INTERACT_1, itemOwner == self ? "Pick up (it and its gear go back to your bags)"
+            : "Pick up (it goes " + whereTo + ", its gear by mail)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
     else
-        Add(player, GOSSIP_ICON_INTERACT_1, "Pick up (back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
+        Add(player, GOSSIP_ICON_INTERACT_1, "Pick up (" + whereTo + ")", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 45°", CMD_PIECE_OP, placementId | (OP_TURN_LEFT_45 << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 45°", CMD_PIECE_OP, placementId | (OP_TURN_RIGHT_45 << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn toward me", CMD_PIECE_OP, placementId | (OP_FACE_ME << 24));
@@ -1049,7 +1096,7 @@ void HousingMenus::ShowHook(Player* player, MenuSource const& source, uint32 sur
 {
     std::optional<Placement> surface = sPlayerHousingMgr->GetPlacement(player, surfacePlacementId);
     PieceDefinition const* surfacePiece = surface ? sPlayerHousingMgr->GetPiece(surface->itemEntry) : nullptr;
-    if (!surfacePiece || !sPlayerHousingMgr->IsOnOwnIsland(player))
+    if (!surfacePiece || !sPlayerHousingMgr->CanDecorate(player))
     {
         CloseGossipMenuFor(player);
         return;
@@ -1150,6 +1197,14 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             return;
         case CMD_AMBIENCE:
             ShowAmbience(player, source);
+            return;
+        case CMD_GUEST_PAGE:
+            ShowGuestPage(player, source, action);
+            return;
+        case CMD_GUEST_ROOMMATE:
+            sPlayerHousingMgr->SetRoommate(player, action, !sPlayerHousingMgr->IsRoommate(player->GetGUID().GetCounter(), action), reason);
+            Say(player, reason);
+            ShowGuestPage(player, source, action);
             return;
         case CMD_WEATHER:
         {

@@ -96,7 +96,7 @@ public:
         if (!placementId)
             return true;
 
-        if (sPlayerHousingMgr->IsOnOwnIsland(player))
+        if (sPlayerHousingMgr->CanDecorate(player))
             HousingMenus::ShowPiece(player, source, placementId);
         else
             HousingMenus::ShowStandToGuest(player, source, placementId);
@@ -291,7 +291,7 @@ public:
             }
         }
 
-        if (sPlayerHousingMgr->IsOnOwnIsland(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
+        if (sPlayerHousingMgr->CanDecorate(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
         {
             sPlayerHousingMgr->SelectPlacement(player, placementId);
             Reply(player, "To change this, start decorating: House Key, Start decorating.");
@@ -348,7 +348,7 @@ public:
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
-        handler->SendSysMessage(".house another [id] | grid <off|yards>");
+        handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name>");
         handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
@@ -503,6 +503,17 @@ public:
                 mgr->Tilt(player, number(2), 0.0f, 0.0f, true, reason);
             else
                 reason = "Usage: .house tilt <forward|back|left|right|straight> [degrees] [id]. Forward tips its front down; left and right are its own.";
+        }
+        else if (sub == "roommate" || sub == "unroommate")
+        {
+            ObjectGuid::LowType guestGuid = 0;
+            std::string name;
+            if (tokens.size() < 2)
+                reason = Acore::StringFormat("Usage: .house {} <name>", sub);
+            else if (!mgr->ResolvePlayerGuid(std::string(tokens[1]), guestGuid, name))
+                reason = "No character with that name.";
+            else
+                mgr->SetRoommate(player, guestGuid, sub == "roommate", reason);
         }
         else if (sub == "layout" || sub == "layouts")
         {

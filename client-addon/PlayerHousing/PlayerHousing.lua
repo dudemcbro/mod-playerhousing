@@ -33,7 +33,13 @@ local state = {
     furnishings = 0, maxFurnishings = 0, buildings = 0, maxBuildings = 0,
     undo = "", redo = "", islandOwner = "",
     pendingMover = 0, pendingCopy = 0,
+    roommate = false,       -- decorating someone else's island, with their leave
 }
+
+-- Changing things: on your own island, or as a roommate on someone else's.
+local function CanEdit()
+    return state.own or state.roommate
+end
 
 local db                    -- PlayerHousingDB, once loaded
 local known = false         -- the server has housing: it sent us a state
@@ -149,10 +155,10 @@ end
 -- copy), so there's no need to find it in the bags. It's a secure button too.
 local function UpdateSpotButton()
     local location
-    if state.own and state.pendingMover > 0 then
+    if CanEdit() and state.pendingMover > 0 then
         location = movers[state.pendingMover]
         spotButton:SetText("Now pick the spot")
-    elseif state.own and state.pendingCopy > 0 then
+    elseif CanEdit() and state.pendingCopy > 0 then
         location = PieceLocation(state.pendingCopy)
         spotButton:SetText("Now place the copy")
     end
@@ -227,6 +233,10 @@ local function UpdateButtons()
         statusText:SetText(("Your island: %d/%d furnishings, %d/%d buildings.%s"):format(
             state.furnishings, state.maxFurnishings, state.buildings, state.maxBuildings,
             state.decorating and "  |cff40ff40Decorating|r" or ""))
+    elseif state.roommate then
+        statusText:SetText(("Roommate on %s's island: %d/%d furnishings, %d/%d buildings.%s"):format(
+            state.islandOwner, state.furnishings, state.maxFurnishings, state.buildings, state.maxBuildings,
+            state.decorating and "  |cff40ff40Decorating|r" or ""))
     elseif state.islandOwner ~= "" then
         statusText:SetText(("Visiting %s's island."):format(state.islandOwner))
     else
@@ -235,11 +245,11 @@ local function UpdateButtons()
 
     homeButton:SetText(onIsland and "Leave" or "Go home")
     decorateButton:SetText(state.decorating and "Done" or "Decorate")
-    if state.own then decorateButton:Enable() else decorateButton:Disable() end
-    if state.own and state.undo ~= "" then undoButton:Enable() else undoButton:Disable() end
-    if state.own and state.redo ~= "" then redoButton:Enable() else redoButton:Disable() end
+    if CanEdit() then decorateButton:Enable() else decorateButton:Disable() end
+    if CanEdit() and state.undo ~= "" then undoButton:Enable() else undoButton:Disable() end
+    if CanEdit() and state.redo ~= "" then redoButton:Enable() else redoButton:Disable() end
 
-    local showSelected = state.own and state.selected > 0
+    local showSelected = CanEdit() and state.selected > 0
     if showSelected then
         selectedText:SetText(("Selected: |cffffffff%s|r"):format(state.selectedName))
         if state.selectedBuilding then
@@ -298,6 +308,7 @@ local function OnState(fields)
     state.selectedBuilding = fields[13] == "1"
     state.pendingMover = tonumber(fields[14] or "") or 0
     state.pendingCopy = tonumber(fields[15] or "") or 0
+    state.roommate = fields[16] == "1"
 
     -- The window comes up by itself on arriving home, and goes again on leaving.
     if not frame then
@@ -386,7 +397,7 @@ local function Lift(yards)
 end
 
 local function OnMouseWheel(self, delta)
-    if state.own and state.selected > 0 then
+    if CanEdit() and state.selected > 0 then
         if IsControlKeyDown() then
             Lift(delta * 0.1)
         elseif IsShiftKeyDown() then

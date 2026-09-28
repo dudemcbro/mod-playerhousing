@@ -366,13 +366,26 @@ bool PlayerHousingMgr::IsOnOwnIsland(Player const* player) const
     return player && GetIslandOwner(player) == player->GetGUID().GetCounter();
 }
 
+bool PlayerHousingMgr::CanDecorate(Player const* player) const
+{
+    ObjectGuid::LowType owner = player ? GetIslandOwner(player) : 0;
+    if (!owner)
+        return false;
+    if (owner == player->GetGUID().GetCounter())
+        return true;
+
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _sessionsByOwner.find(owner);
+    return itr != _sessionsByOwner.end() && itr->second.roommates.count(player->GetGUID().GetCounter());
+}
+
 bool PlayerHousingMgr::IsDecorating(Player const* player) const
 {
-    if (!IsOnOwnIsland(player))
+    if (!CanDecorate(player))
         return false;
 
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto itr = _sessionsByOwner.find(player->GetGUID().GetCounter());
+    auto itr = _sessionsByOwner.find(GetIslandOwner(player));
     return itr != _sessionsByOwner.end() && itr->second.decorating;
 }
 
@@ -673,7 +686,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
     ProcessPendingConsumes(player);
     // A move not finished before leaving the island is dropped, with its item (and a copy
     // not placed yet no longer takes after the original).
-    if ((GetPendingMover(player) || GetPendingCopy(player)) && !player->IsBeingTeleported() && !IsOnOwnIsland(player))
+    if ((GetPendingMover(player) || GetPendingCopy(player)) && !player->IsBeingTeleported() && !CanDecorate(player))
         CancelMove(player);
     UpdateAmbience(player, diffMs);
     UpdatePendingTrip(player);
@@ -911,7 +924,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     session.nextPlacementId = 1;
 
     if (QueryResult result = CharacterDatabase.Query(
-            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id, pitch, roll FROM mod_playerhousing_placement "
+            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id, pitch, roll, placed_by FROM mod_playerhousing_placement "
             "WHERE owner_guid={} AND map_id={} ORDER BY placement_id", ownerGuid, session.mapId))
     {
         do
@@ -929,6 +942,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
             placement.parent = fields[8].Get<uint32>();
             placement.pitch = fields[9].Get<float>();
             placement.roll = fields[10].Get<float>();
+            placement.placedBy = fields[11].Get<uint32>();
             session.nextPlacementId = std::max(session.nextPlacementId, placement.id + 1);
             if (!_pieces.count(placement.itemEntry))
                 continue;
@@ -938,6 +952,14 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     }
 
     LoadGear(ownerGuid, session.placements);
+    session.roommates.clear();
+    if (QueryResult result = CharacterDatabase.Query("SELECT guest_guid FROM mod_playerhousing_acl WHERE owner_guid={} AND roommate=1", ownerGuid))
+    {
+        do
+        {
+            session.roommates.insert((*result)[0].Get<uint32>());
+        } while (result->NextRow());
+    }
     for (auto const& [id, placement] : session.placements)
         SpawnPlacement(session, map, placement);
 
@@ -1010,18 +1032,15 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
         {
             sessionItr->second.occupants.erase(playerGuid);
 
-            // The owner leaving ends decorating and the undo list. Anyone still there gets
-            // the island respawned in its normal form by their next update.
-            if (playerGuid.GetCounter() == ownerGuid)
+            // The owner leaving ends decorating. Anyone still there gets the island respawned
+            // in its normal form by their next update. Whoever leaves loses their undo list.
+            if (playerGuid.GetCounter() == ownerGuid && sessionItr->second.decorating)
             {
-                if (sessionItr->second.decorating)
-                {
-                    sessionItr->second.decorating = false;
-                    sessionItr->second.initialized = false;
-                }
-                sessionItr->second.selected = 0;
-                _journals.erase(ownerGuid);
+                sessionItr->second.decorating = false;
+                sessionItr->second.initialized = false;
             }
+            sessionItr->second.selected.erase(playerGuid.GetCounter());
+            _journals.erase(playerGuid.GetCounter());
         }
 
         _playerOwnerByGuid.erase(playerItr);
@@ -1300,7 +1319,8 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
 
     ObjectGuid::LowType owner = GetIslandOwner(player);
     bool own = owner && owner == player->GetGUID().GetCounter();
-    uint32 selected = own ? GetSelectedPlacement(player) : 0;
+    bool roommate = !own && CanDecorate(player);
+    uint32 selected = (own || roommate) ? GetSelectedPlacement(player) : 0;
     std::string selectedName;
     bool selectedBuilding = false;
     if (selected)
@@ -1317,15 +1337,15 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
 
     uint32 furnishings = 0;
     uint32 buildings = 0;
-    if (own)
+    if (own || roommate)
         CountPlaced(owner, furnishings, buildings);
 
     // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
-    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
-        owner ? NameOf(owner) : "", own ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
-        GetPendingCopy(player));
+        owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
+        GetPendingCopy(player), roommate ? 1 : 0);
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
