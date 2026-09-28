@@ -389,8 +389,12 @@ public:
         handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
+        handler->SendSysMessage(".house report <what's wrong> (while visiting)");
         if (gm)
+        {
             handler->SendSysMessage("GM: .house unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
+            handler->SendSysMessage("GM: .house reports [all] | close <id> | inspect <player> | hide|unhide <player> | cleargreeting <player> | gmpackup <player>");
+        }
     }
 
     static Player* GmTarget(ChatHandler* handler, Player* self, std::vector<std::string_view> const& tokens, size_t index)
@@ -540,6 +544,35 @@ public:
                 mgr->Tilt(player, number(2), 0.0f, 0.0f, true, reason);
             else
                 reason = "Usage: .house tilt <forward|back|left|right|straight> [degrees] [id]. Forward tips its front down; left and right are its own.";
+        }
+        else if (sub == "report")
+            mgr->ReportIsland(player, restFrom(1), reason);
+        else if (gm && sub == "reports")
+        {
+            bool all = tokens.size() > 1 && Lower(tokens[1]) == "all";
+            auto reports = mgr->GetReports(all, 20);
+            if (reports.empty())
+                reason = all ? "No reports yet." : "No open reports.";
+            for (IslandReport const& report : reports)
+                handler->PSendSysMessage("#{} {}: {}'s island, reported by {}: {}{}", report.id, report.when, mgr->NameOf(report.ownerGuid),
+                    mgr->NameOf(report.reporterGuid), report.reason, report.closed ? " (closed)" : "");
+        }
+        else if (gm && sub == "close")
+            mgr->CloseReport(player, number(1), reason);
+        else if (gm && (sub == "inspect" || sub == "hide" || sub == "unhide" || sub == "cleargreeting" || sub == "gmpackup"))
+        {
+            ObjectGuid::LowType target = 0;
+            std::string name;
+            if (tokens.size() < 2 || !mgr->ResolvePlayerGuid(std::string(tokens[1]), target, name))
+                reason = Acore::StringFormat("Usage: .house {} <player>", sub);
+            else if (sub == "inspect")
+                mgr->GmInspect(player, target, reason);
+            else if (sub == "hide" || sub == "unhide")
+                mgr->GmSetHidden(player, target, sub == "hide", reason);
+            else if (sub == "cleargreeting")
+                mgr->GmClearGreeting(player, target, reason);
+            else
+                mgr->GmPackUp(player, target, reason);
         }
         else if (sub == "like")
             mgr->ToggleLike(player, reason);

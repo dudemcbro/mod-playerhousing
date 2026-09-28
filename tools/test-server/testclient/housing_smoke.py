@@ -275,7 +275,7 @@ def main():
                           ("mod_playerhousing_collection", "guid"), ("mod_playerhousing_saved_layout", "owner_guid"),
                           ("mod_playerhousing_saved_piece", "owner_guid"), ("mod_playerhousing_like", "owner_guid"),
                           ("mod_playerhousing_like", "liker_guid"), ("mod_playerhousing_visit_log", "owner_guid"),
-                          ("mod_playerhousing_visit_log", "visitor_guid")):
+                          ("mod_playerhousing_visit_log", "visitor_guid"), ("mod_playerhousing_report", "owner_guid")):
         db("DELETE FROM %s WHERE %s IN (%s)" % (table, column, ids))
     db("DELETE FROM mod_playerhousing_collection WHERE account_id IN (SELECT account FROM characters WHERE guid IN (%s))" % ids)
     db("DELETE FROM character_social WHERE guid IN (%s) AND friend IN (%s)" % (ids, ids))
@@ -1181,6 +1181,24 @@ def main():
     check("the visitor log lists the guest", any(o.startswith(args.guest_char + ", ") for o in options(owner.last_gossip)),
           str(options(owner.last_gossip)))
 
+    # Reports: a visitor tells the GMs; a GM reads and closes them.
+    mark = admin.message_mark()
+    msgs = guest.command(".house report The lanterns spell something rude")
+    admin.pump(0.5)
+    check("a visitor reports the island to the GMs", has(msgs, "reported to the GMs")
+          and db("SELECT reason FROM mod_playerhousing_report WHERE owner_guid=%d" % owner_guid) == [["The lanterns spell something rude"]]
+          and has(admin.messages_since(mark), "reported %s's island" % args.owner_char), joined(msgs) + " / " + joined(admin.messages_since(mark)))
+    msgs = guest.command(".house report Again")
+    check("once per island while it's open", has(msgs, "already reported"), joined(msgs))
+    msgs = admin.command(".house reports")
+    check("a GM lists the open reports", has(msgs, "%s's island, reported by %s: The lanterns" % (args.owner_char, args.guest_char)), joined(msgs))
+    report_id = int(db("SELECT id FROM mod_playerhousing_report WHERE owner_guid=%d" % owner_guid)[0][0])
+    admin.command(".house close %d" % report_id)
+    msgs = admin.command(".house reports")
+    check("and closes one", has(msgs, "No open reports"), joined(msgs))
+    msgs = admin.command(".house cleargreeting %s" % args.owner_char)
+    check("a GM clears a greeting", db("SELECT greeting = '' FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["1"]], joined(msgs))
+
     msgs = owner.command(".house unroommate %s" % args.guest_char)
     msgs = guest.command(".house nudge forward 0.25 %d" % table["id"]) if table else []
     check("once a guest again, no more changes", has(msgs, "Only the owner"), joined(msgs))
@@ -1236,6 +1254,17 @@ def main():
     check("privacy cycles to Friends & guild", db("SELECT is_private FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["2"]], joined(msgs))
     _, msgs = owner.gossip_select("Privacy:")
     check("then to Public", db("SELECT is_private FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["0"]], joined(msgs))
+
+    # A GM hides a public island: strangers can't come, guests still can. GMs inspect anyway.
+    admin.command(".house hide %s" % args.owner_char)
+    msgs = admin.command(".house visit %s" % args.owner_char, wait=2.0)
+    check("a hidden island turns strangers away, even when public", has(msgs, "closed to visitors"), joined(msgs))
+    msgs = admin.command(".house inspect %s" % args.owner_char, wait=2.0)
+    wait_for(lambda: math.dist(admin.pos[:2], L["landing"][:2]) < 5, 8, admin)
+    check("a GM inspects it anyway", math.dist(admin.pos[:2], L["landing"][:2]) < 5, joined(msgs) + " " + str(admin.pos))
+    admin.command(".house leave", wait=1.5)
+    admin.command(".house unhide %s" % args.owner_char)
+    check("and unhides it", db("SELECT flags & 8 FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["0"]])
     owner.gossip_select("Privacy:")
 
     guest.command(".house visit")
@@ -1284,6 +1313,19 @@ def main():
           joined(owner.messages_since(visits_mark)[-10:]))
     check("back home, the mannequin still holds the sword", fig is not None and fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) == SWORD,
           str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
+
+    # Last: a GM packs the island up. Nothing is lost: pieces to House Storage, gear by mail.
+    count = len(placements(owner_guid))
+    stored = sum(storage(owner_guid).values())
+    mark = owner.message_mark()
+    msgs = admin.command(".house gmpackup %s" % args.owner_char, wait=2.0)
+    owner.pump(1.0)
+    wait_for(lambda: owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT) is None, 3, owner)
+    check("a GM packs up the island, everything to House Storage", count > 0 and not placements(owner_guid)
+          and sum(storage(owner_guid).values()) == stored + count and has(owner.messages_since(mark), "A GM packed up your island")
+          and owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT) is None, joined(msgs) + " " + joined(owner.messages_since(mark)))
+    check("the mannequin's sword came by mail", db("SELECT COUNT(*) FROM mail_items mi JOIN item_instance ii ON ii.guid = mi.item_guid "
+                                                   "WHERE mi.receiver=%d AND ii.itemEntry=%d" % (owner_guid, SWORD)) == [["1"]])
 
     return finish()
 

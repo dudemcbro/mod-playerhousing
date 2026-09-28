@@ -878,6 +878,7 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_storage WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_piece WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_like WHERE owner_guid={} OR liker_guid={}", guidLow, guidLow);
+    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_report WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_visit_log WHERE owner_guid={} OR visitor_guid={}", guidLow, guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_layout WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
@@ -1137,7 +1138,7 @@ void PlayerHousingMgr::RestoreNormalPhase(Player* player)
     player->SetPhaseMask(phaseMask, true);
 }
 
-bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason)
+bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason, bool force)
 {
     if (!_enabled || !player)
     {
@@ -1167,7 +1168,7 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
         return false;
     }
 
-    if (!CanVisit(player, house, reason))
+    if (!force && !CanVisit(player, house, reason))
         return false;
 
     if (!EnsureSession(ownerGuid))

@@ -74,11 +74,18 @@ bool PlayerHousingMgr::CanVisit(Player const* visitor, HouseRecord const& house,
     if (_gmVisitBypass && visitor->IsGameMaster())
         return true;
 
-    if (house.privacy == PRIVACY_PUBLIC)
+    bool hidden = house.flags & HOUSE_FLAG_HIDDEN;
+    if (house.privacy == PRIVACY_PUBLIC && !hidden)
         return true;
 
     if (CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_acl WHERE owner_guid={} AND guest_guid={}", house.ownerGuid, visitorGuid))
         return true;
+
+    if (hidden)
+    {
+        reason = "That island is closed to visitors for now.";
+        return false;
+    }
 
     if (house.privacy == PRIVACY_FRIENDS)
     {

@@ -95,6 +95,7 @@ namespace
         CMD_GUEST_ROOMMATE,   // action: guest guid
         CMD_LIKE,
         CMD_VISITOR_LOG,
+        CMD_REPORT,           // coded: what's wrong
         CMD_CLOSE
     };
 
@@ -924,6 +925,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
         Add(player, GOSSIP_ICON_CHAT, "Unstuck: back to the landing spot", CMD_UNSTUCK);
         Add(player, GOSSIP_ICON_TAXI, "Leave the island", CMD_LEAVE);
         Add(player, GOSSIP_ICON_CHAT, "How housing works", CMD_HELP);
+        Ask(player, GOSSIP_ICON_DOT, "Report this island to a GM...", CMD_REPORT);
     }
     else
     {
@@ -1220,6 +1222,11 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             return;
         case CMD_AMBIENCE:
             ShowAmbience(player, source);
+            return;
+        case CMD_REPORT:
+            sPlayerHousingMgr->ReportIsland(player, text, reason);
+            Say(player, reason);
+            CloseGossipMenuFor(player);
             return;
         case CMD_LIKE:
             sPlayerHousingMgr->ToggleLike(player, reason);

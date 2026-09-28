@@ -149,6 +149,20 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_visit_log` (
   KEY `idx_mod_playerhousing_visit_log_owner` (`owner_guid`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Reports of islands, for the GMs (.house reports).
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_report` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `owner_guid` int unsigned NOT NULL,
+  `reporter_guid` int unsigned NOT NULL,
+  `reporter_account` int unsigned NOT NULL,
+  `reason` varchar(255) NOT NULL DEFAULT '',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `closed_at` timestamp NULL DEFAULT NULL,
+  `closed_by` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_mod_playerhousing_report_owner` (`owner_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- One-off conversions already done.
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_meta` (
   `meta_key` varchar(32) NOT NULL,

@@ -119,7 +119,8 @@ namespace Housing
     {
         HOUSE_FLAG_WRECKAGE_PLACED = 0x01,
         HOUSE_FLAG_HALL_NOTICE = 0x02,     // things from the old guild hall went to storage
-        HOUSE_FLAG_LAYOUT_COPYABLE = 0x04  // visitors may save a copy of the layout
+        HOUSE_FLAG_LAYOUT_COPYABLE = 0x04, // visitors may save a copy of the layout
+        HOUSE_FLAG_HIDDEN = 0x08           // a GM closed it to all but its guests
     };
 
     enum CharacterFlags : uint32
@@ -266,6 +267,16 @@ namespace Housing
         uint32 music{0};     // SoundEntries id, 0 for none
     };
 
+    struct IslandReport
+    {
+        uint32 id{0};
+        ObjectGuid::LowType ownerGuid{0};
+        ObjectGuid::LowType reporterGuid{0};
+        std::string reason;
+        std::string when;
+        bool closed{false};
+    };
+
     struct SavedLayout
     {
         uint32 id{0};
@@ -375,6 +386,15 @@ public:
     void SelectPlacement(Player const* player, uint32 placementId);
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
     void ProcessPendingConsumes(Player* player);
+
+    // ---- moderation (HousingModeration.cpp)
+    bool ReportIsland(Player* reporter, std::string const& text, std::string& reason);
+    std::vector<Housing::IslandReport> GetReports(bool includeClosed, uint32 limit) const;
+    bool CloseReport(Player* gm, uint32 reportId, std::string& reason);
+    bool GmInspect(Player* gm, ObjectGuid::LowType ownerGuid, std::string& reason);
+    bool GmClearGreeting(Player* gm, ObjectGuid::LowType ownerGuid, std::string& reason);
+    bool GmSetHidden(Player* gm, ObjectGuid::LowType ownerGuid, bool hidden, std::string& reason);
+    bool GmPackUp(Player* gm, ObjectGuid::LowType ownerGuid, std::string& reason);
 
     // ---- saved layouts (HousingLayouts.cpp)
     std::vector<Housing::SavedLayout> GetSavedLayouts(ObjectGuid::LowType ownerGuid) const;
@@ -546,7 +566,8 @@ private:
     void LoadConfig();
     bool LoadDefinitions();
     void ConvertLegacyData();
-    bool EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason);
+    // force: a GM inspecting, past the island's privacy.
+    bool EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason, bool force = false);
     bool EnsureSession(ObjectGuid::LowType ownerGuid);
     bool InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason);
     void DespawnSessionObjects(Session& session, Map* map);

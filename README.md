@@ -238,6 +238,23 @@ Without an id, commands act on the selected piece (the one you last clicked).
 GMs also have `.house unlock <item|name|all> [player]`, `.house relock ...`,
 `.house unlocks [player]` and `.house add` (Krook next to you for ten minutes).
 
+### Moderation
+
+Players report an island from its Home menu (Report this island to a GM...) or with
+`.house report <what's wrong>`: once per account per island while the report is open.
+Online GMs are told at once. GM commands:
+
+| Command | What it does |
+| --- | --- |
+| `.house reports [all]` | Open reports (or the last 20 of all), newest first |
+| `.house close <id>` | Close a report |
+| `.house inspect <player>` | Go to anyone's island, whatever its privacy |
+| `.house hide <player>`, `unhide <player>` | Close an island to all but its guest list, and take it off the public and most liked lists |
+| `.house cleargreeting <player>` | Clear an island's greeting |
+| `.house gmpackup <player>` | Pack up an island: every piece goes to the House Storage of whoever placed it, and mannequin gear is mailed back |
+
+GM actions are logged to the server log (module logger).
+
 ## Optional client addon
 
 `client-addon/PlayerHousing` is a window for players who'd rather click icons than use
