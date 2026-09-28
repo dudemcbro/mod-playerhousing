@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Player Housing
+## Notes: A window for mod-playerhousing: your furnishings as icons, undo and redo, and quick controls for the piece you're working on.
+## Author: mod-playerhousing
+## Version: 1.0
+## SavedVariablesPerCharacter: PlayerHousingDB
+
+PlayerHousing.lua

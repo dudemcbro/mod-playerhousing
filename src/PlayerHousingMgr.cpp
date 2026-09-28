@@ -512,6 +512,9 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
             Say(player, Acore::StringFormat("Your past adventures unlocked {} pieces for your Collection.", credited));
     }
     SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_VETERAN_DONE, false);
+
+    // Lets the optional client addon know this server has housing.
+    SendAddonState(player);
 }
 
 void PlayerHousingMgr::OnPlayerLogout(Player* player)
@@ -1171,25 +1174,36 @@ bool PlayerHousingMgr::Unstuck(Player* player, std::string& reason)
 
 void PlayerHousingMgr::SendAddonState(Player* player) const
 {
-    if (!player || !player->GetSession())
+    if (!player || !player->GetSession() || player->GetSession()->IsBot())
         return;
 
     ObjectGuid::LowType owner = GetIslandOwner(player);
     bool own = owner && owner == player->GetGUID().GetCounter();
     uint32 selected = own ? GetSelectedPlacement(player) : 0;
     std::string selectedName;
+    bool selectedBuilding = false;
     if (selected)
+    {
         if (std::optional<Placement> placement = GetPlacement(player, selected))
+        {
             selectedName = PieceName(placement->itemEntry);
+            if (PieceDefinition const* piece = GetPiece(placement->itemEntry))
+                selectedBuilding = piece->IsBuilding();
+        }
+        else
+            selected = 0;  // picked up since
+    }
 
     uint32 furnishings = 0;
     uint32 buildings = 0;
     if (own)
         CountPlaced(owner, furnishings, buildings);
 
-    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
+    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
-        furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player));
+        furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
+        owner ? NameOf(owner) : "", own ? RedoLabel(player) : "", selectedBuilding ? 1 : 0);
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);

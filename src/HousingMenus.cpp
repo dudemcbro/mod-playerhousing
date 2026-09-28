@@ -267,14 +267,16 @@ namespace
         }
 
         uint32 inside = uint32(sPlayerHousingMgr->GetPiecesInside(player->GetGUID().GetCounter(), placementId).size());
+        std::string pieces = Acore::StringFormat("{} {}", inside, inside == 1 ? "piece" : "pieces");
         ClearGossipMenuFor(player);
         Confirm(player, GOSSIP_ICON_INTERACT_1, "Pick up the building only", CMD_PIECE_OP, placementId | (OP_PICKUP << 24),
-            inside ? Acore::StringFormat("Return the {} to your bags? The {} pieces inside stay where they are.", piece->name, inside)
+            inside ? Acore::StringFormat("Return the {} to your bags? The {} inside {} where {}.", piece->name, pieces,
+                                         inside == 1 ? "stays" : "stay", inside == 1 ? "it is" : "they are")
                    : Acore::StringFormat("Return the {} to your bags?", piece->name));
         if (inside)
-            Confirm(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Pick up the building and the {} pieces inside it", inside),
+            Confirm(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Pick up the building and the {} inside it", pieces),
                 CMD_PIECE_OP, placementId | (OP_PICKUP_WITH_INSIDE << 24),
-                Acore::StringFormat("Return the {} and the {} pieces inside it to your bags?", piece->name, inside));
+                Acore::StringFormat("Return the {} and the {} inside it to your bags?", piece->name, pieces));
         Add(player, GOSSIP_ICON_CHAT, "Back to the building", CMD_PIECE, placementId);
         Send(player, source, TEXT_PIECE);
     }

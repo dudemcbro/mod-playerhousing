@@ -39,6 +39,7 @@ CMSG_SET_SELECTION = 0x13D
 MSG_MOVE_TELEPORT_ACK = 0x0C7
 MSG_MOVE_WORLDPORT_ACK = 0x0DC
 MSG_MOVE_HEARTBEAT = 0x0EE
+SMSG_STANDSTATE_UPDATE = 0x29D
 CMSG_CAST_SPELL = 0x12E
 SMSG_CAST_FAILED = 0x130
 SMSG_SPELL_GO = 0x132
@@ -320,6 +321,8 @@ class WorldClient:
         self.objects = {}
         self.objects_lock = threading.Lock()
         self.system_messages = []
+        self.addon_messages = []
+        self.stand_state = 0
         self.msg_lock = threading.Lock()
         self.player_guid = 0
         self.map_id = None
@@ -405,6 +408,8 @@ class WorldClient:
             self.send(CMSG_TIME_SYNC_RESP, struct.pack("<II", counter, self.now_ms()))
         elif opcode == SMSG_MESSAGECHAT:
             self._on_chat(data)
+        elif opcode == SMSG_STANDSTATE_UPDATE:
+            self.stand_state = data[0]
         elif opcode == SMSG_NOTIFICATION:
             text = Reader(data).cstr()
             self._add_message("[notify] " + text)
@@ -458,7 +463,7 @@ class WorldClient:
     def _on_chat(self, data):
         r = Reader(data)
         ctype = r.u8()
-        r.i32()
+        lang = r.i32()
         r.u64()
         r.u32()
         if ctype in (0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x29, 0x2A, 0x2F):
@@ -478,6 +483,8 @@ class WorldClient:
         text = r.take(length).rstrip(b"\x00").decode("utf-8", "replace")
         if ctype == CHAT_MSG_SYSTEM:
             self._add_message(text)
+        elif lang == -1:  # LANG_ADDON: what a client addon would get as CHAT_MSG_ADDON
+            self.addon_messages.append(text)
 
     def _parse_gossip(self, data):
         r = Reader(data)

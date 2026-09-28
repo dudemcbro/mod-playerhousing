@@ -321,7 +321,13 @@ public:
         std::string reason;
         PlayerHousingMgr* mgr = sPlayerHousingMgr;
 
-        if (sub == "home" || sub == "go")
+        if (sub == "state")
+        {
+            // Quiet: for the client addon.
+            mgr->SendAddonState(player);
+            return true;
+        }
+        else if (sub == "home" || sub == "go")
             mgr->RequestGoHome(player, reason);
         else if (sub == "leave")
             mgr->LeaveHouse(player, reason);

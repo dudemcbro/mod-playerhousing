@@ -900,11 +900,12 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     std::string failure;
     ApplyChanges(player, *session, changes, true, failure);
 
-    std::string label = insideCount ? Acore::StringFormat("picked up {} and {} pieces inside", name, insideCount) : "picked up " + name;
+    std::string pieces = Acore::StringFormat("{} {}", insideCount, insideCount == 1 ? "piece" : "pieces");
+    std::string label = insideCount ? Acore::StringFormat("picked up {} and {} inside", name, pieces) : "picked up " + name;
     Record(player, label, std::move(changes));
 
     if (insideCount)
-        reason = Acore::StringFormat("Picked up {} and the {} pieces inside it.{} ({})", name, insideCount, DescribeReturns(), CountsText(session->ownerGuid));
+        reason = Acore::StringFormat("Picked up {} and the {} inside it.{} ({})", name, pieces, DescribeReturns(), CountsText(session->ownerGuid));
     else
         reason = Acore::StringFormat("Picked up {}.{} ({})", name, DescribeReturns(), CountsText(session->ownerGuid));
     SendAddonState(player);

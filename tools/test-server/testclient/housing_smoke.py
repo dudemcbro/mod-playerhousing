@@ -146,6 +146,15 @@ def stand_next_to(wc, obj, dist=2.0):
     move(wc, obj.x + math.cos(angle) * dist, obj.y + math.sin(angle) * dist, obj.z, angle + math.pi)
 
 
+SIT_ON_CHAIR = (4, 5, 6)  # UNIT_STAND_STATE_SIT_LOW_CHAIR .. SIT_HIGH_CHAIR
+
+
+def addon_state(wc):
+    """The last island state the server whispered for the client addon, as its fields."""
+    states = [m for m in wc.addon_messages if m.startswith("HOUSING\tstate\t")]
+    return states[-1].split("\t") if states else None
+
+
 def storage(owner_guid):
     return {int(r[0]): int(r[1]) for r in db("SELECT item_entry, count FROM mod_playerhousing_storage WHERE owner_guid=%d" % owner_guid)}
 
@@ -220,6 +229,8 @@ def main():
     owner.pump(1.0)
     msgs = owner.messages_since(0)
     check("first login: told about the house", has(msgs, "You have a house"), joined(msgs))
+    state = addon_state(owner)
+    check("first login: the client addon hears the server has housing", state is not None and state[2] == "0", str(state))
     check("first login: House Key in the bags", owner.count_item(HOUSE_KEY) == 1, str(owner.backpack()))
     check("first login: chair, table and lantern in the bags",
           all(owner.count_item(i) == 1 for i in (CHAIR, TABLE, LANTERN)), str(owner.backpack()))
@@ -310,6 +321,11 @@ def main():
     owner.command(".house")
     _, msgs = owner.gossip_select("Start decorating")
     check("decorate mode starts from the Home menu", has(msgs, "Decorating"), joined(msgs))
+    owner.addon_messages.clear()
+    msgs = owner.command(".house state")
+    state = addon_state(owner)
+    check("the addon's state request is quiet and answered", not msgs and state is not None
+          and state[2:4] == ["1", "1"] and state[11] == args.owner_char, joined(msgs) + " " + str(state))
     owner.pump(1.0)
     gos = go_entries(owner)
     check("the chair turns into its clickable copy while decorating", edit(CHAIR) in gos and live(CHAIR) not in gos, str(sorted(gos)))
@@ -321,8 +337,13 @@ def main():
         menu, msgs = owner.use_gameobject(chair_go.guid)
         check("clicking a piece opens its menu", "Pick up (back to your bags)" in options(menu), joined(msgs) + str(options(menu)))
         before = placement_of(owner_guid, CHAIR)
+        state = addon_state(owner)
+        check("the addon sees the clicked piece selected", state is not None and before is not None
+              and state[4] == str(before["id"]) and state[5] == "Westfall Chair" and state[13] == "0", str(state))
         _, msgs = owner.gossip_select("Turn left 45")
         after = placement_of(owner_guid, CHAIR)
+        state = addon_state(owner)
+        check("the addon's Undo button names the last change", state is not None and state[10].startswith("turned Westfall Chair 45"), str(state))
         check("turn left 45° from the piece menu", before and after and abs(angle_diff(after["o"], before["o"]) - math.pi / 4) < 0.02,
               joined(msgs) + " %s -> %s" % (before, after))
         check("the piece menu follows the respawned piece", "Nudge..." in options(owner.last_gossip), str(options(owner.last_gossip)))
@@ -423,7 +444,7 @@ def main():
     _, _ = owner.gossip_select("Pick up...")
     menu = owner.last_gossip
     check("choose the building only, or the building and what's inside",
-          "Pick up the building only" in options(menu) and any("pieces inside it" in o for o in options(menu)), str(options(menu)))
+          "Pick up the building only" in options(menu) and any("inside it" in o for o in options(menu)), str(options(menu)))
     _, msgs = owner.gossip_select("Pick up the building and the")
     wait_for(lambda: owner.count_item(FARMHOUSE) == 1, 3, owner)
     check("the building and the chair inside come back", placement_of(owner_guid, FARMHOUSE) is None and placement_of(owner_guid, CHAIR) is None
@@ -455,6 +476,8 @@ def main():
           joined(msgs))
     check("the guest is told about the invitation", has(guest.messages_since(mark), "invited you"), joined(guest.messages_since(mark)))
 
+    # Out of decorate mode, so guests find working furniture.
+    owner.command(".house decorate off")
     guest.command(".house visit")
     menu = guest.last_gossip
     check("the visit menu counts invitations", any(o.startswith("Islands you're invited to (1)") for o in options(menu)), str(options(menu)))
@@ -469,6 +492,16 @@ def main():
     check("the guest sees the owner's farmhouse", live(FARMHOUSE) in go_entries(guest), str(sorted(go_entries(guest))))
     msgs = guest.command(".house undo")
     check("guests can't change anything", has(msgs, "Only the owner"), joined(msgs))
+    chair_go = nearest_go(guest, live(CHAIR))
+    if chair_go:
+        stand_next_to(guest, chair_go, 1.5)
+        menu, msgs = guest.use_gameobject(chair_go.guid)
+        stand_state = guest.stand_state
+        check("a guest clicking a chair sits in it, no menu", menu is None and stand_state in SIT_ON_CHAIR
+              and math.dist(guest.pos[:2], (chair_go.x, chair_go.y)) < 1.0,
+              "stand state %d, pos %s, chair (%.1f, %.1f) %s" % (stand_state, guest.pos, chair_go.x, chair_go.y, joined(msgs)))
+    else:
+        check("a guest clicking a chair sits in it, no menu", False, "no chair in sight: %s" % sorted(go_entries(guest)))
 
     guest.command(".house leave", wait=1.0)
     wait_for(lambda: guest.map_id != HOUSING_MAP or not guest.find_objects(entry=live(FARMHOUSE)), 8, guest)
@@ -489,6 +522,7 @@ def main():
     # ------------------------------------------------------------- pack up, unstuck, relog
     log("== pack up, unstuck, relog")
     count = len(placements(owner_guid))
+    owner.command(".house decorate on")
     owner.command(".house")
     _, msgs = owner.gossip_select("Pack up everything")
     check("pack up everything empties the island", not placements(owner_guid) and has(msgs, "Packed up %d pieces" % count), joined(msgs))
