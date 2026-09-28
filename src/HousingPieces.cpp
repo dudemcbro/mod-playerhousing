@@ -618,6 +618,7 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
 
     Record(player, "placed " + piece->name, { Change{ placement.id, std::nullopt, placement } });
     reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session->ownerGuid));
+    QuestEvent(player, QUEST_TOUR_PLACE);
     Tip(player, TIP_FIRST_PLACE, "In decorate mode, click a piece to turn, move or pick it up. Mistake? House Key, Undo.");
     return true;
 }
@@ -849,6 +850,7 @@ bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
     journal.redo.push_back(entry);
 
     reason = Acore::StringFormat("Undid: {}.{} ({})", entry.label, DescribeReturns(), CountsText(session->ownerGuid));
+    QuestEvent(player, QUEST_TOUR_UNDO);
     if (!ok)
         reason += " Not everything could be undone: " + failure;
     SendAddonState(player);
@@ -1156,6 +1158,7 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
 
     reason = entryLabel + ".";
     reason[0] = char(std::toupper(static_cast<unsigned char>(reason[0])));
+    QuestEvent(player, QUEST_TOUR_CHANGE);
     SendAddonState(player);
     return true;
 }
@@ -1683,6 +1686,7 @@ bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, ui
 
     Record(player, Acore::StringFormat("put {} on {}", piece->name, surfacePiece->name), { Change{ placement.id, std::nullopt, placement } });
     reason = Acore::StringFormat("Put {} on the {} ({}).", piece->name, surfacePiece->name, CountsText(session->ownerGuid));
+    QuestEvent(player, QUEST_TOUR_PLACE);
     SendAddonState(player);
     return true;
 }

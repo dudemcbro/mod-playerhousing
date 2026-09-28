@@ -118,11 +118,14 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (195 checks):
+checking the database and what the client sees after each step (203 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
   starter wreckage
+- Krook's welcome tour: the quests above his menu, each completing when it's done (going
+  home, placing, turning a piece, undoing, inviting a guest), handed in one after
+  another, and the last unlocking Krook's Picnic Basket
 - placing with the targeting circle where it was clicked, facing you; each item sends its
   own spell, and the circles fit the pieces (small for a chair, large for a farmhouse);
   no menu after placing furniture, the menu after a building, and with `.house adjust

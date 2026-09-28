@@ -110,6 +110,8 @@ bool PlayerHousingMgr::SetPrivacy(Player* player, uint8 privacy, std::string& re
     EnsureHouse(owner);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET is_private={} WHERE owner_guid={}", uint32(privacy), owner);
     reason = Acore::StringFormat("Your island is now {}: {}.", PrivacyName(privacy), PrivacyDescription(privacy));
+    if (privacy != PRIVACY_PRIVATE)
+        QuestEvent(player, QUEST_TOUR_OPEN);
     return true;
 }
 
@@ -141,6 +143,7 @@ bool PlayerHousingMgr::InviteGuest(Player* player, ObjectGuid::LowType guestGuid
         Say(guest, Acore::StringFormat("{} invited you to their island. House Key, Visit an island, Islands you're invited to.", player->GetName()));
 
     reason = Acore::StringFormat("Invited {}. They can visit any time.", guestName);
+    QuestEvent(player, QUEST_TOUR_OPEN);
     return true;
 }
 

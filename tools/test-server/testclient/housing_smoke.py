@@ -31,6 +31,8 @@ BANKSLOT_NOTBANKER, BANKSLOT_OK = 2, 3
 MUSIC_BOX, GRIZZLY_HILLS = 901109, 12816               # level 10; a zone music track
 WEATHER_FINE, WEATHER_RAIN = 0, 4
 HOGGER_FIGURINE, HOGGER_FIGURE_NPC = 902952, 932952   # unlocked by defeating Hogger
+QUEST_HOME, QUEST_PLACE, QUEST_CHANGE, QUEST_UNDO, QUEST_OPEN = range(900400, 900405)   # Krook's welcome tour
+PICNIC_BASKET = 901110                                  # the tour's reward
 SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
 UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
 SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
@@ -212,6 +214,20 @@ def unlocked(account_id, guid):
                                   % (account_id, guid))}
 
 
+def krook_turn_in(wc, quest_id, next_quest=None):
+    """Hands a tour quest in to Krook on the island and, when he offers the next, takes it."""
+    krook = wc.nearest(STEWARD, TYPEID_UNIT)
+    if not krook:
+        return False
+    stand_next_to(wc, krook, 2.0)
+    wc.quest_offered = None
+    done = wc.turn_in_quest(krook.guid, quest_id)
+    if done and next_quest:
+        wait_for(lambda: wc.quest_offered == next_quest, 3, wc)
+        wc.accept_quest(krook.guid, next_quest)
+    return done
+
+
 def angle_diff(a, b):
     d = (a - b) % (2 * math.pi)
     return min(d, 2 * math.pi - d)
@@ -263,6 +279,8 @@ def main():
         db("DELETE FROM %s WHERE %s IN (%s)" % (table, column, ids))
     db("DELETE FROM mod_playerhousing_collection WHERE account_id IN (SELECT account FROM characters WHERE guid IN (%s))" % ids)
     db("DELETE FROM character_social WHERE guid IN (%s) AND friend IN (%s)" % (ids, ids))
+    db("DELETE FROM character_queststatus WHERE guid IN (%s) AND quest BETWEEN 900400 AND 900404" % ids)
+    db("DELETE FROM character_queststatus_rewarded WHERE guid IN (%s) AND quest BETWEEN 900400 AND 900404" % ids)
     # Gear on stands and gear Krook mailed back.
     db("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid IN (%s)" % ids)
     db("DELETE FROM mail_items WHERE receiver IN (%s) AND mail_id IN (SELECT id FROM mail WHERE sender=%d AND messageType=3)" % (ids, STEWARD))
@@ -321,6 +339,20 @@ def main():
     msgs = owner.messages_since(0)
     check("Krook greets on the first visit", has(msgs, "Welcome to your island"), joined(msgs[-8:]))
     check("Krook stands by the landing spot", owner.nearest(STEWARD, TYPEID_UNIT) is not None)
+
+    # Krook's welcome tour: each step completes when it's done.
+    krook = owner.nearest(STEWARD, TYPEID_UNIT)
+    if krook:
+        stand_next_to(owner, krook, 2.0)
+    menu, _ = owner.gossip_hello(krook.guid) if krook else (None, None)
+    check("Krook offers his welcome tour above his menu", menu is not None and any(q["id"] == QUEST_HOME for q in menu["quests"])
+          and "Start decorating" in options(menu), str(menu and menu["quests"]))
+    if krook:
+        owner.accept_quest(krook.guid, QUEST_HOME)
+    wait_for(lambda: QUEST_HOME in owner.quests_done, 3, owner)
+    check("Home Sweet Island, taken on the island, is done at once", QUEST_HOME in owner.quests_done, str(owner.quests_done))
+    check("and handed in, with the next step offered", krook_turn_in(owner, QUEST_HOME, QUEST_PLACE) and owner.quest_offered == QUEST_PLACE,
+          "%s %s" % (owner.quests_rewarded, owner.quest_offered))
     items = {p["item"] for p in placements(owner_guid)}
     check("the fallen cart and shredded tent are waiting", {CART, SHREDDED_TENT} <= items, str(items))
     check("the wreckage is visible", {live(CART), live(SHREDDED_TENT)} <= go_entries(owner), str(sorted(go_entries(owner))))
@@ -340,6 +372,7 @@ def main():
           CIRCLE_RADIUS.get(spell_of(CHAIR), 99) <= 2 and CIRCLE_RADIUS.get(spell_of(FARMHOUSE), 0) >= 8,
           "chair %d, farmhouse %d" % (spell_of(CHAIR), spell_of(FARMHOUSE)))
     check("placement message has the counts", has(msgs, "Placed Westfall Chair") and has(msgs, "furnishings"), joined(msgs))
+    check("tour: placing a piece completes Making It Yours", QUEST_PLACE in owner.quests_done, str(owner.quests_done))
     check("placed piece faces the player", chair is not None and angle_diff(chair["o"], math.atan2(L["landing"][1] - chair_spot[1], L["landing"][0] - chair_spot[0])) < 0.05,
           str(chair))
     wait_for(lambda: owner.count_item(CHAIR) == 0, 3, owner)
@@ -379,6 +412,7 @@ def main():
 
     # ------------------------------------------------------------- decorate: click to edit
     log("== decorate mode")
+    krook_turn_in(owner, QUEST_PLACE, QUEST_CHANGE)
     owner.command(".house")
     _, msgs = owner.gossip_select("Start decorating")
     check("decorate mode starts from the Home menu", has(msgs, "Decorating"), joined(msgs))
@@ -407,6 +441,7 @@ def main():
         check("the addon's Undo button names the last change", state is not None and state[10].startswith("turned Westfall Chair 45"), str(state))
         check("turn left 45° from the piece menu", before and after and abs(angle_diff(after["o"], before["o"]) - math.pi / 4) < 0.02,
               joined(msgs) + " %s -> %s" % (before, after))
+        check("tour: turning a piece completes A Fresh Look", QUEST_CHANGE in owner.quests_done, str(owner.quests_done))
         check("the piece menu follows the respawned piece", "Nudge..." in options(owner.last_gossip), str(options(owner.last_gossip)))
         owner.gossip_select("Nudge...")
         _, msgs = owner.gossip_select("Up")
@@ -417,6 +452,7 @@ def main():
         check("undo from the piece menu", abs(placement_of(owner_guid, CHAIR)["z"] - after["z"]) < 0.01, joined(msgs))
     else:
         check("clicking a piece opens its menu", False, "no clickable chair in sight")
+    krook_turn_in(owner, QUEST_CHANGE, QUEST_UNDO)
 
     marker = nearest_go(owner, MARKER_GO)
     if marker:
@@ -449,6 +485,7 @@ def main():
         check("one undo per move puts both back", math.dist((back["x"], back["y"]), (lantern["x"], lantern["y"])) < 0.01
               and math.dist((placement_of(owner_guid, TABLE)["x"], placement_of(owner_guid, TABLE)["y"]), (table["x"], table["y"])) < 0.01,
               joined(msgs))
+        check("tour: an undo completes Nothing Is Ever Lost", QUEST_UNDO in owner.quests_done, str(owner.quests_done))
     else:
         check("the lantern moves with its table", False, "no table and lantern to move")
 
@@ -1020,6 +1057,7 @@ def main():
     msgs = guest.command(".house visit %s" % args.owner_char, wait=2.0)
     check("a private island refuses strangers", guest.map_id != HOUSING_MAP and has(msgs, "private"), joined(msgs))
 
+    krook_turn_in(owner, QUEST_UNDO, QUEST_OPEN)
     owner.command(".house")
     owner.gossip_select("Island settings")
     owner.gossip_select("Guests")
@@ -1029,6 +1067,11 @@ def main():
     check("invite by name", db("SELECT 1 FROM mod_playerhousing_acl WHERE owner_guid=%d AND guest_guid=%d" % (owner_guid, guest_guid)) == [["1"]],
           joined(msgs))
     check("the guest is told about the invitation", has(guest.messages_since(mark), "invited you"), joined(guest.messages_since(mark)))
+    check("tour: inviting a guest completes Open House", QUEST_OPEN in owner.quests_done, str(owner.quests_done))
+    mark = owner.message_mark()
+    check("handing in the whole tour unlocks Krook's Picnic Basket", krook_turn_in(owner, QUEST_OPEN)
+          and wait_for(lambda: PICNIC_BASKET in unlocked(owner_account, owner_guid), 3, owner) and has(owner.messages_since(mark), "Picnic Basket"),
+          joined(owner.messages_since(mark)))
 
     # Out of decorate mode, so guests find working furniture.
     owner.command(".house decorate off")

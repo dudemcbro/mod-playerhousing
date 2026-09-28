@@ -35,6 +35,13 @@ namespace Housing
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
+
+    // Krook's welcome tour: each quest completes when the player does the thing.
+    constexpr uint32 QUEST_TOUR_HOME = 900400;
+    constexpr uint32 QUEST_TOUR_PLACE = 900401;
+    constexpr uint32 QUEST_TOUR_CHANGE = 900402;
+    constexpr uint32 QUEST_TOUR_UNDO = 900403;
+    constexpr uint32 QUEST_TOUR_OPEN = 900404;
     // "Move a Piece" items, one per targeting circle size (tools/content/build_content.py):
     // handed out to move a piece with the circle, gone once used.
     constexpr uint32 MOVER_ITEM_FIRST = 901190;
@@ -459,6 +466,8 @@ public:
     // ---- misc helpers shared by the scripts
     void Say(Player* player, std::string const& text) const;
     void Tip(Player* player, uint32 tip, std::string const& text);
+    // A tour quest's step done, if the player is on that quest.
+    static void QuestEvent(Player* player, uint32 questId);
     void SendAddonState(Player* player) const;
     uint8 GetAdjustMode(ObjectGuid::LowType guid) const;
     void SetAdjustMode(Player* player, uint8 mode, std::string& reason) const;

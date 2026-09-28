@@ -23,6 +23,20 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
   Darnassus, the Exodar, Orgrimmar, Thunder Bluff, the Undercity, Silvermoon, Shattrath
   and Dalaran), or use the Home menu, "I lost my House Key".
 
+### Krook's welcome tour
+
+Krook (in every capital beside the innkeeper, and on your island) offers five short
+quests that walk you through housing, each done the moment you do the thing:
+
+1. **Home Sweet Island**: use your House Key to go home.
+2. **Making It Yours**: place a furnishing.
+3. **A Fresh Look**: start decorating, then turn, nudge or move a piece.
+4. **Nothing Is Ever Lost**: undo a change.
+5. **Open House**: invite a guest, or open your island to friends or everyone.
+
+Each gives a little silver; the last unlocks **Krook's Picnic Basket**. The quests show
+above Krook's menu, so skipping them costs nothing.
+
 ### Placing things
 
 1. Right-click a furnishing or building in your bags. The targeting circle is the size of

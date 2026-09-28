@@ -103,7 +103,7 @@ DELETE FROM `creature_template` WHERE `entry` = @STEWARD;
 
 INSERT INTO `creature_template`
 (`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `unit_class`, `type`, `AIName`, `MovementType`, `RegenHealth`, `ScriptName`, `VerifiedBuild`) VALUES
-(@STEWARD, 'Krook', 'Housing Steward', 0, 80, 80, 35, 1, 1, 7, '', 0, 1, 'npc_playerhousing_steward', 0);
+(@STEWARD, 'Krook', 'Housing Steward', 0, 80, 80, 35, 3, 1, 7, '', 0, 1, 'npc_playerhousing_steward', 0);
 
 INSERT INTO `creature_template_model`
 (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -163,6 +163,58 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 DELETE FROM `gameobject_template` WHERE `entry` = @MARKER;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
 (@MARKER, 10, 7658, 'Put something here', '', '', '', 0.35, 'go_playerhousing_piece', 0);
+
+-- Krook's welcome tour: five short quests that walk through housing. Each completes the
+-- moment the player does the thing (the module reports it as an event), and Krook anywhere,
+-- in a city or on the island, hands them out and takes them back. The last one unlocks
+-- Krook's Picnic Basket (a quest rule in the content list).
+DELETE FROM `creature_queststarter` WHERE `quest` BETWEEN 900400 AND 900404;
+DELETE FROM `creature_questender` WHERE `quest` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_request_items` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900404;
+INSERT INTO `quest_template`
+(`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `RewardNextQuest`, `RewardMoney`, `Flags`,
+ `LogTitle`, `LogDescription`, `QuestDescription`, `QuestCompletionLog`, `VerifiedBuild`) VALUES
+(900400, 2, -1, 1, 876, 900401, 500, 0, 'Home Sweet Island',
+ 'Use your House Key to go to your island.',
+ 'Psst, $N! You''ve got an island now. All yours! Use the House Key in your bags and it takes you right there. I''ll meet you on the beach and show you around, promise.',
+ 'Talk to Krook on your island.', 0),
+(900401, 2, -1, 1, 876, 900402, 500, 0, 'Making It Yours',
+ 'Place a furnishing: right-click one in your bags, then click where it should go.',
+ 'An empty island is a sad island. You''ve got a chair, a table and a lantern in your bags. Right-click one and the ground lights up: click where it should go. It turns to face you, too!',
+ 'Talk to Krook.', 0),
+(900402, 2, -1, 1, 876, 900403, 500, 0, 'A Fresh Look',
+ 'Start decorating (House Key, Start decorating), then click a piece and turn it, nudge it or move it.',
+ 'Not quite right? Easy. Ask me to start decorating, then click any piece: turn it, nudge it, move it with the circle, make it bigger. Go on, move something!',
+ 'Talk to Krook.', 0),
+(900403, 2, -1, 1, 876, 900404, 500, 0, 'Nothing Is Ever Lost',
+ 'Undo a change: House Key, Undo.',
+ 'Here''s the best secret, $N: nothing is ever lost. Didn''t like what you did? Undo, and it''s back. Picked something up? It goes back to your bags. Try it: undo something.',
+ 'Talk to Krook.', 0),
+(900404, 2, -1, 1, 876, 0, 1000, 0, 'Open House',
+ 'Invite a guest (Island settings, Guests), or open your island to friends or to everyone (Island settings, Privacy).',
+ 'An island is better with friends. Invite someone in, or let your friends and guild visit. Or everyone! You decide who comes over, and you can change it whenever you like.',
+ 'Talk to Krook.', 0);
+INSERT INTO `quest_template_addon` (`ID`, `PrevQuestID`, `SpecialFlags`) VALUES
+(900400, 0, 2), (900401, 900400, 2), (900402, 900401, 2), (900403, 900402, 2), (900404, 900403, 2);
+INSERT INTO `quest_request_items` (`ID`, `EmoteOnComplete`, `EmoteOnIncomplete`, `CompletionText`, `VerifiedBuild`) VALUES
+(900400, 1, 1, 'Found it? The island, I mean.', 0),
+(900401, 1, 1, 'Placed something yet?', 0),
+(900402, 1, 1, 'Moved something?', 0),
+(900403, 1, 1, 'Tried the undo?', 0),
+(900404, 1, 1, 'Anyone coming over?', 0);
+INSERT INTO `quest_offer_reward` (`ID`, `Emote1`, `RewardText`, `VerifiedBuild`) VALUES
+(900400, 4, 'You made it! Sand, sea, and nobody telling you where to put your chairs. Welcome home.', 0),
+(900401, 4, 'Now that''s a start! Every piece you place can be picked up again, so don''t be shy.', 0),
+(900402, 4, 'Much better. You''ve got an eye for this.', 0),
+(900403, 4, 'See? Nothing lost. Mistakes are free here.', 0),
+(900404, 4, 'Company! Here, take this basket. For picnics. With your friends. Welcome home, $N.', 0);
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
 
 -- Texts heading the menus.
 DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;

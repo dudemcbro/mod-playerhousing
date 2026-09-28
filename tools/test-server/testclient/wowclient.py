@@ -61,6 +61,12 @@ SMSG_ITEM_PUSH_RESULT = 0x166
 CMSG_GOSSIP_HELLO = 0x17B
 CMSG_GOSSIP_SELECT_OPTION = 0x17C
 SMSG_GOSSIP_MESSAGE = 0x17D
+SMSG_QUESTGIVER_QUEST_DETAILS = 0x188
+CMSG_QUESTGIVER_ACCEPT_QUEST = 0x189
+CMSG_QUESTGIVER_COMPLETE_QUEST = 0x18A
+CMSG_QUESTGIVER_CHOOSE_REWARD = 0x18E
+SMSG_QUESTGIVER_QUEST_COMPLETE = 0x191
+SMSG_QUESTUPDATE_COMPLETE = 0x198
 SMSG_GOSSIP_COMPLETE = 0x17E
 CMSG_LIST_INVENTORY = 0x19E
 SMSG_LIST_INVENTORY = 0x19F
@@ -354,6 +360,9 @@ class WorldClient:
         self.weather = None            # (state, grade) of the last SMSG_WEATHER
         self.clock = None              # (hour, minute) of the last SMSG_LOGIN_SETTIMESPEED
         self.music = []                # sound ids from SMSG_PLAY_MUSIC
+        self.quests_done = []          # quest ids whose objectives completed (SMSG_QUESTUPDATE_COMPLETE)
+        self.quests_rewarded = []      # quest ids turned in (SMSG_QUESTGIVER_QUEST_COMPLETE)
+        self.quest_offered = None      # the quest a giver offered next (SMSG_QUESTGIVER_QUEST_DETAILS)
         self.bank_slot_results = []    # SMSG_BUY_BANK_SLOT_RESULT codes
         self.mirror_images = {}
         self.msg_lock = threading.Lock()
@@ -445,6 +454,12 @@ class WorldClient:
             self.stand_state = data[0]
         elif opcode == SMSG_MAIL_LIST_RESULT:
             self.mailbox_opened += 1
+        elif opcode == SMSG_QUESTUPDATE_COMPLETE:
+            self.quests_done.append(struct.unpack_from("<I", data)[0])
+        elif opcode == SMSG_QUESTGIVER_QUEST_COMPLETE:
+            self.quests_rewarded.append(struct.unpack_from("<I", data)[0])
+        elif opcode == SMSG_QUESTGIVER_QUEST_DETAILS:
+            self.quest_offered = struct.unpack_from("<QQI", data)[2]
         elif opcode == SMSG_WEATHER:
             self.weather = struct.unpack_from("<If", data)
         elif opcode == SMSG_LOGIN_SETTIMESPEED:
@@ -554,7 +569,13 @@ class WorldClient:
             text = r.cstr()
             r.cstr()
             items.append({"index": idx, "icon": icon, "coded": bool(coded), "text": text})
-        return {"guid": guid, "menu_id": menu_id, "items": items}
+        quests = []
+        if r.left() >= 4:
+            for _ in range(r.u32()):
+                quest_id = r.u32()
+                r.u32(); r.i32(); r.u32(); r.u8()
+                quests.append({"id": quest_id, "title": r.cstr()})
+        return {"guid": guid, "menu_id": menu_id, "items": items, "quests": quests}
 
     def _parse_vendor(self, data):
         r = Reader(data)
@@ -939,6 +960,18 @@ class WorldClient:
         while len(self.bank_slot_results) == before and time.time() < deadline:
             self.pump(0.2)
         return self.bank_slot_results[-1] if len(self.bank_slot_results) > before else None
+
+    def accept_quest(self, giver_guid, quest_id, wait=1.0):
+        self.send(CMSG_QUESTGIVER_ACCEPT_QUEST, struct.pack("<QII", giver_guid, quest_id, 0))
+        self.pump(wait)
+
+    def turn_in_quest(self, giver_guid, quest_id, wait=1.5):
+        """Complete, then take the reward (no choice)."""
+        self.send(CMSG_QUESTGIVER_COMPLETE_QUEST, struct.pack("<QI", giver_guid, quest_id))
+        self.pump(0.5)
+        self.send(CMSG_QUESTGIVER_CHOOSE_REWARD, struct.pack("<QII", giver_guid, quest_id, 0))
+        self.pump(wait)
+        return quest_id in self.quests_rewarded
 
     def open_mailbox(self, guid, wait=1.5):
         """What the client does on right-clicking a mailbox; the server answers only if the

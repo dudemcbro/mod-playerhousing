@@ -84,6 +84,8 @@ PIECES = [
     dict(item=901102, name="Bedroll", cat="Starter", go=193684),
     dict(item=901103, name="Supply Crate", cat="Starter", go=181302, flags=["surface"]),
     dict(item=901107, name="Mannequin", cat="Starter", style="stand"),
+    dict(item=901110, name="Krook's Picnic Basket", cat="Starter", go=179910, rules=[[quest(900404)]],
+         hint="Finish Krook's welcome tour (Open House)"),
     dict(item=901109, name="Music Box", cat="Starter", go=180620, style="music", rules=[[level(10)]]),
     dict(item=901108, name="Bank Chest", cat="Starter", go=2850, style="chest", rules=[[level(20)], [ach(546)]],
          hint="Reach level 20, or buy 7 bank slots (Safe Deposit)"),

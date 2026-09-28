@@ -1,8 +1,10 @@
 #include "HousingMenus.h"
 
 #include "Chat.h"
+#include "Creature.h"
 #include "GossipDef.h"
 #include "Item.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "StringFormat.h"
@@ -843,6 +845,11 @@ namespace
 void HousingMenus::ShowHome(Player* player, MenuSource const& source)
 {
     ClearGossipMenuFor(player);
+    // Krook's welcome tour, above the menu.
+    if (source.type == SOURCE_CREATURE)
+        if (Creature* steward = ObjectAccessor::GetCreature(*player, source.guid))
+            if (steward->IsQuestGiver())
+                player->PrepareQuestMenu(source.guid);
 
     ObjectGuid::LowType self = player->GetGUID().GetCounter();
     ObjectGuid::LowType islandOwner = sPlayerHousingMgr->GetIslandOwner(player);

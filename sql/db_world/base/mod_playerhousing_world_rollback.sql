@@ -10,3 +10,10 @@ DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_pla
 DROP TABLE IF EXISTS `mod_playerhousing_piece_rule`;
 DROP TABLE IF EXISTS `mod_playerhousing_piece`;
 DROP TABLE IF EXISTS `mod_playerhousing_layout`;
+
+DELETE FROM `creature_queststarter` WHERE `quest` BETWEEN 900400 AND 900404;
+DELETE FROM `creature_questender` WHERE `quest` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_request_items` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900404;

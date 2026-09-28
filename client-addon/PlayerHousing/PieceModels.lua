@@ -9,6 +9,7 @@ PlayerHousing_Models = {
     [901102] = { "WORLD\\AZEROTH\\BURNINGSTEPPES\\PASSIVEDOODADS\\ORCSLEEPMATS\\ORCSLEEPMAT03.m2", 1.6, 1.6, 1.0 },
     [901103] = { "World\\Generic\\PassiveDoodads\\SummerFestival\\SummerFest_Crate.m2", 1.2, 1.3, 1.2 },
     [901107] = { "player", 1.0, 1.0, 2.0 },
+    [901110] = { "World\\Generic\\Tauren\\Passive Doodads\\Baskets\\SmallBasket01.m2", 1.5, 1.6, 0.7 },
     [901109] = { "World\\Generic\\PassiveDoodads\\Traps\\SpellObject_InvisibleTrap.m2", 1.4, 1.4, 0.7 },
     [901108] = { "World\\SkillActivated\\Containers\\TreasureChest01.m2", 1.3, 1.7, 1.3 },
     [902101] = { "World\\Generic\\PassiveDoodads\\Furniture\\Containers\\Barrel02.m2", 0.9, 1.0, 1.0 },

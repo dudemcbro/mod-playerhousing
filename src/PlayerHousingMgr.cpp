@@ -14,6 +14,7 @@
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "QuestDef.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include "WorldPacket.h"
@@ -471,6 +472,12 @@ std::string PlayerHousingMgr::FormatYards(float yards)
     return text;
 }
 
+void PlayerHousingMgr::QuestEvent(Player* player, uint32 questId)
+{
+    if (player && player->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+        player->AreaExploredOrEventHappens(questId);
+}
+
 float PlayerHousingMgr::GetGridSize(ObjectGuid::LowType guid) const
 {
     if (QueryResult result = CharacterDatabase.Query("SELECT grid FROM mod_playerhousing_character WHERE guid={}", guid))
@@ -792,6 +799,8 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
             Say(player, "The old guild hall is gone. Everything you had placed inside it is in your House Storage (House Key, Storage).");
             CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = flags & ~{} WHERE owner_guid={}", uint32(HOUSE_FLAG_HALL_NOTICE), ownerGuid);
         }
+
+        QuestEvent(player, QUEST_TOUR_HOME);
 
         // Who came by since the owner was last home.
         if (QueryResult result = CharacterDatabase.Query(

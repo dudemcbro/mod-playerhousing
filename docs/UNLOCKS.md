@@ -7,7 +7,7 @@ Unlocked pieces are in the Collection (House Key, Collection), which hands out c
 no condition are everyone's from the start. Faction buildings need Exalted with their faction and
 belong to the character that earned it; everything else is shared across the account.
 
-## Starter (26)
+## Starter (27)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -18,6 +18,7 @@ belong to the character that earned it; everything else is shared across the acc
 | Bedroll | furnishing | Everyone has it | object 193684 |  |
 | Supply Crate | furnishing | Everyone has it | object 181302 | things go on top |
 | Mannequin | furnishing | Everyone has it | a figure in your gear | wears real gear from your bags: armor, weapons, shields |
+| Krook's Picnic Basket | furnishing | Finish Krook's welcome tour (Open House) | object 179910 |  |
 | Music Box | furnishing | Reach level 10 | object 180620 | plays the island's music |
 | Bank Chest | furnishing | Reach level 20, or buy 7 bank slots (Safe Deposit) | object 2850 | opens your bank and House Storage |
 | Barrel | furnishing | Everyone has it | object 180779 | things go on top |

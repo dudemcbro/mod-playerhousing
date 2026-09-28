@@ -9,6 +9,7 @@
 #include "Item.h"
 #include "ItemScript.h"
 #include "Player.h"
+#include "QuestDef.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
 #include "ServerScript.h"
@@ -79,6 +80,14 @@ public:
     {
         HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, code);
         return true;
+    }
+
+    // Taking "Home Sweet Island" from Krook on the island itself: already there.
+    bool OnQuestAccept(Player* player, Creature* /*creature*/, Quest const* quest) override
+    {
+        if (quest->GetQuestId() == QUEST_TOUR_HOME && sPlayerHousingMgr->IsOnOwnIsland(player))
+            PlayerHousingMgr::QuestEvent(player, QUEST_TOUR_HOME);
+        return false;
     }
 };
 
