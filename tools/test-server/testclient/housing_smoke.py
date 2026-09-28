@@ -787,11 +787,14 @@ def main():
     check("the bank works there (buying a bank slot)", result == BANKSLOT_OK, str(result))
 
     # The item a piece was placed with is taken before anything else the player sends is
-    # handled: placing it and banking it in the same breath doesn't keep both.
+    # handled: placing it and banking it in the same breath doesn't keep both. With exactly
+    # one lantern, so the one placed is the one sent to the bank.
+    while owner.count_item(LANTERN) and owner.destroy_item(LANTERN):
+        pass
     owner.command(".house collection lantern")
     owner.gossip_select("Lantern")
     owner.gossip_select("Get one")
-    wait_for(lambda: owner.count_item(LANTERN) >= 1, 3, owner)
+    wait_for(lambda: owner.count_item(LANTERN) == 1, 3, owner)
     slot, lantern_guid = owner.find_item(LANTERN)
     lanterns = owner.count_item(LANTERN)
     placed_lanterns = [p["id"] for p in placements(owner_guid) if p["item"] == LANTERN]
