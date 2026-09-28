@@ -52,6 +52,7 @@ namespace Housing
     constexpr uint32 TEXT_NEARBY = 900309;
     constexpr uint32 TEXT_STAND = 900310;
     constexpr uint32 TEXT_CHEST = 900311;
+    constexpr uint32 TEXT_MUSIC = 900312;
 
     enum PieceKind : uint8
     {
@@ -67,7 +68,8 @@ namespace Housing
         PIECE_FLAG_GIFT = 0x08,           // given on first login
         PIECE_FLAG_WRECKAGE = 0x10,       // standing on the island at the first visit
         PIECE_FLAG_STAND = 0x20,          // a mannequin that wears real gear from the bags
-        PIECE_FLAG_CHEST = 0x40           // opens its owner's bank
+        PIECE_FLAG_CHEST = 0x40,          // opens its owner's bank
+        PIECE_FLAG_MUSIC = 0x80           // a music box: plays the island's music
     };
 
     enum Category : uint8
@@ -245,6 +247,9 @@ namespace Housing
         uint8 privacy{PRIVACY_PRIVATE};
         uint32 flags{0};
         std::string greeting;
+        uint8 weather{0};    // PlayerHousingMgr::WeatherName
+        uint8 timeOfDay{0};  // PlayerHousingMgr::TimeOfDayName; 0 follows the server's clock
+        uint32 music{0};     // SoundEntries id, 0 for none
     };
 
     struct SavedLayout
@@ -369,6 +374,18 @@ public:
     void SetLayoutCopyable(Player* player, bool copyable, std::string& reason) const;
     bool CopyIslandLayout(Player* visitor, std::string& reason);
     bool SendLayout(Player* player, uint32 layoutId, std::string const& recipientName, std::string& reason);
+
+    // ---- ambience (HousingAmbience.cpp)
+    static uint8 WeatherCount();
+    static char const* WeatherName(uint8 weather);
+    static uint8 TimeOfDayCount();
+    static char const* TimeOfDayName(uint8 timeOfDay);
+    static std::vector<std::pair<uint32, char const*>> const& MusicTracks();
+    static char const* MusicName(uint32 soundId);
+    bool SetWeather(Player* player, uint8 weather, std::string& reason);
+    bool SetTimeOfDay(Player* player, uint8 timeOfDay, std::string& reason);
+    bool SetMusic(Player* player, uint32 soundId, std::string& reason);
+    bool HasMusicBox(ObjectGuid::LowType ownerGuid) const;
 
     // ---- stands (HousingStands.cpp)
     static int8 StandSlotFor(ItemTemplate const* proto, std::map<uint8, Housing::GearItem> const& worn);
@@ -505,7 +522,7 @@ private:
     ObjectGuid::LowType RemovePlayerTracking(ObjectGuid playerGuid, bool eraseReturnLocation);
     bool TryAdmitGroupBot(Player* bot);
     void ApplyHousePhase(Player* player, uint32 phaseMask) const;
-    void RestoreNormalPhase(Player* player) const;
+    void RestoreNormalPhase(Player* player);
     bool IsInHousingArea(WorldObject const* object) const;
     bool IsOnIslandGround(float x, float y) const;
     Map* GetHousingMap() const;
@@ -562,6 +579,12 @@ private:
         ObjectGuid::LowType fromOwner, uint32 fromLayout) const;
     uint32 NextLayoutId(ObjectGuid::LowType ownerGuid) const;
 
+    // HousingAmbience.cpp
+    void SendAmbience(Player* player, Housing::HouseRecord const& house, bool withMusic);
+    void RestoreAmbience(Player* player);
+    void UpdateAmbience(Player* player, uint32 diffMs);
+    void ApplyAmbienceToIsland(ObjectGuid::LowType ownerGuid, bool withMusic);
+
     // HousingCollection.cpp
     bool RuleMet(Player const* player, Housing::PieceRule const& rule) const;
     // Whether any rule group of the piece is complete; `triggered` marks rules the current
@@ -614,6 +637,14 @@ private:
     std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
 
     // "Place another like this": the next one placed takes the original's turn, size and tilt.
+    // Players on an island: when their clock is resent, and their music replayed.
+    struct AmbienceTimers
+    {
+        uint32 clockMs{0};
+        uint32 musicMs{0};
+    };
+    std::unordered_map<ObjectGuid, AmbienceTimers> _ambienceTimers;
+
     struct PendingCopy
     {
         uint32 itemEntry{0};

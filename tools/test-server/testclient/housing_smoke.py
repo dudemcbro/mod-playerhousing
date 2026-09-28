@@ -28,6 +28,8 @@ MAILBOX = 902900                                        # level 80: a working ma
 MANNEQUIN, MANNEQUIN_NPC = 901107, 900201               # a stand, and the figure it shows
 BANK_CHEST, CHEST_BANKER = 901108, 900202               # level 20: opens the bank
 BANKSLOT_NOTBANKER, BANKSLOT_OK = 2, 3
+MUSIC_BOX, GRIZZLY_HILLS = 901109, 12816               # level 10; a zone music track
+WEATHER_FINE, WEATHER_RAIN = 0, 4
 SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
 UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
 SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
@@ -55,6 +57,7 @@ LAYOUTS = {
         mailbox_stand=(16237.0, 16294.0), mailbox=(16234.0, 16290.0, 12.92),
         stand_stand=(16233.0, 16300.0), stand=(16230.0, 16300.0, 12.92),
         chest_stand=(16248.0, 16306.0), chest=(16250.0, 16310.0, 12.92),
+        music_stand=(16238.0, 16304.0), music=(16240.0, 16306.0, 12.92),
         sea_stand=(16250.0, 16120.0, 0.0), sea_target=(16250.0, 16098.0, 0.0),
         past_edge=(16250.0, 16108.0, 0.0)),
 }
@@ -939,6 +942,45 @@ def main():
     _, msgs = owner.gossip_select("Visitors may copy my layout")
     check("visitors may copy the layout", has(msgs, "Visitors can now save a copy"), joined(msgs))
 
+    # ------------------------------------------------------------- ambience
+    log("== ambience")
+    owner.command(".house decorate off")  # decorating, a click opens the piece's own menu
+    owner.command(".house")
+    owner.gossip_select("Island settings")
+    owner.gossip_select("Island ambience")
+    menu = owner.last_gossip
+    check("island ambience: weather, time of day, and music once there's a Music Box",
+          "Weather: clear (click to change)" in options(menu) and "Time of day: the server's time (click to change)" in options(menu)
+          and "Music: place a Music Box to choose some" in options(menu), str(options(menu)))
+    for _ in range(3):
+        owner.gossip_select("Weather:")
+    wait_for(lambda: owner.weather is not None and owner.weather[0] == WEATHER_RAIN, 3, owner)
+    check("rain on the island", owner.weather is not None and owner.weather[0] == WEATHER_RAIN
+          and db("SELECT weather FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["3"]], str(owner.weather))
+    for _ in range(4):
+        owner.gossip_select("Time of day:")
+    wait_for(lambda: owner.clock == (0, 0), 3, owner)
+    check("always night on the island", owner.clock == (0, 0) and "Time of day: night (click to change)" in options(owner.last_gossip),
+          str(owner.clock) + " " + str(options(owner.last_gossip)))
+
+    owner.command(".house collection music box")
+    owner.gossip_select("Music Box")
+    owner.gossip_select("Get one")
+    wait_for(lambda: owner.count_item(MUSIC_BOX) == 1, 3, owner)
+    move(owner, L["music_stand"][0], L["music_stand"][1], L["ground"])
+    owner.use_item(MUSIC_BOX, spell_of(MUSIC_BOX), L["music"])
+    wait_for(lambda: nearest_go(owner, live(MUSIC_BOX)) is not None, 3, owner)
+    music_go = nearest_go(owner, live(MUSIC_BOX))
+    menu, msgs = owner.use_gameobject(music_go.guid) if music_go else (None, [])
+    check("the Music Box lists tunes", menu is not None and "Grizzly Hills" in options(menu) and options(menu)[0] == "Music Box: silent",
+          joined(msgs) + " " + str(options(menu)))
+    owner.music.clear()
+    if menu:
+        owner.gossip_select("Grizzly Hills")
+    wait_for(lambda: GRIZZLY_HILLS in owner.music, 3, owner)
+    check("and plays one for the island", GRIZZLY_HILLS in owner.music
+          and db("SELECT music FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [[str(GRIZZLY_HILLS)]], str(owner.music))
+
     # ------------------------------------------------------------- people
     log("== visitors")
     owner.command(".house")
@@ -976,6 +1018,13 @@ def main():
     check("the guest sees the greeting", has(guest.messages_since(0), "Mind the coffins."), joined(guest.messages_since(0)[-5:]))
     check("the owner hears the guest arrive", has(owner.messages_since(owner_mark), "arrived on your island"), joined(owner.messages_since(owner_mark)))
     check("the guest sees the owner's farmhouse", live(FARMHOUSE) in go_entries(guest), str(sorted(go_entries(guest))))
+    check("and gets the island's rain, night and music", guest.weather is not None and guest.weather[0] == WEATHER_RAIN
+          and guest.clock == (0, 0) and GRIZZLY_HILLS in guest.music, "%s %s %s" % (guest.weather, guest.clock, guest.music))
+    music_go = nearest_go(guest, live(MUSIC_BOX))
+    if music_go:
+        stand_next_to(guest, music_go, 2.0)
+        menu, msgs = guest.use_gameobject(music_go.guid)
+        check("a guest hears what the music box plays", menu is None and has(msgs, "playing Grizzly Hills"), joined(msgs))
     msgs = guest.command(".house undo")
     check("guests can't change anything", has(msgs, "Only the owner"), joined(msgs))
     chest_go = nearest_go(guest, live(BANK_CHEST))
@@ -1030,6 +1079,10 @@ def main():
 
     guest.command(".house leave", wait=1.0)
     wait_for(lambda: guest.map_id != HOUSING_MAP or not guest.find_objects(entry=live(FARMHOUSE)), 8, guest)
+    wait_for(lambda: guest.clock != (0, 0), 3, guest)
+    now = time.localtime()
+    check("leaving brings back the real clock and weather", guest.clock is not None and guest.clock[0] in (now.tm_hour, (now.tm_hour - 1) % 24)
+          and guest.weather is not None and guest.weather[0] == WEATHER_FINE, "%s %s" % (guest.clock, guest.weather))
     guest.command(".house home", wait=1.0)
     wait_for_map(guest, HOUSING_MAP)
     guest.pump(1.5)

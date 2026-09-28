@@ -47,6 +47,9 @@ CMSG_GET_MIRRORIMAGE_DATA = 0x401
 SMSG_MIRRORIMAGE_DATA = 0x402
 SMSG_MAIL_LIST_RESULT = 0x23B
 SMSG_SHOW_BANK = 0x1B8
+SMSG_LOGIN_SETTIMESPEED = 0x042
+SMSG_WEATHER = 0x2F4
+SMSG_PLAY_MUSIC = 0x277
 CMSG_BUY_BANK_SLOT = 0x1B9
 SMSG_BUY_BANK_SLOT_RESULT = 0x1BA
 CMSG_CAST_SPELL = 0x12E
@@ -348,6 +351,9 @@ class WorldClient:
         self.stand_state = 0
         self.mailbox_opened = 0
         self.bank_banker = None        # the banker of the last SMSG_SHOW_BANK
+        self.weather = None            # (state, grade) of the last SMSG_WEATHER
+        self.clock = None              # (hour, minute) of the last SMSG_LOGIN_SETTIMESPEED
+        self.music = []                # sound ids from SMSG_PLAY_MUSIC
         self.bank_slot_results = []    # SMSG_BUY_BANK_SLOT_RESULT codes
         self.mirror_images = {}
         self.msg_lock = threading.Lock()
@@ -439,6 +445,13 @@ class WorldClient:
             self.stand_state = data[0]
         elif opcode == SMSG_MAIL_LIST_RESULT:
             self.mailbox_opened += 1
+        elif opcode == SMSG_WEATHER:
+            self.weather = struct.unpack_from("<If", data)
+        elif opcode == SMSG_LOGIN_SETTIMESPEED:
+            packed = struct.unpack_from("<I", data)[0]
+            self.clock = ((packed >> 6) & 0x1F, packed & 0x3F)
+        elif opcode == SMSG_PLAY_MUSIC:
+            self.music.append(struct.unpack_from("<I", data)[0])
         elif opcode == SMSG_SHOW_BANK:
             self.bank_banker = struct.unpack_from("<Q", data)[0]
         elif opcode == SMSG_BUY_BANK_SLOT_RESULT:

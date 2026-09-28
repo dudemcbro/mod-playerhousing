@@ -123,6 +123,39 @@ EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
 ALTER TABLE `mod_playerhousing_collection` ALTER COLUMN `seen` SET DEFAULT 0;
 
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `weather` tinyint unsigned NOT NULL DEFAULT 0 AFTER `greeting`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'weather'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `time_of_day` tinyint unsigned NOT NULL DEFAULT 0 AFTER `weather`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'time_of_day'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `music` int unsigned NOT NULL DEFAULT 0 AFTER `time_of_day`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'music'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
 -- Columns from the house levels version that nothing uses any more.
 
 SET @ph_stmt = (

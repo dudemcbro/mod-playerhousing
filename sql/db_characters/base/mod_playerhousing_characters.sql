@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_house` (
   `is_private` tinyint unsigned NOT NULL DEFAULT 1,
   `flags` int unsigned NOT NULL DEFAULT 0,
   `greeting` varchar(255) NOT NULL DEFAULT '',
+  `weather` tinyint unsigned NOT NULL DEFAULT 0,
+  `time_of_day` tinyint unsigned NOT NULL DEFAULT 0,  -- 0: the server's clock
+  `music` int unsigned NOT NULL DEFAULT 0,             -- SoundEntries id
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`),

@@ -276,6 +276,19 @@ public:
                     Reply(player, "The chest is locked: it holds its owner's bank.");
                 return true;
             }
+            if (piece && piece->HasFlag(PIECE_FLAG_MUSIC))
+            {
+                if (sPlayerHousingMgr->IsOnOwnIsland(player))
+                    HousingMenus::ShowMusicBox(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() });
+                else
+                {
+                    HouseRecord house;
+                    char const* track = sPlayerHousingMgr->GetHouseRecord(sPlayerHousingMgr->GetIslandOwner(player), house) && house.music
+                        ? PlayerHousingMgr::MusicName(house.music) : nullptr;
+                    Reply(player, track ? Acore::StringFormat("The music box is playing {}.", track) : std::string("The music box is quiet."));
+                }
+                return true;
+            }
         }
 
         if (sPlayerHousingMgr->IsOnOwnIsland(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)

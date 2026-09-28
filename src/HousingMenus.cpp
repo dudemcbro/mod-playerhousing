@@ -84,6 +84,11 @@ namespace
         CMD_LAYOUT_COPYABLE,
         CMD_LAYOUT_COPY_ISLAND,
         CMD_CHEST_BANK,       // action: placement id
+        CMD_AMBIENCE,
+        CMD_WEATHER,
+        CMD_TIME_OF_DAY,
+        CMD_MUSIC_MENU,
+        CMD_MUSIC,            // action: sound id (0: silence)
         CMD_CLOSE
     };
 
@@ -418,6 +423,43 @@ namespace
         Send(player, source, TEXT_SETTINGS);
     }
 
+    void ShowAmbience(Player* player, MenuSource const& source)
+    {
+        ObjectGuid::LowType self = player->GetGUID().GetCounter();
+        sPlayerHousingMgr->EnsureHouse(self);
+        HouseRecord house;
+        sPlayerHousingMgr->GetHouseRecord(self, house);
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Weather: {} (click to change)", PlayerHousingMgr::WeatherName(house.weather)), CMD_WEATHER);
+        Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Time of day: {} (click to change)", PlayerHousingMgr::TimeOfDayName(house.timeOfDay)),
+            CMD_TIME_OF_DAY);
+        char const* track = house.music ? PlayerHousingMgr::MusicName(house.music) : nullptr;
+        if (sPlayerHousingMgr->HasMusicBox(self))
+            Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Music: {} (choose...)", track ? track : "none"), CMD_MUSIC_MENU);
+        else
+            Add(player, GOSSIP_ICON_DOT, "Music: place a Music Box to choose some", CMD_AMBIENCE);
+        Add(player, GOSSIP_ICON_CHAT, "Back to Island settings", CMD_SETTINGS);
+        Send(player, source, TEXT_MUSIC);
+    }
+
+    void ShowMusic(Player* player, MenuSource const& source)
+    {
+        ObjectGuid::LowType self = player->GetGUID().GetCounter();
+        HouseRecord house;
+        sPlayerHousingMgr->GetHouseRecord(self, house);
+        char const* playing = house.music ? PlayerHousingMgr::MusicName(house.music) : nullptr;
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, playing ? Acore::StringFormat("Music Box: playing {}", playing) : std::string("Music Box: silent"), CMD_MUSIC_MENU);
+        if (playing)
+            Add(player, GOSSIP_ICON_INTERACT_1, "Silence", CMD_MUSIC, 0);
+        for (auto const& [soundId, name] : PlayerHousingMgr::MusicTracks())
+            Add(player, GOSSIP_ICON_VENDOR, name, CMD_MUSIC, soundId);
+        Add(player, GOSSIP_ICON_CHAT, "Weather and time of day...", CMD_AMBIENCE);
+        Send(player, source, TEXT_MUSIC);
+    }
+
     std::string CollectionLabel(Player* player, uint32 unlocked)
     {
         size_t fresh = sPlayerHousingMgr->LoadNewUnlocks(player).size();
@@ -445,6 +487,7 @@ namespace
             Add(player, GOSSIP_ICON_CHAT, "Clear the greeting", CMD_GREETING_CLEAR);
         Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Adjust menu opens: {} (click to change)",
             PlayerHousingMgr::AdjustModeName(sPlayerHousingMgr->GetAdjustMode(self))), CMD_ADJUST_MODE);
+        Add(player, GOSSIP_ICON_INTERACT_1, "Island ambience: weather, time of day, music", CMD_AMBIENCE);
         if (sPlayerHousingMgr->GetMaxSavedLayouts())
         {
             Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Saved layouts ({} of {})", sPlayerHousingMgr->GetSavedLayouts(self).size(),
@@ -884,6 +927,11 @@ void HousingMenus::ShowChest(Player* player, MenuSource const& source, uint32 pl
     Send(player, source, TEXT_CHEST);
 }
 
+void HousingMenus::ShowMusicBox(Player* player, MenuSource const& source)
+{
+    ShowMusic(player, source);
+}
+
 void HousingMenus::ShowSavedLayouts(Player* player, MenuSource const& source)
 {
     ShowLayouts(player, source);
@@ -1099,6 +1147,37 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             return;
         case CMD_LAYOUTS:
             ShowLayouts(player, source);
+            return;
+        case CMD_AMBIENCE:
+            ShowAmbience(player, source);
+            return;
+        case CMD_WEATHER:
+        {
+            HouseRecord house;
+            sPlayerHousingMgr->EnsureHouse(player->GetGUID().GetCounter());
+            sPlayerHousingMgr->GetHouseRecord(player->GetGUID().GetCounter(), house);
+            sPlayerHousingMgr->SetWeather(player, uint8((house.weather + 1) % PlayerHousingMgr::WeatherCount()), reason);
+            Say(player, reason);
+            ShowAmbience(player, source);
+            return;
+        }
+        case CMD_TIME_OF_DAY:
+        {
+            HouseRecord house;
+            sPlayerHousingMgr->EnsureHouse(player->GetGUID().GetCounter());
+            sPlayerHousingMgr->GetHouseRecord(player->GetGUID().GetCounter(), house);
+            sPlayerHousingMgr->SetTimeOfDay(player, uint8((house.timeOfDay + 1) % PlayerHousingMgr::TimeOfDayCount()), reason);
+            Say(player, reason);
+            ShowAmbience(player, source);
+            return;
+        }
+        case CMD_MUSIC_MENU:
+            ShowMusic(player, source);
+            return;
+        case CMD_MUSIC:
+            sPlayerHousingMgr->SetMusic(player, action, reason);
+            Say(player, reason);
+            ShowMusic(player, source);
             return;
         case CMD_CHEST_BANK:
             CloseGossipMenuFor(player);

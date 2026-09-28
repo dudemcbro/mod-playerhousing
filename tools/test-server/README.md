@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (164 checks):
+checking the database and what the client sees after each step (172 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -158,6 +158,9 @@ checking the database and what the client sees after each step (164 checks):
   the mannequin's gear to the bags) and undoing that in one step, renaming (a name with
   a quote), sending a copy (refused to a stranger, fine for a friend), letting visitors
   copy the layout
+- ambience: rain and night set from Island settings reaching the client, a Music Box
+  playing Grizzly Hills; the guest arriving to the same rain, night and music, hearing
+  what the music box plays, and getting the real clock and weather back on leaving
 - visitors: greeting, private islands refusing strangers, invites, the visit menu, a
   guest arriving with one click, saving a copy of the island's layout and getting the
   missing pieces, sitting on a chair, opening the owner's mailbox and

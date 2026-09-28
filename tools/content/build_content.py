@@ -23,7 +23,7 @@ sys.path.insert(0, HERE)
 import pieces as content  # noqa: E402
 
 CATEGORIES = ["Starter", "Buildings", "Exploration", "Dungeons", "Raids", "Reputation", "Professions", "Holidays", "Capstones"]
-FLAG_BITS = {"surface": 0x01, "small": 0x02, "per_char": 0x04, "gift": 0x08, "wreckage": 0x10, "stand": 0x20, "chest": 0x40}
+FLAG_BITS = {"surface": 0x01, "small": 0x02, "per_char": 0x04, "gift": 0x08, "wreckage": 0x10, "stand": 0x20, "chest": 0x40, "music": 0x80}
 RANKS = ["Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted"]
 SKILLS = {164: "Blacksmithing", 186: "Mining", 171: "Alchemy", 185: "Cooking", 202: "Engineering", 773: "Inscription",
           129: "First Aid", 197: "Tailoring", 165: "Leatherworking", 333: "Enchanting", 755: "Jewelcrafting",
@@ -300,8 +300,8 @@ def build(args):
         previews.append((item, model) + preview_size)
 
         flags = FLAG_BITS["stand"] if stand else 0
-        if style == "chest":
-            flags |= FLAG_BITS["chest"]
+        if style in ("chest", "music"):
+            flags |= FLAG_BITS[style]
         for flag in piece.get("flags", []):
             flags |= FLAG_BITS[flag]
         groups = piece.get("rules") or []
@@ -335,6 +335,8 @@ def build(args):
             notes.append("wears real gear from your bags: armor, weapons, shields")
         if style == "chest":
             notes.append("opens your bank and House Storage")
+        if style == "music":
+            notes.append("plays the island's music")
         if style in ("keep", "chair"):
             notes.append({"keep": "works like the real thing", "chair": "can be sat on"}[style])
         if flags & FLAG_BITS["surface"]:

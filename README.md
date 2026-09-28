@@ -77,6 +77,19 @@ you're not decorating: **Open my bank** brings up your own bank, right there, an
 Storage** lists the pieces waiting there. It works the way a banker does: only near the
 chest, for a few minutes after you open it. Visitors find it locked.
 
+### Weather, time of day and music
+
+Island settings, Island ambience. Each island keeps its own:
+
+- **Weather**: clear, fog, light rain, rain, thunderstorm, light snow, snow, blizzard or
+  sandstorm.
+- **Time of day**: the server's clock, or always dawn, midday, dusk or night.
+- **Music**: place a **Music Box** (unlocked at level 10) and click it to pick a tune:
+  the capital cities, taverns, Dalaran, Nagrand, Grizzly Hills and more.
+
+Everyone on the island sees and hears them, visitors included, and nobody else does.
+Leaving puts back the real clock and the weather where you land.
+
 ### Saved layouts
 
 Home menu, Saved layouts (or `.house layout`). Save your island as it is, try something

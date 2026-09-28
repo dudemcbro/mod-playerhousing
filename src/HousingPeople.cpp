@@ -41,7 +41,7 @@ char const* PlayerHousingMgr::PrivacyName(uint8 privacy)
 bool PlayerHousingMgr::GetHouseRecord(ObjectGuid::LowType ownerGuid, HouseRecord& outRecord) const
 {
     QueryResult result = CharacterDatabase.Query(
-        "SELECT owner_guid, is_private, flags, greeting FROM mod_playerhousing_house WHERE owner_guid={}", ownerGuid);
+        "SELECT owner_guid, is_private, flags, greeting, weather, time_of_day, music FROM mod_playerhousing_house WHERE owner_guid={}", ownerGuid);
     if (!result)
         return false;
 
@@ -50,6 +50,9 @@ bool PlayerHousingMgr::GetHouseRecord(ObjectGuid::LowType ownerGuid, HouseRecord
     outRecord.privacy = std::min<uint8>(fields[1].Get<uint8>(), PRIVACY_FRIENDS);
     outRecord.flags = fields[2].Get<uint32>();
     outRecord.greeting = fields[3].Get<std::string>();
+    outRecord.weather = fields[4].Get<uint8>();
+    outRecord.timeOfDay = fields[5].Get<uint8>();
+    outRecord.music = fields[6].Get<uint32>();
     return true;
 }
 

@@ -176,4 +176,5 @@ INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
 (900308, 'Guests can always visit, whatever your privacy setting.', '', 1),
 (900309, 'Pieces near you, closest first.', '', 1),
 (900310, 'A mannequin, showing off its owner''s gear.', '', 1),
-(900311, 'A sturdy chest. Your bank is in here, and so is House Storage.', '', 1);
+(900311, 'A sturdy chest. Your bank is in here, and so is House Storage.', '', 1),
+(900312, 'Weather, time of day and music: everyone on your island sees and hears them.', '', 1);

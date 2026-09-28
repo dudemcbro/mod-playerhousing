@@ -613,6 +613,11 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     if (!_enabled || !player)
         return;
 
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        _ambienceTimers.erase(player->GetGUID());
+    }
+
     // A piece placed in the player's last moments still owes its item, and a move not
     // finished is dropped (a quick relog can skip the login hook, so not left for that).
     ProcessPendingConsumes(player);
@@ -660,7 +665,7 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
         Say(player, reason);
 }
 
-void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
+void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
 {
     if (!_enabled || !player)
         return;
@@ -670,6 +675,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
     // not placed yet no longer takes after the original).
     if ((GetPendingMover(player) || GetPendingCopy(player)) && !player->IsBeingTeleported() && !IsOnOwnIsland(player))
         CancelMove(player);
+    UpdateAmbience(player, diffMs);
     UpdatePendingTrip(player);
 
     // Mid-teleport the position still belongs to where the player came from.
@@ -758,6 +764,8 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
     HouseRecord house;
     if (!GetHouseRecord(ownerGuid, house))
         return;
+
+    SendAmbience(player, house, true);
 
     ObjectGuid::LowType guid = player->GetGUID().GetCounter();
     if (guid == ownerGuid)
@@ -1070,10 +1078,12 @@ void PlayerHousingMgr::ApplyHousePhase(Player* player, uint32 phaseMask) const
     player->SetPhaseMask(phaseMask, true);
 }
 
-void PlayerHousingMgr::RestoreNormalPhase(Player* player) const
+void PlayerHousingMgr::RestoreNormalPhase(Player* player)
 {
     if (!IsHousingPhase(player->GetPhaseMask()))
         return;
+
+    RestoreAmbience(player);
 
     uint32 phaseMask = player->GetPhaseByAuras();
     if (!phaseMask)
