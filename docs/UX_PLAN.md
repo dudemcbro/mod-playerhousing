@@ -5,8 +5,8 @@ and Final Fantasy XIV (without neighborhoods). The hard rules come from you:
 
 - **Every placement can be undone, and undoing gives the item back** so it can be placed
   somewhere else.
-- **Furniture can go anywhere on the owner's own copy of GM Island**, inside or outside
-  the house.
+- **The island starts empty.** GM Island's guild hall is removed completely, and
+  furniture and buildings can go anywhere on the owner's own copy of the island.
 - **No house levels.** What a player can put in their house unlocks as they move through
   the world: exploring, dungeons, raids, reputation, professions and so on.
 - **Homes are built from pre-made buildings.** Everyone starts with wreckage (a fallen
@@ -77,14 +77,14 @@ vendor both go away. Pieces already unlocked or placed are converted (section 9)
 
 ### Placing: anywhere on your island
 
-Your private copy is the whole of GM Island, not just the building. Measured from the
-server's map data, all of the island's land lies within 227 yd of the house, and each
-owner's private copy reaches 250 yd, so beaches, the hilltop, the roof and every room are
-yours to decorate. Nobody else sees any of it unless you let them in.
+Your private copy is the whole of GM Island. Measured from the server's map data, all of
+the island's land lies within 227 yd of where the guild hall stood, and each owner's
+private copy reaches 250 yd, so every beach, the hilltop and the plateau where the hall
+used to be are yours to build on. Nobody else sees any of it unless you let them in.
 
 Right-click a furnishing, click anywhere with the targeting circle, and it appears exactly
-where you clicked, facing you: any floor, stairs, the upper storeys, outdoors, and (to be
-confirmed in game) tabletops and the tops of other furniture. The fine-tuning controls
+where you clicked, facing you: the ground, the floors and stairs of your buildings, and
+(to be confirmed in game) tabletops and the tops of other furniture. The fine-tuning controls
 below then take a piece anywhere else: onto a wall (a piece placed against a wall faces
 you, so it faces out of the wall), up to the ceiling, stacked, or floating.
 
@@ -259,8 +259,9 @@ Westfall Farmhouse
   big to draw.
 - Buildings stay visible from farther away than furniture, so a farmhouse doesn't pop in
   at 90 yd. The server has a large-object view distance for exactly this.
-- Your first visit lands you on the beach next to your first shelter, a fallen cart and a
-  shredded tent, already standing there and yours to move or pick up.
+- Your first visit lands you on the plateau where the guild hall used to stand, next to
+  your first shelter: a fallen cart and a shredded tent, already standing there and yours
+  to move or pick up.
 
 ### Two kinds of buildings
 
@@ -315,17 +316,22 @@ contains `PlayerHousing\Human\HumanLevelOneTest.wmo`, apparently Blizzard's own
 unfinished housing prototype. If it looks presentable in game, it makes a fun secret
 unlock.
 
-### The island's guild hall
+### The island: the guild hall is gone
 
-GM Island already has a big building on it, which doesn't fit "start with a fallen
-cart". Recommended: **seal the hall and make restoring it the level 80 capstone.** It
-stays in view the whole time as the goal on the horizon. Until then its doors are
-sealed: anyone who gets inside is moved back out with "The old guild hall is sealed.
-Restore it at level 80," nothing can be placed in it, and players arrive outside it
-instead of in its entry room. This needs no client patch.
+GM Island's guild hall is removed completely, so every island starts as open ground and
+everything on it is something the owner built. This is the cleared-island layout that
+already exists in `tools/gm-island-cleared`, which becomes the default. Three parts have
+to match, or the server and the players' games disagree about where walls are:
 
-The alternative is the cleared-island layout (`tools/gm-island-cleared`), which removes
-the hall for a blank island, but then every player has to install a client patch.
+| Part | What changes | Status |
+| --- | --- | --- |
+| Players' game client | A patch file (`patch-H.MPQ`) moves the hall out of sight. Every player puts it in their WoW `Data` folder once. | Built by `make_client_patch.sh` from a 3.3.5a client. Checked against a test file only; **never yet tried with a real client**, so that's the first to-do. |
+| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 53/53. |
+| Database | The arrival spot moves to the old hall's plateau. | `sql/layouts/gm_island_cleared.sql`; tested. |
+
+A player without the patch would still see the hall and bump into walls that aren't
+there for the server, so the patch goes with the server's other connection instructions
+(realmlist and so on).
 
 ### House styles retire
 
@@ -359,7 +365,7 @@ Your island: 12/200 furnishings, 2/10 buildings, Private
   Redo: ...                           (only after an undo)
   Collection (41 unlocked)
   House settings
-  Unstuck: back to the entrance
+  Unstuck: back to the landing spot
   Leave house
 ```
 
@@ -437,8 +443,8 @@ amount before you accept. In test mode there is no price to show.
 
 1. On first login: the House Key and three starter furnishings (chair, table, lantern)
    arrive in your bags. One chat line: "You have a house! Right-click your House Key to
-   go there." Once buildings arrive (Phase 5), the first visit lands you on the beach
-   next to your first shelter: a fallen cart and a shredded tent.
+   go there." Once buildings arrive (Phase 5), the first visit lands you on the old
+   hall's plateau next to your first shelter: a fallen cart and a shredded tent.
 2. First time home: Krook greets you with three steps (place something, click it to
    change it, undo if you don't like it), then gets out of the way.
 3. One-time tips at the moment they matter: after your first placement ("Click it while
@@ -472,7 +478,7 @@ picks, and nothing is ever hidden because of a style.
 - Every success line ends with the count: "Placed Westfall Chair (13/200)."
 - Safety nets instead of rules: the server ignores furniture when players move, but the
   game client still bumps into furniture models, so a player can box themselves in.
-  "Unstuck" in the Home menu puts them back at the entrance, and undo and pick up fix
+  "Unstuck" in the Home menu puts them back at the landing spot, and undo and pick up fix
   the layout.
 - Like anything in the open world, pieces more than about 90 yd away (Kalimdor's
   default view distance) appear as you walk closer.
@@ -526,13 +532,26 @@ Tick items off here as they land. Each phase ships on its own, keeps the end-to-
 green, and adds to it.
 
 - [x] UX plan (this document)
-- [ ] Content list: which piece and building comes from which activity (next; Phase 3 needs it)
+- [ ] Cleared island: try the client patch with a real 3.3.5a client (needs your client)
+- [ ] Content list: which piece and building comes from which activity (Phase 3 needs it)
 - [ ] Phase 1: the must-haves
 - [ ] Phase 2: click to edit
 - [ ] Phase 3: progression unlocks
 - [ ] Phase 4: people
 - [ ] Phase 5: buildings
 - [ ] Phase 6: polish and optional extras
+
+### Cleared island: try the client patch
+
+The only part of the cleared island that has never met a real WoW client. Needs your
+3.3.5a client, so it's a short session together.
+
+- [ ] build `patch-H.MPQ` from your client with `make_client_patch.sh`
+- [ ] run a server with the cleared layout and log in: the hall is gone, nothing
+  invisible blocks you where it stood, and the island's own trees and rocks are still
+  there
+- [ ] if anything is off, fix the patch tools before Phase 1 makes the cleared island the
+  default
 
 ### Content list
 
@@ -558,6 +577,9 @@ Planning, not code. Can be done before or alongside Phase 1. The result is
 ### Phase 1: the must-haves
 
 - [ ] `PlayerHousing.FreeMode`
+- [ ] the cleared island is the default: server data, database layout and landing spot;
+  the test server image can run it; install steps for the client patch; anything placed
+  inside the old hall goes back to its owner's House Storage with a message
 - [ ] house levels removed; one furnishing limit for everyone; gold refunds
 - [ ] furnishings are items only; catalog converted; kit names and models fixed; for now
   every furnishing is available (progression arrives in Phase 3)
@@ -574,8 +596,8 @@ Planning, not code. Can be done before or alongside Phase 1. The result is
 Test additions: place, then undo, and the item is back in bags; undo the undo (redo);
 pick up to full bags goes to storage and "Take all" works; with FreeMode on, every cost is
 zero; old catalog placements pick up into items; a chair next to a table, a piece
-outdoors on the far side of the island, and a piece on the main floor all place; a spot
-past the edge of the private copy is refused.
+outdoors on the far side of the island, and a piece on the hilltop all place; a spot
+past the edge of the private copy is refused; the test runs on the cleared island.
 
 ### Phase 2: click to edit
 
@@ -617,10 +639,8 @@ in with one click; "Friends & guild" lets a guild member in and keeps a stranger
 - [ ] picking a building up asks first: the building only, or the building and the pieces
   inside it
 - [ ] buildings stay visible from farther away (large-object view distance)
-- [ ] the starter wreckage (fallen cart, shredded tent) placed on first visit; a new
-  arrival spot on the beach
-- [ ] the old guild hall sealed until it's restored at level 80 (or the cleared island,
-  section 11)
+- [ ] the starter wreckage (fallen cart, shredded tent) placed on the old hall's plateau
+  on first visit
 - [ ] faction buildings need Exalted with their faction; the Collection shows your
   current standing toward each
 - [ ] house styles retired; their props become ordinary furniture
@@ -630,8 +650,7 @@ Test additions: place a building and pick it up: the prompt appears, "building o
 returns it to the bags and leaves the pieces inside where they were; undo puts it back; a
 level 1 character's Collection shows the wreckage rung unlocked and hints for the rest;
 a character at Revered with Stormwind sees the Westfall farmhouse locked with their
-standing, and reaching Exalted unlocks it with a message; getting inside the sealed hall
-before level 80 moves you back out; at level 80 the hall opens.
+standing, and reaching Exalted unlocks it with a message.
 
 ### Phase 6: polish and optional extras
 
@@ -655,7 +674,7 @@ before level 80 moves you back out; at level 80 the hall opens.
 | Can Alliance players earn Horde pieces and the reverse? | Only through content they can do; placing is never restricted by faction. |
 | House Key on live: instant, or a short cast and cooldown? | 5 second cast, no cooldown (like a mount, not a hearthstone). |
 | Include the "Friends & guild" privacy level? | Yes. It covers sharing with friends without opening the house to everyone. |
-| The island's own guild hall? | Seal it and make restoring it the level 80 capstone. No client patch, and players see what they're working toward. The alternative, the cleared island, needs a client patch for every player. |
+| The island's own guild hall? | **Decided:** removed completely (the cleared island). Every player installs the client patch once. |
 | Retire the four house styles? | Yes. Buildings replace them. |
 | Building limit per island? | 10 to start, separate from furniture, set in the config. |
 | What unlocks buildings? | Shelters by level; every faction building at Exalted with its faction (your rule). |
