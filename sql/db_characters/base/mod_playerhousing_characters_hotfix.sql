@@ -66,6 +66,17 @@ PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
 
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `parent_id` int unsigned NOT NULL DEFAULT 0 AFTER `look`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'parent_id'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
 -- Columns from the house levels version that nothing uses any more.
 
 SET @ph_stmt = (

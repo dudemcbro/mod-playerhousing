@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `pos_z` float NOT NULL,
   `orientation` float NOT NULL,
   `look` int unsigned NOT NULL DEFAULT 0,
+  `parent_id` int unsigned NOT NULL DEFAULT 0,  -- the surface it stands on
   PRIMARY KEY (`owner_guid`,`placement_id`),
   KEY `idx_mod_playerhousing_placement_catalog` (`catalog_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

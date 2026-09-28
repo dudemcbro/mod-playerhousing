@@ -210,6 +210,7 @@ namespace Housing
         float o{0.0f};
         float scale{1.0f};
         uint32 look{0};                   // stands: race | gender << 8
+        uint32 parent{0};                 // the surface it stands on: it moves with it
         std::map<uint8, GearItem> gear;   // stands: equipment slot -> item
     };
 
@@ -468,6 +469,10 @@ private:
     bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
     void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes);
     bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason);
+    // Pieces that go wherever this one goes: what stands on it, and for a building (when
+    // includeInside) what's inside it; each with what stands on them in turn.
+    std::vector<uint32> CarriedBy(Session const& session, uint32 placementId, bool includeInside) const;
+    uint32 FindSurfaceUnder(Session const& session, float x, float y, float z) const;
     bool ChangeStand(Player* player, uint32 placementId, Housing::Placement const& after, std::string const& label, std::string& reason);
     bool MoveGearToStand(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, uint32 itemGuid, std::string& reason);
     void ReturnGear(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, Housing::GearItem const& gear);

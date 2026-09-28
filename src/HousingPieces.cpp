@@ -304,9 +304,10 @@ void PlayerHousingMgr::SavePlacement(ObjectGuid::LowType ownerGuid, Placement co
     // The gear on a stand is saved as it moves (see HousingStands.cpp), never from here.
     CharacterDatabase.DirectExecute(
         "REPLACE INTO mod_playerhousing_placement "
-        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look) "
-        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-        ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o, placement.look);
+        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look, parent_id) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+        ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o, placement.look,
+        placement.parent);
 }
 
 void PlayerHousingMgr::DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const
@@ -546,6 +547,9 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     // A new mannequin takes after its owner.
     if (piece->HasFlag(PIECE_FLAG_STAND))
         placement.look = uint32(player->getRace()) | (uint32(player->getGender()) << 8);
+    // Clicked right onto a table top: it stands on the table and moves with it.
+    if (!piece->IsBuilding())
+        placement.parent = FindSurfaceUnder(*session, placement.x, placement.y, placement.z);
 
     Map* map = player->GetMap();
     if (!SpawnPlacement(*session, map, placement))
@@ -965,16 +969,14 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     PieceDefinition const* piece = GetPiece(placement.itemEntry);
     std::string name = piece ? piece->name : "furniture";
 
+    // What stands on it comes along; a building brings what's inside only when asked.
     std::vector<Change> changes;
     changes.push_back(Change{ placementId, placement, std::nullopt });
     uint32 insideCount = 0;
-    if (withInside && piece && piece->IsBuilding())
+    for (uint32 carriedId : CarriedBy(*session, placementId, withInside))
     {
-        for (Placement const& inner : GetPiecesInside(session->ownerGuid, placementId))
-        {
-            changes.push_back(Change{ inner.id, inner, std::nullopt });
-            ++insideCount;
-        }
+        changes.push_back(Change{ carriedId, session->placements[carriedId], std::nullopt });
+        ++insideCount;
     }
 
     _report = {};
@@ -982,11 +984,13 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     ApplyChanges(player, *session, changes, true, failure);
 
     std::string pieces = Acore::StringFormat("{} {}", insideCount, insideCount == 1 ? "piece" : "pieces");
-    std::string label = insideCount ? Acore::StringFormat("picked up {} and {} inside", name, pieces) : "picked up " + name;
+    char const* where = piece && piece->IsBuilding() ? "inside" : "on it";
+    std::string label = insideCount ? Acore::StringFormat("picked up {} and {} {}", name, pieces, where) : "picked up " + name;
     Record(player, label, std::move(changes));
 
     if (insideCount)
-        reason = Acore::StringFormat("Picked up {} and the {} inside it.{} ({})", name, pieces, DescribeReturns(), CountsText(session->ownerGuid));
+        reason = Acore::StringFormat("Picked up {} and the {} {}.{} ({})", name, pieces, piece && piece->IsBuilding() ? "inside it" : "on it",
+            DescribeReturns(), CountsText(session->ownerGuid));
     else
         reason = Acore::StringFormat("Picked up {}.{} ({})", name, DescribeReturns(), CountsText(session->ownerGuid));
     SendAddonState(player);
@@ -1009,20 +1013,43 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
     }
 
     Placement before = itr->second;
+    float turn = absoluteO ? o - before.o : dO;
     Placement after = before;
     after.x += dx;
     after.y += dy;
     after.z += dz;
-    after.o = NormalizeAngle(absoluteO ? o : after.o + dO);
+    after.o = NormalizeAngle(before.o + turn);
 
-    if (!IsSpotOnIsland(after.x, after.y, after.z))
+    // What stands on it (and, for a building, what's inside) moves and turns with it, as if
+    // it were one piece.
+    std::vector<Change> changes{ Change{ placementId, before, after } };
+    float cosTurn = std::cos(turn);
+    float sinTurn = std::sin(turn);
+    for (uint32 carriedId : CarriedBy(*session, placementId, true))
     {
-        reason = "That would take it off your island.";
-        return false;
+        Placement const& carried = session->placements[carriedId];
+        Placement moved = carried;
+        float relX = carried.x - before.x;
+        float relY = carried.y - before.y;
+        moved.x = after.x + relX * cosTurn - relY * sinTurn;
+        moved.y = after.y + relX * sinTurn + relY * cosTurn;
+        moved.z = carried.z + dz;
+        moved.o = NormalizeAngle(carried.o + turn);
+        changes.push_back(Change{ carriedId, carried, moved });
     }
 
+    for (Change const& change : changes)
+    {
+        if (!IsSpotOnIsland(change.after->x, change.after->y, change.after->z))
+        {
+            reason = "That would take it off your island.";
+            return false;
+        }
+    }
+
+    _report = {};
     std::string failure;
-    if (!ApplyState(player, *session, player->GetMap(), placementId, after, failure))
+    if (!ApplyChanges(player, *session, changes, true, failure))
     {
         reason = failure;
         return false;
@@ -1034,12 +1061,74 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
     std::string verb = label.substr(0, space);
     std::string rest = space == std::string::npos ? "" : label.substr(space);
     std::string entryLabel = verb + " " + name + rest;
-    Record(player, entryLabel, { Change{ placementId, before, after } });
+    if (changes.size() == 2)
+        entryLabel += Acore::StringFormat(" with the {}", PieceName(changes[1].before->itemEntry));
+    else if (changes.size() > 2)
+        entryLabel += Acore::StringFormat(" with {} pieces", changes.size() - 1);
+    Record(player, entryLabel, std::move(changes));
 
     reason = entryLabel + ".";
     reason[0] = char(std::toupper(static_cast<unsigned char>(reason[0])));
     SendAddonState(player);
     return true;
+}
+
+std::vector<uint32> PlayerHousingMgr::CarriedBy(Session const& session, uint32 placementId, bool includeInside) const
+{
+    std::vector<uint32> carried;
+    std::set<uint32> seen{ placementId };
+    auto add = [&](uint32 id)
+    {
+        if (seen.insert(id).second)
+            carried.push_back(id);
+    };
+
+    auto root = session.placements.find(placementId);
+    auto rootPiece = root != session.placements.end() ? _pieces.find(root->second.itemEntry) : _pieces.end();
+    if (includeInside && rootPiece != _pieces.end() && rootPiece->second.IsBuilding())
+        for (Placement const& inside : GetPiecesInside(session.ownerGuid, placementId))
+            add(inside.id);
+
+    // Then whatever stands on anything carried so far, level by level.
+    for (size_t index = 0; index <= carried.size(); ++index)
+    {
+        uint32 holder = index == 0 ? placementId : carried[index - 1];
+        for (auto const& [id, placement] : session.placements)
+            if (placement.parent == holder)
+                add(id);
+    }
+    return carried;
+}
+
+uint32 PlayerHousingMgr::FindSurfaceUnder(Session const& session, float x, float y, float z) const
+{
+    for (auto const& [id, surface] : session.placements)
+    {
+        auto pieceItr = _pieces.find(surface.itemEntry);
+        if (pieceItr == _pieces.end() || !pieceItr->second.HasFlag(PIECE_FLAG_SURFACE))
+            continue;
+
+        PieceDefinition const& piece = pieceItr->second;
+        float scale = piece.scale > 0.0f ? surface.scale / piece.scale : 1.0f;
+        float top = surface.z + piece.height * scale;
+        if (std::fabs(z - top) > 0.35f)
+            continue;
+
+        float dx = x - surface.x;
+        float dy = y - surface.y;
+        bool within;
+        if (piece.HasOutline())
+        {
+            float localX = (std::cos(surface.o) * dx + std::sin(surface.o) * dy) / scale;
+            float localY = (-std::sin(surface.o) * dx + std::cos(surface.o) * dy) / scale;
+            within = localX >= piece.outlineMinX && localX <= piece.outlineMaxX && localY >= piece.outlineMinY && localY <= piece.outlineMaxY;
+        }
+        else
+            within = dx * dx + dy * dy <= piece.footprint * piece.footprint;
+        if (within)
+            return id;
+    }
+    return 0;
 }
 
 void PlayerHousingMgr::SelectPlacement(Player const* player, uint32 placementId)
@@ -1140,6 +1229,7 @@ bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, ui
     placement.z = surface.z + surfacePiece->height * (surface.scale / surfacePiece->scale);
     placement.o = surface.o;
     placement.scale = piece->scale;
+    placement.parent = surfacePlacementId;
 
     _report = {};
     std::string failure;

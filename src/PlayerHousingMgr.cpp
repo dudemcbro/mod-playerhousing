@@ -853,7 +853,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     session.nextPlacementId = 1;
 
     if (QueryResult result = CharacterDatabase.Query(
-            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look FROM mod_playerhousing_placement "
+            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id FROM mod_playerhousing_placement "
             "WHERE owner_guid={} AND map_id={} ORDER BY placement_id", ownerGuid, session.mapId))
     {
         do
@@ -868,6 +868,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
             placement.o = fields[5].Get<float>();
             placement.scale = std::max(0.05f, fields[6].Get<float>());
             placement.look = fields[7].Get<uint32>();
+            placement.parent = fields[8].Get<uint32>();
             session.nextPlacementId = std::max(session.nextPlacementId, placement.id + 1);
             if (!_pieces.count(placement.itemEntry))
                 continue;

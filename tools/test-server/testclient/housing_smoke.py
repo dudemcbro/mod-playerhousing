@@ -405,6 +405,29 @@ def main():
         check("the lantern snaps onto the table top", table and lantern and math.dist((lantern["x"], lantern["y"]), (table["x"], table["y"])) < 0.01
               and lantern["z"] > table["z"] + 0.3, joined(msgs) + " table=%s lantern=%s" % (table, lantern))
 
+    # What stands on a table goes where the table goes, in one undoable step.
+    table = placement_of(owner_guid, TABLE)
+    lantern = placement_of(owner_guid, LANTERN)
+    if table and lantern:
+        msgs = owner.command(".house nudge forward 0.5 %d" % table["id"])
+        moved_table = placement_of(owner_guid, TABLE)
+        moved_lantern = placement_of(owner_guid, LANTERN)
+        shift = (moved_table["x"] - table["x"], moved_table["y"] - table["y"])
+        check("the lantern moves with its table", math.hypot(*shift) > 0.4
+              and abs(moved_lantern["x"] - lantern["x"] - shift[0]) < 0.01 and abs(moved_lantern["y"] - lantern["y"] - shift[1]) < 0.01
+              and has(msgs, "with the Lantern"), joined(msgs))
+        msgs = owner.command(".house rotate 90 %d" % table["id"])
+        turned = placement_of(owner_guid, LANTERN)
+        check("and turns with it", angle_diff(turned["o"], moved_lantern["o"] + math.pi / 2) < 0.02, joined(msgs))
+        owner.command(".house undo")
+        msgs = owner.command(".house undo")
+        back = placement_of(owner_guid, LANTERN)
+        check("one undo per move puts both back", math.dist((back["x"], back["y"]), (lantern["x"], lantern["y"])) < 0.01
+              and math.dist((placement_of(owner_guid, TABLE)["x"], placement_of(owner_guid, TABLE)["y"]), (table["x"], table["y"])) < 0.01,
+              joined(msgs))
+    else:
+        check("the lantern moves with its table", False, "no table and lantern to move")
+
     # ------------------------------------------------------------- pick up, storage
     log("== pick up and storage")
     lantern = placement_of(owner_guid, LANTERN)
