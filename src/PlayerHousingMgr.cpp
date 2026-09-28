@@ -108,6 +108,7 @@ void PlayerHousingMgr::LoadConfig()
     _sizeMin = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Min", 0.5f), 0.1f, 1.0f);
     _sizeMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Max", 2.0f), 1.0f, 10.0f);
     _tiltMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Tilt.Max", 45.0f), 0.0f, 180.0f);
+    _maxSavedLayouts = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.SavedLayouts", 5), 20);
 }
 
 bool PlayerHousingMgr::LoadDefinitions()
@@ -832,6 +833,8 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     trans->Append("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={}", guidLow);
     CharacterDatabase.CommitTransaction(trans);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_storage WHERE owner_guid={}", guidLow);
+    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_piece WHERE owner_guid={}", guidLow);
+    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_layout WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);

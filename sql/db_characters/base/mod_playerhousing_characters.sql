@@ -96,6 +96,33 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_character` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Saved layouts: where every piece stood, to set out again. They hold no items.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_layout` (
+  `owner_guid` int unsigned NOT NULL,
+  `layout_id` int unsigned NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `source` varchar(12) NOT NULL DEFAULT '',    -- who sent it, or whose island it was copied from
+  `saved_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`owner_guid`,`layout_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_piece` (
+  `owner_guid` int unsigned NOT NULL,
+  `layout_id` int unsigned NOT NULL,
+  `placement_id` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  `pos_x` float NOT NULL,
+  `pos_y` float NOT NULL,
+  `pos_z` float NOT NULL,
+  `orientation` float NOT NULL,
+  `scale` float NOT NULL DEFAULT 1,
+  `pitch` float NOT NULL DEFAULT 0,
+  `roll` float NOT NULL DEFAULT 0,
+  `look` int unsigned NOT NULL DEFAULT 0,
+  `parent_id` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`owner_guid`,`layout_id`,`placement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- One-off conversions already done.
 CREATE TABLE IF NOT EXISTS `mod_playerhousing_meta` (
   `meta_key` varchar(32) NOT NULL,

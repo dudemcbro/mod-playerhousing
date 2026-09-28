@@ -1,4 +1,6 @@
 DROP TABLE IF EXISTS `mod_playerhousing_meta`;
+DROP TABLE IF EXISTS `mod_playerhousing_saved_piece`;
+DROP TABLE IF EXISTS `mod_playerhousing_saved_layout`;
 DROP TABLE IF EXISTS `mod_playerhousing_character`;
 DROP TABLE IF EXISTS `mod_playerhousing_collection`;
 DROP TABLE IF EXISTS `mod_playerhousing_storage`;

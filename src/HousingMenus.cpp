@@ -72,6 +72,17 @@ namespace
         CMD_SEARCH_LOCKED,    // action: page << 8 (shows the hint again)
         CMD_PIECE_INFO,       // action: item entry | origin << 24
         CMD_GET_COPIES,       // action: item entry | count << 20 | origin << 24
+        CMD_LAYOUTS,
+        CMD_LAYOUT_SAVE_NEW,  // coded: the name
+        CMD_LAYOUT_PAGE,      // action: layout id
+        CMD_LAYOUT_SWITCH,    // action: layout id
+        CMD_LAYOUT_OVERWRITE, // action: layout id
+        CMD_LAYOUT_RENAME,    // coded, action: layout id
+        CMD_LAYOUT_SEND,      // coded, action: layout id
+        CMD_LAYOUT_DELETE,    // action: layout id
+        CMD_LAYOUT_GET_MISSING, // action: layout id
+        CMD_LAYOUT_COPYABLE,
+        CMD_LAYOUT_COPY_ISLAND,
         CMD_CLOSE
     };
 
@@ -338,6 +349,74 @@ namespace
         Send(player, source, TEXT_COLLECTION);
     }
 
+    void ShowLayouts(Player* player, MenuSource const& source)
+    {
+        ObjectGuid::LowType self = player->GetGUID().GetCounter();
+        std::vector<SavedLayout> layouts = sPlayerHousingMgr->GetSavedLayouts(self);
+        uint32 most = sPlayerHousingMgr->GetMaxSavedLayouts();
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Saved layouts: {} of {}", layouts.size(), most), CMD_LAYOUTS);
+        if (layouts.size() < most)
+            Ask(player, GOSSIP_ICON_INTERACT_1, "Save my island as a new layout...", CMD_LAYOUT_SAVE_NEW);
+        else
+            Add(player, GOSSIP_ICON_DOT, "All full: save over one, or delete one", CMD_LAYOUTS);
+        for (SavedLayout const& layout : layouts)
+            Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("{} ({} pieces, {})", layout.name, layout.pieces, layout.savedAt), CMD_LAYOUT_PAGE, layout.id);
+        Add(player, GOSSIP_ICON_CHAT, "Back to Island settings", CMD_SETTINGS);
+        Send(player, source, TEXT_SETTINGS);
+    }
+
+    void ShowLayoutPage(Player* player, MenuSource const& source, uint32 layoutId)
+    {
+        ObjectGuid::LowType self = player->GetGUID().GetCounter();
+        std::optional<SavedLayout> layout = sPlayerHousingMgr->GetSavedLayout(self, layoutId);
+        if (!layout)
+        {
+            ShowLayouts(player, source);
+            return;
+        }
+
+        std::map<uint32, uint32> missing = sPlayerHousingMgr->LayoutShortfall(player, layoutId);
+        uint32 gettable = 0;
+        uint64 cost = 0;
+        uint32 locked = 0;
+        sPlayerHousingMgr->DescribeShortfall(player, missing, gettable, cost, locked);
+
+        ClearGossipMenuFor(player);
+        std::string from = layout->source.empty() ? "" : ", from " + layout->source;
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {} pieces, saved {}{}", layout->name, layout->pieces, layout->savedAt, from),
+            CMD_LAYOUT_PAGE, layoutId);
+        if (sPlayerHousingMgr->IsOnOwnIsland(player))
+            Confirm(player, GOSSIP_ICON_INTERACT_1, "Set it out on my island", CMD_LAYOUT_SWITCH, layoutId,
+                "Pack up your island and set out " + layout->name + "? Gear on mannequins goes back to your bags. Pieces you don't have are "
+                "left out. You can undo this.");
+        else
+            Add(player, GOSSIP_ICON_DOT, "Go home to set it out", CMD_LAYOUT_PAGE, layoutId);
+
+        if (gettable)
+        {
+            std::string price = cost ? " (" + PlayerHousingMgr::FormatMoney(cost) + ")" : "";
+            std::string text = Acore::StringFormat("Get the {} missing {}{}", gettable, gettable == 1 ? "piece" : "pieces", price);
+            if (cost)
+                Confirm(player, GOSSIP_ICON_MONEY_BAG, text, CMD_LAYOUT_GET_MISSING, layoutId, "Get the missing pieces?", uint32(std::min<uint64>(cost, 0xFFFFFFFF)));
+            else
+                Add(player, GOSSIP_ICON_MONEY_BAG, text, CMD_LAYOUT_GET_MISSING, layoutId);
+        }
+        if (locked)
+            Add(player, GOSSIP_ICON_DOT, Acore::StringFormat("{} {} still locked for you", locked, locked == 1 ? "piece is" : "pieces are"),
+                CMD_LAYOUT_PAGE, layoutId);
+
+        Confirm(player, GOSSIP_ICON_INTERACT_1, "Save my island over it", CMD_LAYOUT_OVERWRITE, layoutId,
+            "Replace " + layout->name + " with your island as it is now?");
+        Ask(player, GOSSIP_ICON_INTERACT_1, "Rename it...", CMD_LAYOUT_RENAME, layoutId);
+        Ask(player, GOSSIP_ICON_TALK, "Send a copy to a player...", CMD_LAYOUT_SEND, layoutId);
+        Confirm(player, GOSSIP_ICON_INTERACT_1, "Delete it", CMD_LAYOUT_DELETE, layoutId,
+            "Delete the layout " + layout->name + "? Your island stays as it is.");
+        Add(player, GOSSIP_ICON_CHAT, "Back to saved layouts", CMD_LAYOUTS);
+        Send(player, source, TEXT_SETTINGS);
+    }
+
     std::string CollectionLabel(Player* player, uint32 unlocked)
     {
         size_t fresh = sPlayerHousingMgr->LoadNewUnlocks(player).size();
@@ -365,6 +444,13 @@ namespace
             Add(player, GOSSIP_ICON_CHAT, "Clear the greeting", CMD_GREETING_CLEAR);
         Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Adjust menu opens: {} (click to change)",
             PlayerHousingMgr::AdjustModeName(sPlayerHousingMgr->GetAdjustMode(self))), CMD_ADJUST_MODE);
+        if (sPlayerHousingMgr->GetMaxSavedLayouts())
+        {
+            Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Saved layouts ({} of {})", sPlayerHousingMgr->GetSavedLayouts(self).size(),
+                sPlayerHousingMgr->GetMaxSavedLayouts()), CMD_LAYOUTS);
+            Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Visitors may copy my layout: {} (click to change)",
+                sPlayerHousingMgr->IsLayoutCopyable(self) ? "yes" : "no"), CMD_LAYOUT_COPYABLE);
+        }
         float grid = sPlayerHousingMgr->GetGridSize(self);
         Add(player, GOSSIP_ICON_INTERACT_1, grid > 0.0f
             ? Acore::StringFormat("Grid: {} yd (click to change)", PlayerHousingMgr::FormatYards(grid))
@@ -709,6 +795,8 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
         if (stored)
             Add(player, GOSSIP_ICON_MONEY_BAG, Acore::StringFormat("Storage ({})", stored), CMD_STORAGE, 0);
         Add(player, GOSSIP_ICON_TABARD, "Island settings", CMD_SETTINGS);
+        if (sPlayerHousingMgr->GetMaxSavedLayouts())
+            Add(player, GOSSIP_ICON_VENDOR, "Saved layouts", CMD_LAYOUTS);
         if (decorating)
             Confirm(player, GOSSIP_ICON_INTERACT_2, "Pack up everything", CMD_PACKUP, 0,
                 "Put every piece on your island back in your bags (or House Storage)? You can undo this.");
@@ -721,6 +809,8 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
     {
         Add(player, GOSSIP_ICON_CHAT, "You're visiting " + sPlayerHousingMgr->NameOf(islandOwner) + "'s island", CMD_HOME);
         Add(player, GOSSIP_ICON_TAXI, "Go home", CMD_GO_HOME);
+        if (sPlayerHousingMgr->GetMaxSavedLayouts() && sPlayerHousingMgr->IsLayoutCopyable(islandOwner))
+            Add(player, GOSSIP_ICON_VENDOR, "Save a copy of this island's layout", CMD_LAYOUT_COPY_ISLAND);
         Add(player, GOSSIP_ICON_TAXI, "Visit another island", CMD_VISIT);
         Add(player, GOSSIP_ICON_VENDOR, CollectionLabel(player, unlocked), CMD_COLLECTION);
         Add(player, GOSSIP_ICON_CHAT, "Unstuck: back to the landing spot", CMD_UNSTUCK);
@@ -778,6 +868,11 @@ void HousingMenus::ShowCollection(Player* player, MenuSource const& source)
         Add(player, GOSSIP_ICON_MONEY_BAG, "Give me one of everything (test server)", CMD_GET_ALL);
     Add(player, GOSSIP_ICON_CHAT, "Back", CMD_HOME);
     Send(player, source, TEXT_COLLECTION);
+}
+
+void HousingMenus::ShowSavedLayouts(Player* player, MenuSource const& source)
+{
+    ShowLayouts(player, source);
 }
 
 void HousingMenus::ShowCollectionSearch(Player* player, MenuSource const& source, std::string const& text)
@@ -987,6 +1082,62 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
         case CMD_LOCKED:
             Say(player, "Locked pieces unlock by themselves when you earn them.");
             ShowCategory(player, source, uint8(action & 0xFF), action >> 8);
+            return;
+        case CMD_LAYOUTS:
+            ShowLayouts(player, source);
+            return;
+        case CMD_LAYOUT_SAVE_NEW:
+            sPlayerHousingMgr->SaveLayout(player, 0, text, reason);
+            Say(player, reason);
+            ShowLayouts(player, source);
+            return;
+        case CMD_LAYOUT_PAGE:
+            ShowLayoutPage(player, source, action);
+            return;
+        case CMD_LAYOUT_SWITCH:
+            if (sPlayerHousingMgr->SwitchLayout(player, action, reason))
+            {
+                Say(player, reason);
+                CloseGossipMenuFor(player);
+                return;
+            }
+            Say(player, reason);
+            ShowLayoutPage(player, source, action);
+            return;
+        case CMD_LAYOUT_OVERWRITE:
+            sPlayerHousingMgr->SaveLayout(player, action, "", reason);
+            Say(player, reason);
+            ShowLayoutPage(player, source, action);
+            return;
+        case CMD_LAYOUT_RENAME:
+            sPlayerHousingMgr->RenameLayout(player, action, text, reason);
+            Say(player, reason);
+            ShowLayoutPage(player, source, action);
+            return;
+        case CMD_LAYOUT_SEND:
+            sPlayerHousingMgr->SendLayout(player, action, text, reason);
+            Say(player, reason);
+            ShowLayoutPage(player, source, action);
+            return;
+        case CMD_LAYOUT_DELETE:
+            sPlayerHousingMgr->DeleteLayout(player, action, reason);
+            Say(player, reason);
+            ShowLayouts(player, source);
+            return;
+        case CMD_LAYOUT_GET_MISSING:
+            sPlayerHousingMgr->GetMissingForLayout(player, action, reason);
+            Say(player, reason);
+            ShowLayoutPage(player, source, action);
+            return;
+        case CMD_LAYOUT_COPYABLE:
+            sPlayerHousingMgr->SetLayoutCopyable(player, !sPlayerHousingMgr->IsLayoutCopyable(player->GetGUID().GetCounter()), reason);
+            Say(player, reason);
+            ShowSettings(player, source);
+            return;
+        case CMD_LAYOUT_COPY_ISLAND:
+            sPlayerHousingMgr->CopyIslandLayout(player, reason);
+            Say(player, reason);
+            ShowHome(player, source);
             return;
         case CMD_COLLECTION_FILTER:
             sPlayerHousingMgr->SetCollectionUnlockedOnly(player, !sPlayerHousingMgr->IsCollectionUnlockedOnly(player->GetGUID().GetCounter()));

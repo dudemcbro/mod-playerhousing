@@ -81,6 +81,14 @@ PlayerHousing.Size.Max = 2
 PlayerHousing.Tilt.Max = 45
 
 ###############################################################################
+# PlayerHousing.SavedLayouts
+#    How many layouts each character can save (snapshots of where everything
+#    stands, to set out again or send to a friend). 0 turns them off. Up to 20.
+#    Default: 5
+###############################################################################
+PlayerHousing.SavedLayouts = 5
+
+###############################################################################
 # PlayerHousing.HouseKey.DelaySeconds
 #    How long "Go home" takes (moving or combat cancels). 0 = instant.
 #    FreeMode always goes instantly.

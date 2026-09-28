@@ -322,6 +322,7 @@ public:
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
         handler->SendSysMessage(".house another [id] | grid <off|yards>");
+        handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
         if (gm)
@@ -475,6 +476,57 @@ public:
                 mgr->Tilt(player, number(2), 0.0f, 0.0f, true, reason);
             else
                 reason = "Usage: .house tilt <forward|back|left|right|straight> [degrees] [id]. Forward tips its front down; left and right are its own.";
+        }
+        else if (sub == "layout" || sub == "layouts")
+        {
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            auto find = [&](size_t index) -> uint32
+            {
+                std::string name = tokens.size() > index ? std::string(tokens[index]) : "";
+                if (what == "send" && tokens.size() > 3)
+                    name = std::string(tokens[2]);
+                else
+                    name = restFrom(index);
+                std::optional<SavedLayout> layout = mgr->FindSavedLayout(self, name);
+                if (!layout)
+                    reason = name.empty() ? "Which layout? .house layout list shows them." : "You have no layout called " + name + ".";
+                return layout ? layout->id : 0;
+            };
+            if (what.empty())
+            {
+                HousingMenus::ShowSavedLayouts(player, FromPlayer(player));
+                return true;
+            }
+            else if (what == "save")
+                mgr->SaveLayout(player, 0, restFrom(2), reason);
+            else if (what == "load" || what == "switch" || what == "set")
+            {
+                if (uint32 id = find(2))
+                    mgr->SwitchLayout(player, id, reason);
+            }
+            else if (what == "delete")
+            {
+                if (uint32 id = find(2))
+                    mgr->DeleteLayout(player, id, reason);
+            }
+            else if (what == "send")
+            {
+                if (tokens.size() < 4)
+                    reason = "Usage: .house layout send <layout> <player>";
+                else if (uint32 id = find(2))
+                    mgr->SendLayout(player, id, std::string(tokens[3]), reason);
+            }
+            else if (what == "list")
+            {
+                std::vector<SavedLayout> layouts = mgr->GetSavedLayouts(self);
+                if (layouts.empty())
+                    reason = "No saved layouts yet: .house layout save <name>.";
+                for (SavedLayout const& layout : layouts)
+                    handler->PSendSysMessage("#{} {} ({} pieces, {})", layout.id, layout.name, layout.pieces, layout.savedAt);
+            }
+            else
+                reason = "Usage: .house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]";
         }
         else if (sub == "another" || sub == "copy")
             mgr->PlaceAnother(player, number(1), reason);

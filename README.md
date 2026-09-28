@@ -70,6 +70,22 @@ Swim too far out and you're brought back to the beach.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone
   too.
 
+### Saved layouts
+
+Home menu, Saved layouts (or `.house layout`). Save your island as it is, try something
+new, and set the old one back out whenever you like. Each character keeps up to 5.
+
+- **Set it out** packs up the island and places the layout: every piece where it stood,
+  turned, sized and tilted the same, lanterns back on their tables. It uses your own
+  pieces (from the island, your bags and House Storage); ones you don't have are left
+  out, and the message says which. One undo puts the island back as it was.
+- A layout's page counts what's missing and gets the ones you've unlocked in one click
+  ("Get the 3 missing pieces"), and says how many are still locked.
+- **Send a copy** to someone in your party or guild, or a friend who has you on their
+  list. **Visitors may copy my layout** (Island settings) lets anyone visiting save a
+  copy from the Home menu. Layouts hold no items: whoever sets one out places their own.
+- Mannequins come back bare: their gear goes to your bags when the island is packed up.
+
 ### Mannequins: show off your gear
 
 The Mannequin (in everyone's starter set) is a stand for armor and weapons. Place it like
@@ -140,6 +156,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
 | `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
 | `.house another [id]` | One more of this piece, placed with its turn, size and tilt |
+| `.house layout [save <name>\|load <name>\|delete <name>\|send <name> <player>\|list]` | Saved layouts; without more, the menu |
 | `.house grid <off\|yards>` | Snap to a grid of 0.25 to 4 yards |
 | `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
 | `.house packup` | Pick up everything (undoable) |
@@ -222,6 +239,7 @@ client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHous
 | `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
 | `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
 | `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
+| `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
 | `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
 | `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |

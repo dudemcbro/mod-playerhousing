@@ -103,7 +103,8 @@ namespace Housing
     enum HouseFlags : uint32
     {
         HOUSE_FLAG_WRECKAGE_PLACED = 0x01,
-        HOUSE_FLAG_HALL_NOTICE = 0x02      // things from the old guild hall went to storage
+        HOUSE_FLAG_HALL_NOTICE = 0x02,     // things from the old guild hall went to storage
+        HOUSE_FLAG_LAYOUT_COPYABLE = 0x04  // visitors may save a copy of the layout
     };
 
     enum CharacterFlags : uint32
@@ -243,6 +244,15 @@ namespace Housing
         std::string greeting;
     };
 
+    struct SavedLayout
+    {
+        uint32 id{0};
+        std::string name;
+        std::string source;   // who it came from, when sent or copied
+        std::string savedAt;  // YYYY-MM-DD
+        uint32 pieces{0};
+    };
+
     struct VisitEntry
     {
         ObjectGuid::LowType ownerGuid{0};
@@ -335,6 +345,25 @@ public:
     void SelectPlacement(Player const* player, uint32 placementId);
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
     void ProcessPendingConsumes(Player* player);
+
+    // ---- saved layouts (HousingLayouts.cpp)
+    std::vector<Housing::SavedLayout> GetSavedLayouts(ObjectGuid::LowType ownerGuid) const;
+    std::optional<Housing::SavedLayout> GetSavedLayout(ObjectGuid::LowType ownerGuid, uint32 layoutId) const;
+    std::optional<Housing::SavedLayout> FindSavedLayout(ObjectGuid::LowType ownerGuid, std::string const& nameOrNumber) const;
+    uint32 GetMaxSavedLayouts() const { return _maxSavedLayouts; }
+    // layoutId 0: a new layout with this name; otherwise save the island over that one.
+    bool SaveLayout(Player* player, uint32 layoutId, std::string const& name, std::string& reason);
+    bool RenameLayout(Player* player, uint32 layoutId, std::string const& name, std::string& reason);
+    bool DeleteLayout(Player* player, uint32 layoutId, std::string& reason);
+    bool SwitchLayout(Player* player, uint32 layoutId, std::string& reason);
+    // Pieces the layout needs that the player doesn't have anywhere: item entry -> how many.
+    std::map<uint32, uint32> LayoutShortfall(Player* player, uint32 layoutId) const;
+    void DescribeShortfall(Player* player, std::map<uint32, uint32> const& missing, uint32& gettable, uint64& cost, uint32& locked) const;
+    bool GetMissingForLayout(Player* player, uint32 layoutId, std::string& reason);
+    bool IsLayoutCopyable(ObjectGuid::LowType ownerGuid) const;
+    void SetLayoutCopyable(Player* player, bool copyable, std::string& reason) const;
+    bool CopyIslandLayout(Player* visitor, std::string& reason);
+    bool SendLayout(Player* player, uint32 layoutId, std::string const& recipientName, std::string& reason);
 
     // ---- stands (HousingStands.cpp)
     static int8 StandSlotFor(ItemTemplate const* proto, std::map<uint8, Housing::GearItem> const& worn);
@@ -521,6 +550,13 @@ private:
     std::string DescribeItemReturns() const;
 
 
+    // HousingLayouts.cpp
+    std::vector<Housing::Placement> LoadSavedPieces(ObjectGuid::LowType ownerGuid, uint32 layoutId) const;
+    // fromLayout 0 copies fromOwner's island as it is now.
+    void WriteLayout(ObjectGuid::LowType ownerGuid, uint32 layoutId, std::string const& name, std::string const& source,
+        ObjectGuid::LowType fromOwner, uint32 fromLayout) const;
+    uint32 NextLayoutId(ObjectGuid::LowType ownerGuid) const;
+
     // HousingCollection.cpp
     bool RuleMet(Player const* player, Housing::PieceRule const& rule) const;
     // Whether any rule group of the piece is complete; `triggered` marks rules the current
@@ -545,6 +581,7 @@ private:
     float _sizeMin{0.5f};   // times the piece's normal size
     float _sizeMax{2.0f};
     float _tiltMax{45.0f};  // degrees either way
+    uint32 _maxSavedLayouts{5};
     std::string _layoutCode{"cleared"};
 
     Housing::LayoutDefinition _layout;

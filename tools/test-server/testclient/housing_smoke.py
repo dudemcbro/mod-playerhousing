@@ -248,9 +248,11 @@ def main():
     for table, column in (("mod_playerhousing_placement", "owner_guid"), ("mod_playerhousing_acl", "owner_guid"),
                           ("mod_playerhousing_acl", "guest_guid"), ("mod_playerhousing_house", "owner_guid"),
                           ("mod_playerhousing_storage", "owner_guid"), ("mod_playerhousing_character", "guid"),
-                          ("mod_playerhousing_collection", "guid")):
+                          ("mod_playerhousing_collection", "guid"), ("mod_playerhousing_saved_layout", "owner_guid"),
+                          ("mod_playerhousing_saved_piece", "owner_guid")):
         db("DELETE FROM %s WHERE %s IN (%s)" % (table, column, ids))
     db("DELETE FROM mod_playerhousing_collection WHERE account_id IN (SELECT account FROM characters WHERE guid IN (%s))" % ids)
+    db("DELETE FROM character_social WHERE guid IN (%s) AND friend IN (%s)" % (ids, ids))
     # Gear on stands and gear Krook mailed back.
     db("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid IN (%s)" % ids)
     db("DELETE FROM mail_items WHERE receiver IN (%s) AND mail_id IN (SELECT id FROM mail WHERE sender=%d AND messageType=3)" % (ids, STEWARD))
@@ -850,6 +852,61 @@ def main():
     owner.gossip_select("Worn Shortsword")
     wait_for(lambda: owner.count_item(SWORD) == 0, 3, owner)
 
+    # ------------------------------------------------------------- saved layouts
+    log("== saved layouts")
+    count = len(placements(owner_guid))
+    msgs = owner.command(".house layout save Test Corner")
+    saved = db("SELECT COUNT(*) FROM mod_playerhousing_saved_piece WHERE owner_guid=%d" % owner_guid)
+    check("save the island as a layout", has(msgs, "Saved your island as Test Corner (%d pieces)" % count) and saved == [[str(count)]],
+          joined(msgs) + " " + str(saved))
+    chair = placement_of(owner_guid, CHAIR)
+    owner.command(".house pickup %d" % chair["id"])
+    wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+    owner.command(".house")
+    owner.gossip_select("Saved layouts")
+    check("the saved layouts menu lists it", any(o.startswith("Test Corner (%d pieces" % count) for o in options(owner.last_gossip)),
+          str(options(owner.last_gossip)))
+    owner.gossip_select("Test Corner")
+    menu = owner.last_gossip
+    check("a layout's page: set it out, save over it, rename, send, delete",
+          all(o in options(menu) for o in ("Set it out on my island", "Save my island over it", "Rename it...", "Send a copy to a player...", "Delete it")),
+          str(options(menu)))
+    _, msgs = owner.gossip_select("Set it out on my island")
+    wait_for(lambda: owner.count_item(CHAIR) == 0, 3, owner)
+    back = placement_of(owner_guid, CHAIR)
+    check("setting it out puts everything where it was", len(placements(owner_guid)) == count and back is not None
+          and math.dist((back["x"], back["y"]), (chair["x"], chair["y"])) < 0.01 and has(msgs, "Set out Test Corner: %d pieces" % count),
+          joined(msgs))
+    wait_for(lambda: owner.count_item(SWORD) == 1, 3, owner)
+    check("gear on the mannequin comes back to the bags", owner.count_item(SWORD) == 1, str(owner.backpack()))
+    msgs = owner.command(".house undo")
+    wait_for(lambda: owner.count_item(SWORD) == 0, 3, owner)
+    stand = placement_of(owner_guid, MANNEQUIN)
+    check("one undo puts the island back, the sword on the mannequin again", placement_of(owner_guid, CHAIR) is None and stand is not None
+          and SLOT_MAIN_HAND in gear_of(owner_guid, stand["id"]) and has(msgs, "Undid: set out Test Corner"), joined(msgs))
+    move(owner, chair["x"] - 2.0, chair["y"], chair["z"])
+    owner.use_item(CHAIR, spell_of(CHAIR), (chair["x"], chair["y"], chair["z"]))
+
+    owner.command(".house layout")
+    owner.gossip_select("Test Corner")
+    _, msgs = owner.gossip_select("Rename it...", code="Krook's Corner")
+    check("rename (names can have quotes)", db("SELECT name FROM mod_playerhousing_saved_layout WHERE owner_guid=%d" % owner_guid) == [["Krook's Corner"]],
+          joined(msgs))
+    msgs = owner.command(".house layout send krook %s" % args.guest_char)
+    check("layouts don't go to strangers", has(msgs, "none of those") and not db(
+          "SELECT 1 FROM mod_playerhousing_saved_layout WHERE owner_guid=%d" % guest_guid), joined(msgs))
+    db("INSERT INTO character_social (guid, friend, flags, note) VALUES (%d, %d, 1, '')" % (guest_guid, owner_guid))
+    msgs = owner.command(".house layout send krook %s" % args.guest_char)
+    check("but do go to a friend who has you on their list", db("SELECT name, source FROM mod_playerhousing_saved_layout WHERE owner_guid=%d" % guest_guid)
+          == [["Krook's Corner (from %s)" % args.owner_char, args.owner_char]]
+          and db("SELECT COUNT(*) FROM mod_playerhousing_saved_piece WHERE owner_guid=%d" % guest_guid) == [[str(count)]], joined(msgs))
+    db("DELETE FROM character_social WHERE guid=%d AND friend=%d" % (guest_guid, owner_guid))
+
+    owner.command(".house")
+    owner.gossip_select("Island settings")
+    _, msgs = owner.gossip_select("Visitors may copy my layout")
+    check("visitors may copy the layout", has(msgs, "Visitors can now save a copy"), joined(msgs))
+
     # ------------------------------------------------------------- people
     log("== visitors")
     owner.command(".house")
@@ -889,6 +946,22 @@ def main():
     check("the guest sees the owner's farmhouse", live(FARMHOUSE) in go_entries(guest), str(sorted(go_entries(guest))))
     msgs = guest.command(".house undo")
     check("guests can't change anything", has(msgs, "Only the owner"), joined(msgs))
+    guest.command(".house")
+    _, msgs = guest.gossip_select("Save a copy of this island's layout")
+    copied = db("SELECT l.name, COUNT(p.placement_id) FROM mod_playerhousing_saved_layout l JOIN mod_playerhousing_saved_piece p "
+                "ON p.owner_guid = l.owner_guid AND p.layout_id = l.layout_id WHERE l.owner_guid=%d AND l.source='%s' AND l.name LIKE '%%island' "
+                "GROUP BY l.name" % (guest_guid, args.owner_char))
+    check("a visitor saves a copy of the island's layout", copied == [["%s's island" % args.owner_char, str(len(placements(owner_guid)))]],
+          joined(msgs) + " " + str(copied))
+    guest.command(".house layout")
+    guest.gossip_select("%s's island" % args.owner_char)
+    menu = guest.last_gossip
+    check("its page offers the missing pieces the visitor has unlocked, and says what's locked",
+          any(o.startswith("Get the ") and "missing" in o for o in options(menu)) and any("still locked" in o for o in options(menu))
+          and "Go home to set it out" in options(menu), str(options(menu)))
+    _, msgs = guest.gossip_select("Get the ")
+    wait_for(lambda: guest.count_item(MANNEQUIN) >= 1, 3, guest)
+    check("and gets them", guest.count_item(MANNEQUIN) >= 1 and has(msgs, "Got "), joined(msgs))
     chair_go = nearest_go(guest, live(CHAIR))
     if chair_go:
         stand_next_to(guest, chair_go, 1.5)

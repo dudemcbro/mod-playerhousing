@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (144 checks):
+checking the database and what the client sees after each step (157 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -151,8 +151,13 @@ checking the database and what the client sees after each step (144 checks):
   item, taking gear off, picking it up with its gear and undoing that, moving it with the
   targeting circle (the Move a Piece item used up, undo), gear mailed when the bags are
   full, and the gear still there after a relog
+- saved layouts: saving the island, setting it out again (everything back where it was,
+  the mannequin's gear to the bags) and undoing that in one step, renaming (a name with
+  a quote), sending a copy (refused to a stranger, fine for a friend), letting visitors
+  copy the layout
 - visitors: greeting, private islands refusing strangers, invites, the visit menu, a
-  guest arriving with one click, sitting on a chair, opening the owner's mailbox and
+  guest arriving with one click, saving a copy of the island's layout and getting the
+  missing pieces, sitting on a chair, opening the owner's mailbox and
   seeing what the mannequin wears but not changing anything, private copies, privacy
   presets
 - the addon messages: at login, on request, the selected piece and the undo label
