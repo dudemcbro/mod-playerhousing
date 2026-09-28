@@ -10,8 +10,9 @@ and Final Fantasy XIV (without neighborhoods). The hard rules come from you:
 - **No house levels.** What a player can put in their house unlocks as they move through
   the world: exploring, dungeons, raids, reputation, professions and so on.
 - **Homes are built from pre-made buildings.** Everyone starts with wreckage (a fallen
-  cart, a shredded tent) and works up to something large and grand by level 80. Picking
-  a building back up always asks first.
+  cart, a shredded tent) and works up to something large and grand by level 80. A
+  building that belongs to a faction needs Exalted with that faction. Picking a building
+  back up always asks first.
 - **During testing everything is free.**
 
 Everything below works with the stock 3.3.5a client (menus, bag items, the targeting
@@ -161,8 +162,8 @@ full list of which piece comes from which activity is its own to-do (section 10,
   work exactly as in section 3.
 - **Everyone starts with the basics** (chairs, tables, bedroll, lanterns, crates, rugs),
   so the house is never empty on day one.
-- **Buildings unlock the same way,** rung by rung from wreckage to a grand estate
-  (section 5).
+- **Buildings unlock the same way:** shelters by level, faction buildings at Exalted with
+  their faction (section 5).
 
 ### Where unlocks come from
 
@@ -261,30 +262,58 @@ Westfall Farmhouse
 - Your first visit lands you on the beach next to your first shelter, a fallen cart and a
   shredded tent, already standing there and yours to move or pick up.
 
-### The ladder
+### Two kinds of buildings
 
-Level is the spine, since it's the one kind of progress every character makes. Some
-rungs also ask for a matching deed, for flavor: the Westfall farmhouse could also need
-Explore Westfall, a gunship the Icecrown Citadel gunship battle. The candidates below are
-real models from the game data; the content list picks the final set after looking at
-each one in game.
+- **Shelters belong to no faction and unlock by level.** They're the early ladder
+  everyone climbs: wreckage, camp gear and ruins.
+- **Every building that belongs to a faction needs Exalted with that faction,** the
+  highest reputation tier. The Westfall farmhouse needs Exalted with Stormwind, the
+  draenei hut with the Exodar, a gunship with the Alliance Vanguard or the Horde
+  Expedition. Level doesn't matter for these; Exalted already means a lot of play.
+
+This makes the real houses what they should be: the rewards of long reputation work.
+Faction lines take care of themselves, because nobody can reach Exalted with the other
+side's cities, while neutral factions (Booty Bay, the Argent Crusade, the Kirin Tor and so
+on) are open to both. The Collection shows how close you are: "Westfall Farmhouse: reach
+Exalted with Stormwind (you're Revered, 5,400/21,000)."
+
+The candidates below are real models from the game data; the content list picks the
+final set and each building's faction after looking at every one in game.
+
+**Shelters, by level (everyone)**
 
 | Level | Stage | Candidates |
 | --- | --- | --- |
 | 1 | Castaway wreckage | broken cart, a shredded (ruined) excavation tent, a tuskarr tarp lean-to, a wrecked rowboat |
-| 10 | Rough camp | Razorfen lean-to, small human tent, goblin tents, an outhouse |
-| 20 | Proper camp | medium and large human tents, orc tent, Forsaken tent, Westfall shed, water huts |
-| 30 | Ruins to restore | Stormwind gypsy wagon, the burnt Westfall and Duskwood farmhouses, a broken Outland house |
-| 40 | First real house | Westfall, Duskwood and Redridge farmhouses, draenei hut, winter tauren smoke hut, walk-in night elf tents |
-| 50 | Homestead | barns, stables, Duskwood blacksmith, lumber mill, Redridge chapel |
-| 60 | Manor | Duskwood two-story house, Old Stratholme farm, night elf druid tower, orc zeppelin house |
-| 70 | Stronghold | Northrend human house, human guard tower, tall human tower, abandoned orc great hall |
-| 80 | Grand estate | the island's own guild hall restored, the Alliance or Horde gunship, an Ulduar tower, a Wintergrasp tower |
+| 10 | Rough camp | Razorfen lean-to, a small canvas tent, an outhouse |
+| 20 | Proper camp | medium and large canvas tents, a covered wagon, water huts |
+| 30 | Ruins | the burnt Westfall and Duskwood farmhouses, a broken Outland house, a ruined guard tower |
 
-The burnt farmhouse at 30 and the restored one at 40 tell a small story: fix up the ruin
-you found. The client also contains `PlayerHousing\Human\HumanLevelOneTest.wmo`,
-apparently Blizzard's own unfinished housing prototype. If it looks presentable in game,
-it makes a fun secret unlock.
+**Faction buildings, at Exalted**
+
+| Faction | Candidates |
+| --- | --- |
+| Stormwind | Westfall, Duskwood and Redridge farmhouses (the ruins, restored), barns, stables, Duskwood blacksmith, lumber mill, Redridge chapel, Duskwood two-story house, human guard tower |
+| Darnassus | walk-in night elf tents, night elf druid tower |
+| Exodar | draenei hut |
+| Alliance Vanguard | Northrend human house, tall human tower, the Alliance gunship |
+| Orgrimmar | orc tents, orc zeppelin house, abandoned orc great hall and barracks |
+| Thunder Bluff | tauren druid tent |
+| Undercity | Forsaken tents |
+| Horde Expedition | winter tauren smoke hut, the Horde gunship |
+| Booty Bay (Steamwheedle Cartel) | goblin tents, the Stormwind gypsy wagon, a pirate ship run aground |
+| Keepers of Time | Old Stratholme farm |
+| Kirin Tor | an Ulduar tower |
+| Valiance Expedition or Warsong Offensive | a Wintergrasp tower |
+
+Ironforge, Gnomeregan, the Darkspear Trolls, Silvermoon and other factions get buildings
+too wherever the content list finds suitable models.
+
+The burnt farmhouses in the shelter ladder and the restored ones for Stormwind tell a
+small story: fix up the ruin you found once Stormwind trusts you. The client also
+contains `PlayerHousing\Human\HumanLevelOneTest.wmo`, apparently Blizzard's own
+unfinished housing prototype. If it looks presentable in game, it makes a fun secret
+unlock.
 
 ### The island's guild hall
 
@@ -522,8 +551,8 @@ Planning, not code. Can be done before or alongside Phase 1. The result is
 - [ ] Professions: working stations at skill milestones (anvil, forge, alchemy lab)
 - [ ] Holidays: Brewfest, Hallow's End, Winter Veil and the rest
 - [ ] Capstones: working mailbox and other useful pieces for big milestones
-- [ ] Buildings ladder: every rung from wreckage to grand estate, with the level and any
-  deed that unlocks each building
+- [ ] Buildings: the shelters by level, and each faction's buildings at Exalted, with
+  every building's faction decided
 - [ ] Check every model exists in the game data; look at the doubtful ones in game
 
 ### Phase 1: the must-haves
@@ -592,14 +621,17 @@ in with one click; "Friends & guild" lets a guild member in and keeps a stranger
   arrival spot on the beach
 - [ ] the old guild hall sealed until it's restored at level 80 (or the cleared island,
   section 11)
+- [ ] faction buildings need Exalted with their faction; the Collection shows your
+  current standing toward each
 - [ ] house styles retired; their props become ordinary furniture
-- [ ] the buildings ladder from the content list loaded into the database
+- [ ] the buildings from the content list loaded into the database
 
 Test additions: place a building and pick it up: the prompt appears, "building only"
 returns it to the bags and leaves the pieces inside where they were; undo puts it back; a
 level 1 character's Collection shows the wreckage rung unlocked and hints for the rest;
-getting inside the sealed hall before level 80 moves you back out; at level 80 the hall
-opens.
+a character at Revered with Stormwind sees the Westfall farmhouse locked with their
+standing, and reaching Exalted unlocks it with a message; getting inside the sealed hall
+before level 80 moves you back out; at level 80 the hall opens.
 
 ### Phase 6: polish and optional extras
 
@@ -626,6 +658,8 @@ opens.
 | The island's own guild hall? | Seal it and make restoring it the level 80 capstone. No client patch, and players see what they're working toward. The alternative, the cleared island, needs a client patch for every player. |
 | Retire the four house styles? | Yes. Buildings replace them. |
 | Building limit per island? | 10 to start, separate from furniture, set in the config. |
-| What unlocks buildings: level or deeds? | Level as the spine, with a matching deed on some for flavor. |
+| What unlocks buildings? | Shelters by level; every faction building at Exalted with its faction (your rule). |
+| If reputation later drops below Exalted? | The building stays unlocked, like an achievement, so nothing on the island vanishes. |
+| Faction buildings per character or per account? | Per character, because reputation is per character. Other unlocks stay per account. |
 | Add LOTRO-style hooks? | Later and optional. They help beginners, but aren't needed now that pieces can go anywhere. |
 | Undo list across logouts? | No. It lasts until you leave the house; pick up covers anything older. |
