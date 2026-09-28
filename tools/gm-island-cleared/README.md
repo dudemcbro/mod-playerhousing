@@ -38,7 +38,7 @@ and set `PlayerHousing.Layout = "guildhouse"`.
 When a server switches to the cleared layout, anything players had placed inside the old
 hall goes to their House Storage, and they get a message on their next visit.
 
-Tested here: the end-to-end test passes 76/76 on the cleared layout.
+Tested here: the end-to-end test passes 79/79 on the cleared layout.
 
 ## Client patch
 

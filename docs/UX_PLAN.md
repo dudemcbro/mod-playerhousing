@@ -326,7 +326,7 @@ to match, or the server and the players' games disagree about where walls are:
 | Part | What changes | Status |
 | --- | --- | --- |
 | Players' game client | A patch file (`patch-H.MPQ`) moves the hall out of sight. Every player puts it in their WoW `Data` folder once. | Built by `make_client_patch.sh` from a 3.3.5a client. Checked against a test file only; **never yet tried with a real client**, so that's the first to-do. |
-| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 76/76. |
+| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 79/79. |
 | Database | The arrival spot moves to the old hall's plateau. | The `cleared` row of `mod_playerhousing_layout`, now the default (`PlayerHousing.Layout`); tested. |
 
 A player without the patch would still see the hall and bump into walls that aren't
@@ -534,7 +534,7 @@ command `.house unlock all <character>`. Live servers leave both off.
 Tick items off here as they land. Each phase ships on its own, keeps the end-to-end test
 green, and adds to it.
 
-**Where it stands:** all six phases are built and pass the end-to-end test (76 checks, on
+**Where it stands:** all six phases are built and pass the end-to-end test (79 checks, on
 the cleared island, in the development container). What hasn't met a real 3.3.5a client
 yet: the cleared island patch, how pieces look (on tabletops, building models and their
 walls), the targeting circle, and the client addon's window. Those need your client, so
@@ -542,7 +542,7 @@ they're the next session together (see "Try it in game" below).
 
 - [x] UX plan (this document)
 - [ ] Cleared island: try the client patch with a real 3.3.5a client (needs your client)
-- [ ] Content list: which piece and building comes from which activity (Phase 3 needs it)
+- [x] Content list: which piece and building comes from which activity (Phase 3 needs it)
 - [x] Phase 1: the must-haves
 - [x] Phase 2: click to edit
 - [x] Phase 3: progression unlocks
@@ -580,21 +580,43 @@ With your client, once the patch works:
 Planning, not code. Can be done before or alongside Phase 1. The result is
 `docs/UNLOCKS.md`, which Phase 3 turns into database rows.
 
-- [ ] One row per unlock: the piece or building, its model from the game data, its Collection
+- [x] One row per unlock: the piece or building, its model from the game data, its Collection
   category, what earns it (achievement ID first, other sources only where no achievement
   fits), and the hint shown while it's locked
-- [ ] Starter set everyone gets on day one
-- [ ] Exploration: pieces themed on each zone or region
-- [ ] Dungeons: a piece for every Classic, Burning Crusade and Wrath dungeon
-- [ ] Raids: a trophy for every raid (and the bosses worth their own), figurines where
+- [x] Starter set everyone gets on day one
+- [x] Exploration: pieces themed on each zone or region (every zone with an Explore
+  achievement)
+- [x] Dungeons: a piece for every Classic, Burning Crusade and Wrath dungeon (the Dire
+  Maul wings share King of Dire Maul, the only Dire Maul achievement)
+- [x] Raids: a trophy for every raid (and the bosses worth their own), figurines where
   no trophy model exists
-- [ ] Reputation: faction pieces at Honored, Revered and Exalted
-- [ ] Professions: working stations at skill milestones (anvil, forge, alchemy lab)
-- [ ] Holidays: Brewfest, Hallow's End, Winter Veil and the rest
-- [ ] Capstones: working mailbox and other useful pieces for big milestones
-- [ ] Buildings: the shelters by level, and each faction's buildings at Exalted, with
+- [x] Reputation: faction pieces at Honored, Revered and Exalted (the ten capitals, the
+  main neutral factions, the Sha'tar, Aldor, Scryers, Sons of Hodir and Booty Bay)
+- [x] Professions: working stations at skill milestones (anvil, forge, alchemy lab)
+- [x] Holidays: Brewfest, Hallow's End, Winter Veil and the rest (Lunar Festival, Love is in
+  the Air, Noblegarden, Children's Week, Midsummer, Pilgrim's Bounty, Day of the Dead,
+  Pirates' Day)
+- [x] Capstones: working mailbox and other useful pieces for big milestones (a barber
+  chair for The Loremaster, a guild vault for looting 10,000 gold)
+- [x] Buildings: the shelters by level, and each faction's buildings at Exalted, with
   every building's faction decided
-- [ ] Check every model exists in the game data; look at the doubtful ones in game
+- [x] Check every model exists in the game data
+- [ ] Look at the doubtful ones in game (needs your client):
+  - no size in the game data, so the size is a guess: Caverns of Time Hourglass, Saronite
+    Bar, Basket of Corn, Cornucopia, Orange Marigolds, Candy Skulls
+  - large: Soul Crucible Brazier, Obsidian Dragon Egg, Ribbon Pole, Lunar Festival Lantern
+  - odd shapes: Naj'entus Spine, Karazhan Opera Moon, Stormwind Griffon Banner (may be a
+    wall banner), Arcatraz Containment Jar
+  - models copied from unusual objects: Kodo Graveyard Bones, Uldaman Titan Urn, Silithus
+    Wind Stone, Cache of Eregos, Argent Lance Rack, Noblegarden Egg, Cornucopia
+  - models no object in the game uses (never seen): Blood Furnace War Banner, Underbog
+    Giant Mushroom, Coilfang Orb Lamp, Botanica Exotic Plant, Blackrock Tool Rack,
+    Karazhan Supply Crate, Swamp of Sorrows Reed Plant, Dragonmaw Dragon Egg, Winterfall
+    Furbolg Totem, Spellweaver's Scrying Orb, Stormwind Griffon Banner, Ornate Dwarven
+    Wardrobe, Lordaeron Brazier, Silvermoon Lantern, Chromatic Dragon Egg, Glowing Zangar
+    Mushroom, Cenarion Blue Lantern, Sha'tari Banner, Brunnhildar Shield, Leather Kickball
+  - working pieces: the barber chair opens the barber window, the guild vault opens the
+    guild bank
 
 ### Phase 1: the must-haves
 

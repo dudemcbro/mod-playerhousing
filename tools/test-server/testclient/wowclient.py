@@ -40,6 +40,8 @@ MSG_MOVE_TELEPORT_ACK = 0x0C7
 MSG_MOVE_WORLDPORT_ACK = 0x0DC
 MSG_MOVE_HEARTBEAT = 0x0EE
 SMSG_STANDSTATE_UPDATE = 0x29D
+CMSG_GET_MAIL_LIST = 0x23A
+SMSG_MAIL_LIST_RESULT = 0x23B
 CMSG_CAST_SPELL = 0x12E
 SMSG_CAST_FAILED = 0x130
 SMSG_SPELL_GO = 0x132
@@ -323,6 +325,7 @@ class WorldClient:
         self.system_messages = []
         self.addon_messages = []
         self.stand_state = 0
+        self.mailbox_opened = 0
         self.msg_lock = threading.Lock()
         self.player_guid = 0
         self.map_id = None
@@ -410,6 +413,8 @@ class WorldClient:
             self._on_chat(data)
         elif opcode == SMSG_STANDSTATE_UPDATE:
             self.stand_state = data[0]
+        elif opcode == SMSG_MAIL_LIST_RESULT:
+            self.mailbox_opened += 1
         elif opcode == SMSG_NOTIFICATION:
             text = Reader(data).cstr()
             self._add_message("[notify] " + text)
@@ -858,6 +863,12 @@ class WorldClient:
         self.send(CMSG_USE_ITEM, struct.pack("<BBBIQIB", INVENTORY_SLOT_BAG_0, slot, 1, spell_id, guid, 0, 0) + targets)
         self.pump(wait)
         return self.messages_since(mark)
+
+    def open_mailbox(self, guid, wait=1.5):
+        """What the client does on right-clicking a mailbox; the server answers only if the
+        mailbox is really there and in reach."""
+        self.send(CMSG_GET_MAIL_LIST, struct.pack("<Q", guid))
+        self.pump(wait)
 
     def use_gameobject(self, guid, wait=2.0):
         mark = self.message_mark()

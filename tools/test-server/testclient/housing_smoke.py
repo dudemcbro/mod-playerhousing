@@ -24,6 +24,7 @@ CART, SHREDDED_TENT = 902200, 902201                    # wreckage on the island
 RAZORFEN_LEANTO, CANVAS_TENT = 902204, 901100           # shelters: level 10, level 20
 FARMHOUSE = 902220                                      # Exalted with Stormwind
 LAMP_POST = 902300                                      # Explore Elwynn Forest
+MAILBOX = 902900                                        # level 80: a working mailbox
 ELWYNN_ACHIEVEMENT, STORMWIND = 776, 72
 WORN_DAGGER = 2092                                      # fills bags (does not stack)
 
@@ -44,6 +45,7 @@ LAYOUTS = {
         far_stand=(16300.0, 16240.0, 25.2), far_target=(16310.0, 16240.0, 25.27),
         farmhouse_stand=(16250.0, 16326.0), farmhouse=(16258.0, 16338.0, 12.96),
         inside=(16259.0, 16340.0, 12.99),
+        mailbox_stand=(16237.0, 16294.0), mailbox=(16234.0, 16290.0, 12.92),
         sea_stand=(16250.0, 16120.0, 0.0), sea_target=(16250.0, 16098.0, 0.0),
         past_edge=(16250.0, 16108.0, 0.0)),
 }
@@ -421,6 +423,18 @@ def main():
     check("reaching level 20 unlocks the Canvas Tent on the spot", CANVAS_TENT in unlocked(owner_account, owner_guid) and has(msgs, "Canvas Tent"),
           joined(msgs))
 
+    mark = owner.message_mark()
+    admin.command(".house unlock Mailbox %s" % args.owner_char, wait=1.5)
+    msgs = owner.messages_since(mark)
+    check("a GM unlocks a piece for a player, who is told", MAILBOX in unlocked(owner_account, owner_guid) and has(msgs, "Mailbox"), joined(msgs))
+    owner.command(".house collection")
+    owner.gossip_select("Capstones (")
+    owner.gossip_select("Mailbox")
+    wait_for(lambda: owner.count_item(MAILBOX) == 1, 3, owner)
+    move(owner, L["mailbox_stand"][0], L["mailbox_stand"][1], L["ground"])
+    msgs = owner.use_item(MAILBOX, FLARE, L["mailbox"])
+    check("a working mailbox places like any piece", placement_of(owner_guid, MAILBOX) is not None, joined(msgs))
+
     # ------------------------------------------------------------- buildings
     log("== buildings")
     owner.command(".house collection")
@@ -502,6 +516,14 @@ def main():
               "stand state %d, pos %s, chair (%.1f, %.1f) %s" % (stand_state, guest.pos, chair_go.x, chair_go.y, joined(msgs)))
     else:
         check("a guest clicking a chair sits in it, no menu", False, "no chair in sight: %s" % sorted(go_entries(guest)))
+    mailbox_go = nearest_go(guest, live(MAILBOX))
+    if mailbox_go:
+        stand_next_to(guest, mailbox_go, 2.0)
+        opened = guest.mailbox_opened
+        guest.open_mailbox(mailbox_go.guid)
+        check("a guest can use the owner's mailbox", guest.mailbox_opened > opened, "mailbox at (%.1f, %.1f)" % (mailbox_go.x, mailbox_go.y))
+    else:
+        check("a guest can use the owner's mailbox", False, "no mailbox in sight: %s" % sorted(go_entries(guest)))
 
     guest.command(".house leave", wait=1.0)
     wait_for(lambda: guest.map_id != HOUSING_MAP or not guest.find_objects(entry=live(FARMHOUSE)), 8, guest)

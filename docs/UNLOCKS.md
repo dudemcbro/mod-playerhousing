@@ -331,7 +331,7 @@ belong to the character that earned it; everything else is shared across the acc
 | The Book of the Raven | furnishing | Reach 150 in Inscription | object 185581 | fits on tables |
 | Surgical Table | furnishing | Reach 300 in First Aid | object 192548 |  |
 
-## Holidays (6)
+## Holidays (21)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -341,11 +341,28 @@ belong to the character that earned it; everything else is shared across the acc
 | Pumpkin | furnishing | Earn a Hallow's End achievement | object 180405 | fits on tables |
 | Brewfest Beer Tent | furnishing | Earn a Brewfest achievement | object 186682 |  |
 | Standing Brewfest Keg | furnishing | Earn a Brewfest achievement | object 186709 |  |
+| Lunar Festival Lantern | furnishing | Earn a Lunar Festival achievement | object 180766 |  |
+| Lunar Festival Firecrackers | furnishing | Earn To Honor One's Elders, the Lunar Festival meta achievement | object 180764 |  |
+| Heart Wreath | furnishing | Earn a Love is in the Air achievement | object 181016 |  |
+| Valentine Arch | furnishing | Earn Fool For Love, the Love is in the Air meta achievement | object 181086 |  |
+| Noblegarden Egg | furnishing | Earn a Noblegarden achievement | object 177272 | fits on tables |
+| Orphan's Rag Doll | furnishing | Earn a Children's Week achievement | object 186621 | fits on tables |
+| Leather Kickball | furnishing | Earn For The Children, the Children's Week meta achievement | model 7528 | fits on tables |
+| Midsummer Brazier | furnishing | Earn a Midsummer achievement | object 181355 |  |
+| Ribbon Pole | furnishing | Earn The Flame Warden or The Flame Keeper, the Midsummer meta achievement | object 181605 |  |
+| Basket of Corn | furnishing | Earn a Pilgrim's Bounty achievement | object 195192 |  |
+| Cornucopia | furnishing | Earn Pilgrim, the Pilgrim's Bounty meta achievement | object 195303 |  |
+| Orange Marigolds | furnishing | Earn Dead Man's Party during the Day of the Dead | object 195063 |  |
+| Candy Skulls | furnishing | Earn Dead Man's Party during the Day of the Dead | object 195069 | fits on tables |
+| Pirate Treasure Chest | furnishing | Earn The Captain's Booty on Pirates' Day | object 179125 | things go on top |
+| Pirate Cannonball Stack | furnishing | Earn The Captain's Booty on Pirates' Day | object 180054 |  |
 
-## Capstones (3)
+## Capstones (5)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
 | Mailbox | furnishing | Reach level 80 | object 32349 | works like the real thing |
 | Imperial Throne | furnishing | Earn the achievement Glory of the Hero | object 170592 | works like the real thing |
 | Moonglade Fountain | furnishing | Complete Classic, Outland or Northrend Dungeonmaster | object 185493 |  |
+| Barber Chair | furnishing | Earn The Loremaster | object 191817 | works like the real thing |
+| Guild Vault | furnishing | Loot 10,000 gold (Got My Mind On My Money) | object 187299 | works like the real thing |

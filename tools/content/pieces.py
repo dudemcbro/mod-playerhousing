@@ -52,6 +52,22 @@ def exalted(faction):
     return [[rep(faction, EXALTED)]]
 
 
+def any_ach(*ids):
+    """Any one of these achievements unlocks the piece."""
+    return [[ach(n)] for n in ids]
+
+
+# Holiday achievements (Achievement.dbc), for "earn any achievement of this holiday"
+LUNAR_FESTIVAL = any_ach(605, 606, 607, 608, 609, 626, 937, 910, 911, 912, 914, 915, 1281, 1396, 1552, 913)
+LOVE_IS_IN_THE_AIR = any_ach(260, 1188, 1279, 1280, 1291, 1694, 1695, 1696, 1697, 1698, 1699, 1700, 1701, 1702, 1703,
+                             1704, 4624, 1693, 1707)
+NOBLEGARDEN = any_ach(248, 249, 2416, 2417, 2418, 2419, 2420, 2421, 2422, 2436, 2497, 2576, 2676, 2797, 2798)
+CHILDRENS_WEEK = any_ach(275, 1786, 1788, 1789, 1790, 1791, 1792, 1793)
+MIDSUMMER = any_ach(263, 271, 272, 1145, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029, 1030, 1031, 1032, 1033,
+                    1034, 1035, 1036, 1037, 1038, 1039)
+PILGRIMS_BOUNTY = any_ach(3556, 3557, 3558, 3559, 3576, 3577, 3578, 3579, 3580, 3581, 3582, 3596, 3597, 3478, 3656)
+
+
 PIECES = [
     # ------------------------------------------------------------------ Starter
     dict(item=901105, name="Westfall Chair", cat="Starter", go=180047, style="chair", flags=["gift"], legacy=1001),
@@ -389,10 +405,39 @@ PIECES = [
     dict(item=902803, name="Pumpkin", cat="Holidays", go=180405, flags=["small"], rules=[[ach(288)], [ach(289)]], hint="Earn a Hallow's End achievement"),
     dict(item=902804, name="Brewfest Beer Tent", cat="Holidays", go=186682, rules=[[ach(295)], [ach(1683)], [ach(1684)]], hint="Earn a Brewfest achievement"),
     dict(item=902805, name="Standing Brewfest Keg", cat="Holidays", go=186709, rules=[[ach(295)], [ach(1683)], [ach(1684)]], hint="Earn a Brewfest achievement"),
+    dict(item=902806, name="Lunar Festival Lantern", cat="Holidays", go=180766, rules=LUNAR_FESTIVAL, hint="Earn a Lunar Festival achievement"),
+    dict(item=902807, name="Lunar Festival Firecrackers", cat="Holidays", go=180764, rules=[[ach(913)]],
+         hint="Earn To Honor One's Elders, the Lunar Festival meta achievement"),
+    dict(item=902808, name="Heart Wreath", cat="Holidays", go=181016, rules=LOVE_IS_IN_THE_AIR, hint="Earn a Love is in the Air achievement"),
+    dict(item=902809, name="Valentine Arch", cat="Holidays", go=181086, rules=[[ach(1693)], [ach(1707)]],
+         hint="Earn Fool For Love, the Love is in the Air meta achievement"),
+    dict(item=902810, name="Noblegarden Egg", cat="Holidays", go=177272, flags=["small"], rules=NOBLEGARDEN, hint="Earn a Noblegarden achievement"),
+    dict(item=902811, name="Orphan's Rag Doll", cat="Holidays", go=186621, flags=["small"], rules=CHILDRENS_WEEK,
+         hint="Earn a Children's Week achievement"),
+    dict(item=902812, name="Leather Kickball", cat="Holidays", display=7528, flags=["small"], rules=[[ach(1793)]],
+         hint="Earn For The Children, the Children's Week meta achievement"),
+    dict(item=902813, name="Midsummer Brazier", cat="Holidays", go=181355, rules=MIDSUMMER, hint="Earn a Midsummer achievement"),
+    dict(item=902814, name="Ribbon Pole", cat="Holidays", go=181605, rules=[[ach(1038)], [ach(1039)]],
+         hint="Earn The Flame Warden or The Flame Keeper, the Midsummer meta achievement"),
+    dict(item=902815, name="Basket of Corn", cat="Holidays", go=195192, rules=PILGRIMS_BOUNTY, hint="Earn a Pilgrim's Bounty achievement"),
+    dict(item=902816, name="Cornucopia", cat="Holidays", go=195303, rules=[[ach(3478)], [ach(3656)]],
+         hint="Earn Pilgrim, the Pilgrim's Bounty meta achievement"),
+    dict(item=902817, name="Orange Marigolds", cat="Holidays", go=195063, rules=[[ach(3456)]],
+         hint="Earn Dead Man's Party during the Day of the Dead"),
+    dict(item=902818, name="Candy Skulls", cat="Holidays", go=195069, flags=["small"], rules=[[ach(3456)]],
+         hint="Earn Dead Man's Party during the Day of the Dead"),
+    dict(item=902819, name="Pirate Treasure Chest", cat="Holidays", go=179125, flags=["surface"], rules=[[ach(3457)]],
+         hint="Earn The Captain's Booty on Pirates' Day"),
+    dict(item=902820, name="Pirate Cannonball Stack", cat="Holidays", go=180054, rules=[[ach(3457)]],
+         hint="Earn The Captain's Booty on Pirates' Day"),
 
     # ------------------------------------------------------------------ Capstones
     dict(item=902900, name="Mailbox", cat="Capstones", go=32349, style="keep", rules=[[level(80)]]),
     dict(item=902901, name="Imperial Throne", cat="Capstones", go=170592, style="keep", rules=[[ach(2136)]]),
     dict(item=902902, name="Moonglade Fountain", cat="Capstones", go=185493, rules=[[ach(1283)], [ach(1284)], [ach(1288)]],
          hint="Complete Classic, Outland or Northrend Dungeonmaster"),
+    dict(item=902903, name="Barber Chair", cat="Capstones", go=191817, style="keep", rules=[[ach(1681)], [ach(1682)]],
+         hint="Earn The Loremaster"),
+    dict(item=902904, name="Guild Vault", cat="Capstones", go=187299, style="keep", rules=[[ach(1180)]],
+         hint="Loot 10,000 gold (Got My Mind On My Money)"),
 ]
