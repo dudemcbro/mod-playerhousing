@@ -178,6 +178,17 @@ PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
 
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `last_home` timestamp NULL DEFAULT NULL AFTER `music`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'last_home'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
 -- Columns from the house levels version that nothing uses any more.
 
 SET @ph_stmt = (

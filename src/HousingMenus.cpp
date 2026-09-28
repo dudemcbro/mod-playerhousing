@@ -91,6 +91,8 @@ namespace
         CMD_MUSIC,            // action: sound id (0: silence)
         CMD_GUEST_PAGE,       // action: guest guid
         CMD_GUEST_ROOMMATE,   // action: guest guid
+        CMD_LIKE,
+        CMD_VISITOR_LOG,
         CMD_CLOSE
     };
 
@@ -490,6 +492,8 @@ namespace
         Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Adjust menu opens: {} (click to change)",
             PlayerHousingMgr::AdjustModeName(sPlayerHousingMgr->GetAdjustMode(self))), CMD_ADJUST_MODE);
         Add(player, GOSSIP_ICON_INTERACT_1, "Island ambience: weather, time of day, music", CMD_AMBIENCE);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Visitor log ({} this week, {} likes)", sPlayerHousingMgr->CountVisitorsThisWeek(self),
+            sPlayerHousingMgr->CountLikes(self)), CMD_VISITOR_LOG);
         if (sPlayerHousingMgr->GetMaxSavedLayouts())
         {
             Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Saved layouts ({} of {})", sPlayerHousingMgr->GetSavedLayouts(self).size(),
@@ -548,7 +552,9 @@ namespace
         Send(player, source, TEXT_GUESTS);
     }
 
-    char const* const VISIT_LISTS[] = { "Party members' islands", "Guild members' islands", "Friends' islands", "Islands you're invited to", "Public islands" };
+    char const* const VISIT_LISTS[] = { "Party members' islands", "Guild members' islands", "Friends' islands", "Islands you're invited to", "Public islands",
+                                        "Most liked islands" };
+    constexpr uint8 VISIT_LIST_COUNT = 6;
 
     void ShowVisitList(Player* player, MenuSource const& source, uint8 list, uint32 page)
     {
@@ -556,11 +562,15 @@ namespace
 
         ClearGossipMenuFor(player);
         if (entries.empty())
-            Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: none you can visit right now", VISIT_LISTS[std::min<uint8>(list, 4)]), CMD_VISIT);
+            Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: none you can visit right now", VISIT_LISTS[std::min<uint8>(list, VISIT_LIST_COUNT - 1)]),
+                CMD_VISIT);
 
         uint32 first = page * PAGE_SIZE;
         for (uint32 i = first; i < entries.size() && i < first + PAGE_SIZE; ++i)
-            Add(player, GOSSIP_ICON_TAXI, "Visit " + entries[i].ownerName + "'s island", CMD_VISIT_OWNER, entries[i].ownerGuid);
+        {
+            std::string likes = list == 5 ? Acore::StringFormat(" ({} {})", entries[i].likes, entries[i].likes == 1 ? "like" : "likes") : "";
+            Add(player, GOSSIP_ICON_TAXI, "Visit " + entries[i].ownerName + "'s island" + likes, CMD_VISIT_OWNER, entries[i].ownerGuid);
+        }
 
         Paging(player, CMD_VISIT_LIST, list, page, uint32(entries.size()));
         Add(player, GOSSIP_ICON_CHAT, "Back", CMD_VISIT);
@@ -894,6 +904,12 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
                 Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
         }
         Add(player, GOSSIP_ICON_TAXI, "Go home", CMD_GO_HOME);
+        uint32 likes = sPlayerHousingMgr->CountLikes(islandOwner);
+        std::string likesText = Acore::StringFormat("{} {}", likes, likes == 1 ? "like" : "likes");
+        if (sPlayerHousingMgr->LikesIsland(player, islandOwner))
+            Add(player, GOSSIP_ICON_CHAT, "You like this island (" + likesText + "): take it back", CMD_LIKE);
+        else
+            Add(player, GOSSIP_ICON_CHAT, "Like this island (" + likesText + ")", CMD_LIKE);
         if (sPlayerHousingMgr->GetMaxSavedLayouts() && sPlayerHousingMgr->IsLayoutCopyable(islandOwner))
             Add(player, GOSSIP_ICON_VENDOR, "Save a copy of this island's layout", CMD_LAYOUT_COPY_ISLAND);
         Add(player, GOSSIP_ICON_TAXI, "Visit another island", CMD_VISIT);
@@ -1023,7 +1039,7 @@ void HousingMenus::ShowStorage(Player* player, MenuSource const& source)
 void HousingMenus::ShowVisit(Player* player, MenuSource const& source)
 {
     ClearGossipMenuFor(player);
-    for (uint8 list = 0; list < 5; ++list)
+    for (uint8 list = 0; list < VISIT_LIST_COUNT; ++list)
     {
         size_t count = sPlayerHousingMgr->GetVisitList(player, list).size();
         Add(player, GOSSIP_ICON_TAXI, Acore::StringFormat("{} ({})", VISIT_LISTS[list], count), CMD_VISIT_LIST, list);
@@ -1198,6 +1214,26 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
         case CMD_AMBIENCE:
             ShowAmbience(player, source);
             return;
+        case CMD_LIKE:
+            sPlayerHousingMgr->ToggleLike(player, reason);
+            Say(player, reason);
+            ShowHome(player, source);
+            return;
+        case CMD_VISITOR_LOG:
+        {
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            auto log = sPlayerHousingMgr->GetVisitorLog(self, PAGE_SIZE);
+            ClearGossipMenuFor(player);
+            Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Visitors: {} this week, {} likes in all", sPlayerHousingMgr->CountVisitorsThisWeek(self),
+                sPlayerHousingMgr->CountLikes(self)), CMD_VISITOR_LOG);
+            if (log.empty())
+                Add(player, GOSSIP_ICON_DOT, "Nobody has visited yet", CMD_VISITOR_LOG);
+            for (auto const& [name, when] : log)
+                Add(player, GOSSIP_ICON_DOT, name + ", " + when, CMD_VISITOR_LOG);
+            Add(player, GOSSIP_ICON_CHAT, "Back to Island settings", CMD_SETTINGS);
+            Send(player, source, TEXT_SETTINGS);
+            return;
+        }
         case CMD_GUEST_PAGE:
             ShowGuestPage(player, source, action);
             return;

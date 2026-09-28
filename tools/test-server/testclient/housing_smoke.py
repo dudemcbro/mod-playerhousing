@@ -255,7 +255,9 @@ def main():
                           ("mod_playerhousing_acl", "guest_guid"), ("mod_playerhousing_house", "owner_guid"),
                           ("mod_playerhousing_storage", "owner_guid"), ("mod_playerhousing_character", "guid"),
                           ("mod_playerhousing_collection", "guid"), ("mod_playerhousing_saved_layout", "owner_guid"),
-                          ("mod_playerhousing_saved_piece", "owner_guid")):
+                          ("mod_playerhousing_saved_piece", "owner_guid"), ("mod_playerhousing_like", "owner_guid"),
+                          ("mod_playerhousing_like", "liker_guid"), ("mod_playerhousing_visit_log", "owner_guid"),
+                          ("mod_playerhousing_visit_log", "visitor_guid")):
         db("DELETE FROM %s WHERE %s IN (%s)" % (table, column, ids))
     db("DELETE FROM mod_playerhousing_collection WHERE account_id IN (SELECT account FROM characters WHERE guid IN (%s))" % ids)
     db("DELETE FROM character_social WHERE guid IN (%s) AND friend IN (%s)" % (ids, ids))
@@ -1093,6 +1095,25 @@ def main():
         wait_for(lambda: guest.count_item(CHAIR) == guest_chairs, 3, guest)
         check("a roommate picking up their own piece gets it back in their bags", guest.count_item(CHAIR) == guest_chairs, joined(msgs))
     guest.command(".house decorate off")
+
+    # Likes and the visitor log.
+    guest.command(".house")
+    check("a visitor can like the island", "Like this island (0 likes)" in options(guest.last_gossip), str(options(guest.last_gossip)))
+    mark = owner.message_mark()
+    _, msgs = guest.gossip_select("Like this island")
+    owner.pump(0.5)
+    check("and does, and the owner hears of it", "You like this island (1 like): take it back" in options(guest.last_gossip)
+          and has(owner.messages_since(mark), "likes your island")
+          and db("SELECT liker_guid FROM mod_playerhousing_like WHERE owner_guid=%d" % owner_guid) == [[str(guest_guid)]],
+          joined(msgs) + " " + str(options(guest.last_gossip)))
+    msgs = owner.command(".house like")
+    check("owners can't like their own island", has(msgs, "can't like your own"), joined(msgs))
+    owner.command(".house")
+    owner.gossip_select("Island settings")
+    owner.gossip_select("Visitor log (1 this week, 1 likes)")
+    check("the visitor log lists the guest", any(o.startswith(args.guest_char + ", ") for o in options(owner.last_gossip)),
+          str(options(owner.last_gossip)))
+
     msgs = owner.command(".house unroommate %s" % args.guest_char)
     msgs = guest.command(".house nudge forward 0.25 %d" % table["id"]) if table else []
     check("once a guest again, no more changes", has(msgs, "Only the owner"), joined(msgs))
@@ -1143,6 +1164,11 @@ def main():
     check("then to Public", db("SELECT is_private FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["0"]], joined(msgs))
     owner.gossip_select("Privacy:")
 
+    guest.command(".house visit")
+    check("the visit menu has the most liked islands", "Most liked islands (1)" in options(guest.last_gossip), str(options(guest.last_gossip)))
+    guest.gossip_select("Most liked islands")
+    check("with their likes", "Visit %s's island (1 like)" % args.owner_char in options(guest.last_gossip), str(options(guest.last_gossip)))
+
     # ------------------------------------------------------------- pack up, unstuck, relog
     log("== pack up, unstuck, relog")
     count = len(placements(owner_guid))
@@ -1174,10 +1200,14 @@ def main():
     check("an unfinished move's item is gone after logging back in", not any(owner.count_item(e) for e in MOVERS),
           str(owner.backpack()))
 
+    visits_mark = owner.message_mark()
     owner.command(".house home", wait=1.0)
     wait_for_map(owner, HOUSING_MAP)
     wait_for(lambda: owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT) is not None, 6, owner)
+    wait_for(lambda: has(owner.messages_since(visits_mark), "since you were last home"), 3, owner)
     fig = owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT)
+    check("coming home, the owner hears who visited", has(owner.messages_since(visits_mark), "since you were last home"),
+          joined(owner.messages_since(visits_mark)[-10:]))
     check("back home, the mannequin still holds the sword", fig is not None and fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) == SWORD,
           str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
 

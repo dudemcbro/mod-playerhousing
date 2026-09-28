@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_house` (
   `weather` tinyint unsigned NOT NULL DEFAULT 0,
   `time_of_day` tinyint unsigned NOT NULL DEFAULT 0,  -- 0: the server's clock
   `music` int unsigned NOT NULL DEFAULT 0,             -- SoundEntries id
+  `last_home` timestamp NULL DEFAULT NULL,             -- the owner's last arrival, for "visits since"
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`),
@@ -126,6 +127,26 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_piece` (
   `look` int unsigned NOT NULL DEFAULT 0,
   `parent_id` int unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_guid`,`layout_id`,`placement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Likes: one per account per island.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_like` (
+  `owner_guid` int unsigned NOT NULL,
+  `liker_account` int unsigned NOT NULL,
+  `liker_guid` int unsigned NOT NULL,
+  `liked_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`owner_guid`,`liker_account`),
+  KEY `idx_mod_playerhousing_like_guid` (`liker_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Visitor log: the last 50 arrivals on each island.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_visit_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `owner_guid` int unsigned NOT NULL,
+  `visitor_guid` int unsigned NOT NULL,
+  `visited_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_mod_playerhousing_visit_log_owner` (`owner_guid`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- One-off conversions already done.

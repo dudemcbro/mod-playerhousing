@@ -156,6 +156,16 @@ and friends, the ones you're invited to, and public ones. Only islands you're al
 are shown, so every entry works with one click. Visitors can use chairs and stations but
 can't change anything. The owner is told when someone arrives.
 
+### Likes and the visitor log
+
+- Visitors can **like** an island from the Home menu (one like per account, so alts don't
+  count twice), and take it back. The owner is told.
+- Visit an island, **Most liked islands** lists the islands you may enter, most liked
+  first, with their likes.
+- Island settings, **Visitor log**: the last visitors with the date and time, how many
+  came this week, and your likes. Coming home, Krook says how many visits there were
+  since you were last there.
+
 ### Roommates
 
 Island settings, Guests, click a guest: **Make them a roommate** (or `.house roommate
@@ -195,6 +205,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house collection [search]`, `storage`, `visit [name]` | Open those menus, search the Collection, or visit someone by name |
 | `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
 | `.house roommate <name>`, `unroommate <name>` | Let a guest decorate, or stop |
+| `.house like`, `visitors` | Like the island you're visiting (or take it back); your visitor log |
 | `.house privacy <private\|friends\|public>` | Who can visit |
 | `.house greeting <text\|clear>` | The message visitors see |
 | `.house adjust <all\|buildings\|off>` | When a piece's menu opens by itself after placing |

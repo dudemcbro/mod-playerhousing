@@ -779,6 +779,7 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
         return;
 
     SendAmbience(player, house, true);
+    LogVisit(ownerGuid, player);
 
     ObjectGuid::LowType guid = player->GetGUID().GetCounter();
     if (guid == ownerGuid)
@@ -788,6 +789,15 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
             Say(player, "The old guild hall is gone. Everything you had placed inside it is in your House Storage (House Key, Storage).");
             CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = flags & ~{} WHERE owner_guid={}", uint32(HOUSE_FLAG_HALL_NOTICE), ownerGuid);
         }
+
+        // Who came by since the owner was last home.
+        if (QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM mod_playerhousing_visit_log l JOIN mod_playerhousing_house h ON h.owner_guid = l.owner_guid "
+                "WHERE l.owner_guid={} AND l.visited_at > h.last_home", ownerGuid))
+            if (uint32 visits = uint32((*result)[0].Get<uint64>()))
+                Say(player, Acore::StringFormat("{} since you were last home. Island settings, Visitor log.",
+                    visits == 1 ? std::string("One visit") : Acore::StringFormat("{} visits", visits)));
+        CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET last_home=NOW() WHERE owner_guid={}", ownerGuid);
 
         if (!(GetCharacterFlags(guid) & CHAR_FLAG_GREETED))
         {
@@ -855,6 +865,8 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     CharacterDatabase.CommitTransaction(trans);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_storage WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_piece WHERE owner_guid={}", guidLow);
+    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_like WHERE owner_guid={} OR liker_guid={}", guidLow, guidLow);
+    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_visit_log WHERE owner_guid={} OR visitor_guid={}", guidLow, guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_layout WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);

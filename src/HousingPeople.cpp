@@ -318,6 +318,11 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
         case 3:  // invited
             collect(CharacterDatabase.Query("SELECT owner_guid FROM mod_playerhousing_acl WHERE guest_guid={} LIMIT 100", self));
             break;
+        case 5:  // most liked, most first
+            collect(CharacterDatabase.Query(
+                "SELECT owner_guid FROM mod_playerhousing_like WHERE owner_guid<>{} GROUP BY owner_guid ORDER BY COUNT(*) DESC, MIN(liked_at) LIMIT 100",
+                self));
+            break;
         default:  // public
             collect(CharacterDatabase.Query(
                 "SELECT owner_guid FROM mod_playerhousing_house WHERE is_private={} AND owner_guid<>{} ORDER BY updated_at DESC LIMIT 100",
@@ -341,11 +346,98 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
         VisitEntry entry;
         entry.ownerGuid = owner;
         entry.ownerName = NameOf(owner);
+        if (list == 5)
+            entry.likes = CountLikes(owner);
         entries.push_back(entry);
+        if (list == 5 && entries.size() >= 18)
+            break;
     }
 
-    std::sort(entries.begin(), entries.end(), [](VisitEntry const& left, VisitEntry const& right) { return left.ownerName < right.ownerName; });
+    if (list != 5)
+        std::sort(entries.begin(), entries.end(), [](VisitEntry const& left, VisitEntry const& right) { return left.ownerName < right.ownerName; });
     return entries;
+}
+
+uint32 PlayerHousingMgr::CountLikes(ObjectGuid::LowType ownerGuid) const
+{
+    if (QueryResult result = CharacterDatabase.Query("SELECT COUNT(*) FROM mod_playerhousing_like WHERE owner_guid={}", ownerGuid))
+        return uint32((*result)[0].Get<uint64>());
+    return 0;
+}
+
+bool PlayerHousingMgr::LikesIsland(Player const* player, ObjectGuid::LowType ownerGuid) const
+{
+    return bool(CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_like WHERE owner_guid={} AND liker_account={}",
+        ownerGuid, player->GetSession()->GetAccountId()));
+}
+
+bool PlayerHousingMgr::ToggleLike(Player* player, std::string& reason)
+{
+    ObjectGuid::LowType owner = GetIslandOwner(player);
+    if (!owner)
+    {
+        reason = "Visit an island to like it.";
+        return false;
+    }
+    if (owner == player->GetGUID().GetCounter())
+    {
+        reason = "You can't like your own island (everyone else can).";
+        return false;
+    }
+
+    // One like per account, so alts don't count twice.
+    uint32 account = player->GetSession()->GetAccountId();
+    std::string ownerName = NameOf(owner);
+    if (LikesIsland(player, owner))
+    {
+        CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_like WHERE owner_guid={} AND liker_account={}", owner, account);
+        reason = Acore::StringFormat("You took back your like of {}'s island.", ownerName);
+        return true;
+    }
+
+    CharacterDatabase.DirectExecute("INSERT IGNORE INTO mod_playerhousing_like (owner_guid, liker_account, liker_guid) VALUES ({}, {}, {})",
+        owner, account, player->GetGUID().GetCounter());
+    if (Player* ownerPlayer = ObjectAccessor::FindPlayerByLowGUID(owner))
+        Say(ownerPlayer, Acore::StringFormat("{} likes your island.", player->GetName()));
+    reason = Acore::StringFormat("You like {}'s island ({} {}).", ownerName, CountLikes(owner), CountLikes(owner) == 1 ? "like" : "likes");
+    return true;
+}
+
+void PlayerHousingMgr::LogVisit(ObjectGuid::LowType ownerGuid, Player* visitor) const
+{
+    if (!visitor || visitor->GetSession()->IsBot() || visitor->GetGUID().GetCounter() == ownerGuid)
+        return;
+
+    // The last 50 arrivals are kept.
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    trans->Append("INSERT INTO mod_playerhousing_visit_log (owner_guid, visitor_guid) VALUES ({}, {})", ownerGuid, visitor->GetGUID().GetCounter());
+    trans->Append("DELETE FROM mod_playerhousing_visit_log WHERE owner_guid={} AND id NOT IN "
+                  "(SELECT id FROM (SELECT id FROM mod_playerhousing_visit_log WHERE owner_guid={} ORDER BY id DESC LIMIT 50) newest)",
+        ownerGuid, ownerGuid);
+    CharacterDatabase.CommitTransaction(trans);
+}
+
+std::vector<std::pair<std::string, std::string>> PlayerHousingMgr::GetVisitorLog(ObjectGuid::LowType ownerGuid, uint32 limit) const
+{
+    std::vector<std::pair<std::string, std::string>> log;
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT visitor_guid, DATE_FORMAT(visited_at, '%Y-%m-%d %H:%i') FROM mod_playerhousing_visit_log WHERE owner_guid={} ORDER BY id DESC LIMIT {}",
+            ownerGuid, limit))
+    {
+        do
+        {
+            log.emplace_back(NameOf((*result)[0].Get<uint32>()), (*result)[1].Get<std::string>());
+        } while (result->NextRow());
+    }
+    return log;
+}
+
+uint32 PlayerHousingMgr::CountVisitorsThisWeek(ObjectGuid::LowType ownerGuid) const
+{
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(DISTINCT visitor_guid) FROM mod_playerhousing_visit_log WHERE owner_guid={} AND visited_at > NOW() - INTERVAL 7 DAY", ownerGuid))
+        return uint32((*result)[0].Get<uint64>());
+    return 0;
 }
 
 bool PlayerHousingMgr::SetGreeting(Player* player, std::string const& greeting, std::string& reason)

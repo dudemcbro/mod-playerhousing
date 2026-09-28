@@ -267,6 +267,7 @@ namespace Housing
         ObjectGuid::LowType ownerGuid{0};
         std::string ownerName;
         bool roommate{false};  // guest lists: may decorate
+        uint32 likes{0};       // the most liked list
     };
 }
 
@@ -438,6 +439,14 @@ public:
     bool RemoveGuestByName(Player* player, std::string const& name, std::string& reason);
     std::vector<Housing::VisitEntry> GetGuests(ObjectGuid::LowType ownerGuid) const;
     std::vector<Housing::VisitEntry> GetVisitList(Player const* player, uint8 list) const;
+    // Likes: one per account per island.
+    uint32 CountLikes(ObjectGuid::LowType ownerGuid) const;
+    bool LikesIsland(Player const* player, ObjectGuid::LowType ownerGuid) const;
+    bool ToggleLike(Player* player, std::string& reason);
+    // Who visited: the last 50 arrivals.
+    void LogVisit(ObjectGuid::LowType ownerGuid, Player* visitor) const;
+    std::vector<std::pair<std::string, std::string>> GetVisitorLog(ObjectGuid::LowType ownerGuid, uint32 limit) const;
+    uint32 CountVisitorsThisWeek(ObjectGuid::LowType ownerGuid) const;
     bool SetGreeting(Player* player, std::string const& greeting, std::string& reason);
     static char const* PrivacyName(uint8 privacy);
 
