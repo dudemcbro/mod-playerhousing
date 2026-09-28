@@ -6,6 +6,7 @@
 #   IMAGE   image to use     (default: ghcr.io/dudemcbro/acore-test-server:latest)
 #   ENGINE  podman or docker (default: podman)
 #   KEEP=1  leave the container running afterwards, with ports 3724 and 8085 published
+#   HOUSING_LAYOUT  cleared (default) or guildhouse
 #   SELINUX_LABEL  label option for the module mount. Default Z, or empty when the checkout
 #                  is on a drive without SELinux labels (NTFS, exFAT); labeling is then
 #                  switched off for the container instead.
@@ -38,9 +39,12 @@ else
     options+=(--security-opt label=disable)
 fi
 
+IN=/opt/acore/modules/mod-playerhousing
 "$ENGINE" run -d --name "$NAME" "${options[@]}" \
     -e ACORE_ACCOUNTS="houseowner:houseowner houseguest:houseguest admin:admin:3" \
-    -v "$volume" \
+    -e HOUSING_LAYOUT="${HOUSING_LAYOUT:-cleared}" \
+    -e AC_PLAYER_HOUSING_FREE_MODE=1 \
+    -v "$volume" --entrypoint "$IN/tools/test-server/container-entry.sh" \
     "$IMAGE" >/dev/null
 if [ "${KEEP:-0}" != 1 ]; then
     trap '"$ENGINE" rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
@@ -64,4 +68,4 @@ if [ "$ready" != 1 ]; then
     exit 1
 fi
 
-"$ENGINE" exec "$NAME" python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/housing_smoke.py "$@"
+"$ENGINE" exec "$NAME" python3 "$IN/tools/test-server/testclient/housing_smoke.py" "$@"

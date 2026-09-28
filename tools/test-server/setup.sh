@@ -8,8 +8,13 @@
 #   SERVER_DIR  install prefix, data, logs, configs  (default: ~/acore-test-server)
 #   BUILD_DIR   CMake build directory                (default: $SERVER_DIR/build)
 #   JOBS        parallel compile jobs                (default: nproc)
-#   TOOLS_BUILD none, or maps-only for the map/vmap/mmap tools that
-#               tools/gm-island-cleared needs            (default: none)
+#   HOUSING_LAYOUT cleared (GM Island without its guild hall) or guildhouse
+#                                                    (default: cleared)
+#   TOOLS_BUILD none, or maps-only for the map/vmap/mmap tools that the cleared island
+#               needs          (default: maps-only for cleared, none for guildhouse)
+#
+# The module config is rewritten on every run for testing: FreeMode on (everything free)
+# and the chosen layout. Edit etc/modules/mod_playerhousing.conf afterwards to change more.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +23,12 @@ CORE_DIR="${CORE_DIR:-$HOME/azerothcore-wotlk-playerbots-custom}"
 SERVER_DIR="${SERVER_DIR:-$HOME/acore-test-server}"
 BUILD_DIR="${BUILD_DIR:-$SERVER_DIR/build}"
 JOBS="${JOBS:-$(nproc)}"
-TOOLS_BUILD="${TOOLS_BUILD:-none}"
+HOUSING_LAYOUT="${HOUSING_LAYOUT:-cleared}"
+if [ "$HOUSING_LAYOUT" = cleared ]; then
+    TOOLS_BUILD="${TOOLS_BUILD:-maps-only}"
+else
+    TOOLS_BUILD="${TOOLS_BUILD:-none}"
+fi
 CLIENT_DATA_VERSION="${CLIENT_DATA_VERSION:-v19}"
 SUDO=$([ "$(id -u)" -ne 0 ] && echo sudo || true)
 MYSQL=(mysql -uacore -pacore)
@@ -81,8 +91,20 @@ if [ ! -f "$etc/worldserver.conf" ]; then
         -e "s|^Warden.Enabled = .*|Warden.Enabled = 0|" \
         "$etc/worldserver.conf.dist" > "$etc/worldserver.conf"
 fi
-if [ ! -f "$etc/modules/mod_playerhousing.conf" ]; then
-    cp "$etc/modules/mod_playerhousing.conf.dist" "$etc/modules/mod_playerhousing.conf"
+sed -e 's|^PlayerHousing.FreeMode = .*|PlayerHousing.FreeMode = 1|' \
+    -e "s|^PlayerHousing.Layout = .*|PlayerHousing.Layout = \"$HOUSING_LAYOUT\"|" \
+    "$etc/modules/mod_playerhousing.conf.dist" > "$etc/modules/mod_playerhousing.conf"
+echo "mod_playerhousing.conf: FreeMode on, layout $HOUSING_LAYOUT"
+
+step "GM Island: $HOUSING_LAYOUT"
+if pgrep -x worldserver >/dev/null; then
+    echo "note: the worldserver is running; restart it afterwards so it reads the island data" >&2
+fi
+if [ "$HOUSING_LAYOUT" = cleared ]; then
+    SERVER_DIR="$SERVER_DIR" "$MODULE_DIR/tools/gm-island-cleared/server_data.sh"
+else
+    SERVER_DIR="$SERVER_DIR" "$MODULE_DIR/tools/gm-island-cleared/server_data.sh" --restore 2>/dev/null \
+        || echo "guild hall in place"
 fi
 
 step "Starting MySQL and creating the acore user and databases"
@@ -103,15 +125,12 @@ fi
 
 step "Applying module SQL (safe to re-run)"
 # The core's auto-updater only reads modules/<name>/data/sql/db-*, so these are applied by hand.
-for f in "$MODULE_DIR"/sql/db_world/base/mod_playerhousing_world.sql \
-         "$MODULE_DIR"/sql/db_world/base/mod_playerhousing_world_hotfix.sql; do
-    quiet_mysql acore_world < "$f" >/dev/null
-    echo "applied $(basename "$f")"
-done
-for f in "$MODULE_DIR"/sql/db_characters/base/mod_playerhousing_characters.sql \
-         "$MODULE_DIR"/sql/db_characters/base/mod_playerhousing_characters_hotfix.sql; do
-    quiet_mysql acore_characters < "$f" >/dev/null
-    echo "applied $(basename "$f")"
+for db in world characters; do
+    # C collation: the table file sorts before the content file that fills it.
+    find "$MODULE_DIR/sql/db_$db" -name '*.sql' ! -iname '*rollback*' | LC_ALL=C sort | while read -r f; do
+        quiet_mysql "acore_$db" < "$f" >/dev/null
+        echo "applied ${f#"$MODULE_DIR"/}"
+    done
 done
 
 step "Test accounts"
@@ -127,4 +146,6 @@ Done. Next:
 
 Accounts: houseowner/houseowner and houseguest/houseguest (players), admin/admin (GM 3).
 For a real 3.3.5a client, set realmlist.wtf to: set realmlist 127.0.0.1
+With the cleared island, real clients also need the patch from
+tools/gm-island-cleared/make_client_patch.sh, or they still see the guild hall.
 EOF
