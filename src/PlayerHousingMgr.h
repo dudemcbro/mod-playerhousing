@@ -33,6 +33,10 @@ namespace Housing
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 HOOK_MARKER_GO = 903990;
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
+    // "Move a Piece" items, one per targeting circle size (tools/content/build_content.py):
+    // handed out to move a piece with the circle, gone once used.
+    constexpr uint32 MOVER_ITEM_FIRST = 901190;
+    constexpr uint32 MOVER_ITEM_LAST = 901199;
     constexpr uint32 PLAYER_MENU_ID = 900300;  // gossip menu id for menus opened by .house
 
     constexpr uint32 TEXT_HOME = 900300;
@@ -290,6 +294,11 @@ public:
     bool FaceMe(Player* player, uint32 placementId, std::string& reason);
     bool MoveHere(Player* player, uint32 placementId, std::string& reason);
     bool PlaceOnHook(Player* player, uint32 surfacePlacementId, uint32 itemEntry, std::string& reason);
+    bool StartMove(Player* player, uint32 placementId, std::string& reason);
+    bool HandleMoveCast(Player* player, Item* castItem, Position const& target, std::string& reason);
+    void CancelMove(Player* player);
+    uint32 GetPendingMover(Player const* player) const;
+    static bool IsMoverItem(uint32 itemEntry) { return itemEntry >= Housing::MOVER_ITEM_FIRST && itemEntry <= Housing::MOVER_ITEM_LAST; }
     bool PackUpEverything(Player* player, std::string& reason);
     bool Undo(Player* player, std::string& reason);
     bool Redo(Player* player, std::string& reason);
@@ -472,7 +481,7 @@ private:
     // Pieces that go wherever this one goes: what stands on it, and for a building (when
     // includeInside) what's inside it; each with what stands on them in turn.
     std::vector<uint32> CarriedBy(Session const& session, uint32 placementId, bool includeInside) const;
-    uint32 FindSurfaceUnder(Session const& session, float x, float y, float z) const;
+    uint32 FindSurfaceUnder(Session const& session, float x, float y, float z, std::set<uint32> const& exclude = {}) const;
     bool ChangeStand(Player* player, uint32 placementId, Housing::Placement const& after, std::string const& label, std::string& reason);
     bool MoveGearToStand(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, uint32 itemGuid, std::string& reason);
     void ReturnGear(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, Housing::GearItem const& gear);
@@ -521,6 +530,14 @@ private:
     // placed them still holds the item.
     std::unordered_map<ObjectGuid, std::map<uint32, uint32>> _pendingConsumes;
     std::unordered_map<ObjectGuid, MannequinLook> _mannequins;
+
+    struct PendingMove
+    {
+        uint32 placementId{0};
+        uint32 moverItem{0};
+    };
+    std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
+    std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
     ApplyReport _report;
 };
 

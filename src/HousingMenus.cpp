@@ -93,7 +93,8 @@ namespace
         OP_NUDGE_RIGHT,
         OP_NUDGE_UP,
         OP_NUDGE_DOWN,
-        OP_UNDO
+        OP_UNDO,
+        OP_MOVE_CIRCLE
     };
 
     constexpr uint32 PAGE_SIZE = 18;
@@ -406,6 +407,11 @@ namespace
                 sPlayerHousingMgr->Undo(player, reason);
                 keepMenu = sPlayerHousingMgr->GetPlacement(player, placementId).has_value();
                 break;
+            case OP_MOVE_CIRCLE:
+                // The menu closes so the "Move a Piece" item can be used.
+                sPlayerHousingMgr->StartMove(player, placementId, reason);
+                keepMenu = false;
+                break;
             default:
                 break;
         }
@@ -603,6 +609,7 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 15°", CMD_PIECE_OP, placementId | (OP_TURN_RIGHT_15 << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn toward me", CMD_PIECE_OP, placementId | (OP_FACE_ME << 24));
     Add(player, GOSSIP_ICON_INTERACT_1, "Nudge...", CMD_NUDGE_MENU, placementId);
+    Add(player, GOSSIP_ICON_INTERACT_1, "Move with the targeting circle", CMD_PIECE_OP, placementId | (OP_MOVE_CIRCLE << 24));
     Add(player, GOSSIP_ICON_INTERACT_1, "Move to where I'm standing", CMD_PIECE_OP, placementId | (OP_MOVE_HERE << 24));
     if (piece->HasFlag(PIECE_FLAG_SURFACE))
         Add(player, GOSSIP_ICON_VENDOR, "Put something on top", CMD_HOOK_MENU, placementId);

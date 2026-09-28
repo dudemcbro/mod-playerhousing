@@ -173,7 +173,8 @@ class spell_playerhousing_place : public SpellScript
     {
         Player* player = GetCaster() ? GetCaster()->ToPlayer() : nullptr;
         Item* item = GetCastItem();
-        if (!player || !item || !sPlayerHousingMgr->IsEnabled() || !sPlayerHousingMgr->GetPiece(item->GetEntry()))
+        bool mover = item && PlayerHousingMgr::IsMoverItem(item->GetEntry());
+        if (!player || !item || !sPlayerHousingMgr->IsEnabled() || (!mover && !sPlayerHousingMgr->GetPiece(item->GetEntry())))
             return SPELL_CAST_OK;
 
         std::string reason;
@@ -182,6 +183,12 @@ class spell_playerhousing_place : public SpellScript
             Position target;
             target.Relocate(destination->GetPositionX(), destination->GetPositionY(), destination->GetPositionZ());
             uint32 itemEntry = item->GetEntry();
+            if (mover)
+            {
+                sPlayerHousingMgr->HandleMoveCast(player, item, target, reason);
+                Reply(player, reason);
+                return SPELL_FAILED_DONT_REPORT;
+            }
             bool placed = sPlayerHousingMgr->HandlePlacementCast(player, item, target, reason);
             sPlayerHousingMgr->SendAddonState(player);
             // The preview: the piece stands where it'll be, and its menu offers to keep it,
@@ -311,7 +318,7 @@ public:
         handler->SendSysMessage("Housing commands (.house alone opens the Home menu):");
         handler->SendSysMessage(".house home | leave | unstuck | key");
         handler->SendSysMessage(".house decorate [on|off] | undo | redo | packup");
-        handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id]");
+        handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house collection | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
@@ -407,6 +414,8 @@ public:
         }
         else if (sub == "rotate" || sub == "turn")
             mgr->Rotate(player, number(2), decimal(1, 45.0f), reason);
+        else if (sub == "move")
+            mgr->StartMove(player, number(1), reason);
         else if (sub == "face")
             mgr->FaceMe(player, number(1), reason);
         else if (sub == "here")

@@ -112,6 +112,10 @@ bool PlayerHousingMgr::LoadDefinitions()
 
     _pieces.clear();
     _piecesByRule.clear();
+    _moverBySpell.clear();
+    for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
+        if (ItemTemplate const* mover = sObjectMgr->GetItemTemplate(entry))
+            _moverBySpell[mover->Spells[0].SpellId] = entry;
 
     QueryResult layoutResult = WorldDatabase.Query(
         "SELECT layout, map_id, landing_x, landing_y, landing_z, landing_o, steward_offset_x, steward_offset_y, center_x, center_y, radius "
@@ -549,6 +553,7 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
         player->TeleportToEntryPoint();
 
     GiveFirstLoginItems(player);
+    CancelMove(player);  // "Move a Piece" items never outlive the visit they were for
 
     // Past progress counts: anything already earned unlocks now, including pieces added to
     // the Collection since the last login.
@@ -571,8 +576,10 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     if (!_enabled || !player)
         return;
 
-    // A piece placed in the player's last moments still owes its item.
+    // A piece placed in the player's last moments still owes its item, and a move not
+    // finished is dropped (a quick relog can skip the login hook, so not left for that).
     ProcessPendingConsumes(player);
+    CancelMove(player);
 
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -622,6 +629,9 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
         return;
 
     ProcessPendingConsumes(player);
+    // A move not finished before leaving the island is dropped, with its item.
+    if (GetPendingMover(player) && !player->IsBeingTeleported() && !IsOnOwnIsland(player))
+        CancelMove(player);
     UpdatePendingTrip(player);
 
     // Mid-teleport the position still belongs to where the player came from.
@@ -1259,10 +1269,10 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         CountPlaced(owner, furnishings, buildings);
 
     // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
-    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
-        owner ? NameOf(owner) : "", own ? RedoLabel(player) : "", selectedBuilding ? 1 : 0);
+        owner ? NameOf(owner) : "", own ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player));
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);

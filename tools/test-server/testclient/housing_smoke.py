@@ -29,6 +29,7 @@ MANNEQUIN, MANNEQUIN_NPC = 901107, 900201               # a stand, and the figur
 SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
 UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
 SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
+MOVERS = range(901190, 901200)                          # "Move a Piece" items
 ELWYNN_ACHIEVEMENT, STORMWIND = 776, 72
 WORN_DAGGER = 2092                                      # fills bags (does not stack)
 
@@ -636,6 +637,24 @@ def main():
     check("undo puts the mannequin back, dressed", placement_of(owner_guid, MANNEQUIN) is not None
           and gear_of(owner_guid, stand_id).get(SLOT_LEGS) == (pants_guid, PANTS), joined(msgs))
 
+    # Moving with the circle: a Move a Piece item, then the new spot. Same facing, same gear.
+    stand = placement_of(owner_guid, MANNEQUIN)
+    msgs = owner.command(".house move %d" % stand_id)
+    wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
+    mover = next((e for e in MOVERS if owner.count_item(e)), None)
+    check("choosing Move hands out a Move a Piece item", mover is not None and has(msgs, "Right-click Move a Piece"), joined(msgs))
+    new_spot = (L["stand"][0] - 2.0, L["stand"][1] + 2.0, L["ground"])
+    msgs = owner.use_item(mover, spell_of(mover), new_spot) if mover else []
+    moved = placement_of(owner_guid, MANNEQUIN)
+    check("it moves to the clicked spot, facing the same way, still dressed", moved is not None
+          and math.dist((moved["x"], moved["y"]), new_spot[:2]) < 0.01 and angle_diff(moved["o"], stand["o"]) < 0.01
+          and gear_of(owner_guid, stand_id).get(SLOT_LEGS) == (pants_guid, PANTS), joined(msgs) + " " + str(moved))
+    wait_for(lambda: not any(owner.count_item(e) for e in MOVERS), 3, owner)
+    check("the Move a Piece item is used up", not any(owner.count_item(e) for e in MOVERS))
+    msgs = owner.command(".house undo")
+    back = placement_of(owner_guid, MANNEQUIN)
+    check("undo moves it back", back is not None and math.dist((back["x"], back["y"]), (stand["x"], stand["y"])) < 0.01, joined(msgs))
+
     # Bags full: what comes off is mailed, never lost.
     admin.select(owner_char["guid"])
     admin.command(".additem %s %d 20" % (args.owner_char, WORN_DAGGER), wait=2.0)
@@ -755,6 +774,7 @@ def main():
     wait_for(lambda: math.dist(owner.pos[:2], L["landing"][:2]) < 3, 4, owner)
     check("unstuck returns to the landing spot", math.dist(owner.pos[:2], L["landing"][:2]) < 3, joined(msgs) + str(owner.pos))
 
+    owner.command(".house move")  # left unfinished: its item goes at the next login
     owner.logout()
     deadline = time.time() + 30
     while db("SELECT online FROM characters WHERE guid=%d" % owner_guid) != [["0"]] and time.time() < deadline:
@@ -766,6 +786,8 @@ def main():
     check("logging back in after logging out on the island returns you to where you came from",
           owner.map_id != HOUSING_MAP or math.dist(owner.pos[:2], L["landing"][:2]) > 300, "map=%s pos=%s" % (owner.map_id, owner.pos))
     check("placements survive the relog", len(placements(owner_guid)) == count)
+    check("an unfinished move's item is gone after logging back in", not any(owner.count_item(e) for e in MOVERS),
+          str(owner.backpack()))
 
     owner.command(".house home", wait=1.0)
     wait_for_map(owner, HOUSING_MAP)

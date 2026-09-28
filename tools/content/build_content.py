@@ -38,6 +38,7 @@ ITEM_SCRIPT = "item_playerhousing_piece"
 CIRCLE_SPELLS = [(1.0, 61736), (2.0, 47004), (3.0, 42340), (4.0, 69680), (5.0, 43440),
                  (6.0, 61985), (8.0, 34435), (10.0, 1543), (15.0, 26540), (20.0, 29882)]
 PLACE_SCRIPT = "spell_playerhousing_place"
+MOVER_FIRST = 901190  # Housing::MOVER_ITEM_FIRST, one "Move a Piece" item per circle
 
 
 def circle_spell(footprint):
@@ -346,6 +347,13 @@ def build(args):
                                "a figure in your gear" if stand else
                                "%s %d" % ("object" if "go" in piece else "model", piece.get("go", piece.get("display"))),
                                ", ".join(notes)))
+
+    # "Move a Piece": one per circle size, handed out to move a placed piece with the circle
+    # (PlayerHousingMgr::StartMove). Not pieces themselves.
+    for index, (radius, spell) in enumerate(CIRCLE_SPELLS):
+        items.append("(%d, 15, 0, -1, %s, %d, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, %d, 0, 0, 0, -1, %s, %s, 0)" % (
+            MOVER_FIRST + index, sql_text("Move a Piece"), ICON_FURNISHING, spell,
+            sql_text("Right-click, then click where the piece should go. Gone once used."), sql_text(ITEM_SCRIPT)))
 
     go_columns = "`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, " + \
         ", ".join("`Data%d`" % i for i in range(24)) + ", `AIName`, `ScriptName`, `VerifiedBuild`"

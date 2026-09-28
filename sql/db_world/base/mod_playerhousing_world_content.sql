@@ -686,7 +686,17 @@ INSERT INTO `item_template` (`entry`, `class`, `subclass`, `SoundOverrideSubclas
 (902901, 15, 0, -1, 'Furnishing: Imperial Throne', 1102, 4, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, 69680, 0, 0, 0, -1, 'Right-click on your island, then click where it should go.', 'item_playerhousing_piece', 0),
 (902902, 15, 0, -1, 'Furnishing: Moonglade Fountain', 1102, 4, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, 61736, 0, 0, 0, -1, 'Right-click on your island, then click where it should go.', 'item_playerhousing_piece', 0),
 (902903, 15, 0, -1, 'Furnishing: Barber Chair', 1102, 4, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, 61736, 0, 0, 0, -1, 'Right-click on your island, then click where it should go.', 'item_playerhousing_piece', 0),
-(902904, 15, 0, -1, 'Furnishing: Guild Vault', 1102, 4, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, 61736, 0, 0, 0, -1, 'Right-click on your island, then click where it should go.', 'item_playerhousing_piece', 0);
+(902904, 15, 0, -1, 'Furnishing: Guild Vault', 1102, 4, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, 61736, 0, 0, 0, -1, 'Right-click on your island, then click where it should go.', 'item_playerhousing_piece', 0),
+(901190, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 61736, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901191, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 47004, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901192, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 42340, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901193, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 69680, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901194, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 43440, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901195, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 61985, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901196, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 34435, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901197, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 1543, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901198, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 26540, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0),
+(901199, 15, 0, -1, 'Move a Piece', 1102, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 29882, 0, 0, 0, -1, 'Right-click, then click where the piece should go. Gone once used.', 'item_playerhousing_piece', 0);
 
 INSERT INTO `mod_playerhousing_piece` (`item_entry`, `kind`, `category`, `name`, `go_entry`, `edit_go_entry`, `scale`, `footprint`, `height`, `flags`, `copy_cost`, `sort_order`, `hint`, `legacy_catalog_id`, `outline_min_x`, `outline_min_y`, `outline_max_x`, `outline_max_y`) VALUES
 (901105, 0, 0, 'Westfall Chair', 911105, 921105, 1.0, 0.45, 0.53, 8, 0, 0, '', 1001, -0.45, -0.34, 0.21, 0.29),

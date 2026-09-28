@@ -1022,10 +1022,20 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
 
     // What stands on it (and, for a building, what's inside) moves and turns with it, as if
     // it were one piece.
+    std::vector<uint32> carriedIds = CarriedBy(*session, placementId, true);
+    PieceDefinition const* movedPiece = GetPiece(before.itemEntry);
+    if ((dx != 0.0f || dy != 0.0f || dz != 0.0f) && movedPiece && !movedPiece->IsBuilding())
+    {
+        // Moved onto a table, or off one.
+        std::set<uint32> exclude(carriedIds.begin(), carriedIds.end());
+        exclude.insert(placementId);
+        after.parent = FindSurfaceUnder(*session, after.x, after.y, after.z, exclude);
+    }
+
     std::vector<Change> changes{ Change{ placementId, before, after } };
     float cosTurn = std::cos(turn);
     float sinTurn = std::sin(turn);
-    for (uint32 carriedId : CarriedBy(*session, placementId, true))
+    for (uint32 carriedId : carriedIds)
     {
         Placement const& carried = session->placements[carriedId];
         Placement moved = carried;
@@ -1100,10 +1110,13 @@ std::vector<uint32> PlayerHousingMgr::CarriedBy(Session const& session, uint32 p
     return carried;
 }
 
-uint32 PlayerHousingMgr::FindSurfaceUnder(Session const& session, float x, float y, float z) const
+uint32 PlayerHousingMgr::FindSurfaceUnder(Session const& session, float x, float y, float z, std::set<uint32> const& exclude) const
 {
     for (auto const& [id, surface] : session.placements)
     {
+        if (exclude.count(id))
+            continue;
+
         auto pieceItr = _pieces.find(surface.itemEntry);
         if (pieceItr == _pieces.end() || !pieceItr->second.HasFlag(PIECE_FLAG_SURFACE))
             continue;
@@ -1129,6 +1142,99 @@ uint32 PlayerHousingMgr::FindSurfaceUnder(Session const& session, float x, float
             return id;
     }
     return 0;
+}
+
+bool PlayerHousingMgr::StartMove(Player* player, uint32 placementId, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+
+    placementId = ResolvePlacementArgument(player, placementId);
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece)
+    {
+        reason = "Choose a piece first: click it while decorating, or stand next to it.";
+        return false;
+    }
+
+    // The mover with the same circle as the piece, so the circle shows its size again.
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(piece->itemEntry);
+    auto moverItr = proto ? _moverBySpell.find(proto->Spells[0].SpellId) : _moverBySpell.end();
+    if (moverItr == _moverBySpell.end())
+    {
+        reason = "That can't be moved with the circle. Nudge it, or move it to where you're standing.";
+        return false;
+    }
+
+    CancelMove(player);
+    if (!player->AddItem(moverItr->second, 1))
+    {
+        reason = "Your bags are full: make room for a Move a Piece item first.";
+        return false;
+    }
+
+    _pendingMoves[player->GetGUID()] = PendingMove{ placementId, moverItr->second };
+    session->selected = placementId;
+    reason = Acore::StringFormat("Right-click Move a Piece in your bags, then click where the {} should go.", piece->name);
+    SendAddonState(player);
+    return true;
+}
+
+bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position const& target, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto pending = _pendingMoves.find(player->GetGUID());
+    if (pending == _pendingMoves.end())
+    {
+        reason = "Nothing to move: click a piece while decorating and choose Move.";
+        return false;
+    }
+
+    uint32 placementId = pending->second.placementId;
+    std::optional<Placement> placement = GetPlacement(player, placementId);
+    if (!placement || !IsOnOwnIsland(player))
+    {
+        CancelMove(player);
+        reason = "That piece isn't there any more.";
+        return false;
+    }
+
+    if (!IsSpotOnIsland(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ()))
+    {
+        reason = "That spot is off your island.";
+        return false;
+    }
+
+    if (!Transform(player, placementId, "moved", target.GetPositionX() - placement->x, target.GetPositionY() - placement->y,
+            target.GetPositionZ() - placement->z, 0.0f, false, 0.0f, reason))
+        return false;
+
+    // The item is still in use by the cast; it goes on the player's next update.
+    _pendingMoves.erase(player->GetGUID());
+    ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
+    SendAddonState(player);
+    return true;
+}
+
+void PlayerHousingMgr::CancelMove(Player* player)
+{
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        _pendingMoves.erase(player->GetGUID());
+    }
+    for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
+        if (uint32 count = player->GetItemCount(entry))
+            player->DestroyItemCount(entry, count, true);
+}
+
+uint32 PlayerHousingMgr::GetPendingMover(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _pendingMoves.find(player->GetGUID());
+    return itr != _pendingMoves.end() ? itr->second.moverItem : 0;
 }
 
 void PlayerHousingMgr::SelectPlacement(Player const* player, uint32 placementId)
