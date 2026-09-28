@@ -1693,6 +1693,8 @@ bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, ui
 
 bool PlayerHousingMgr::PackUpEverything(Player* player, std::string& reason)
 {
+    if (OnCooldown(player, COOLDOWN_HEAVY, 3000, reason))
+        return false;
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason, true);
     if (!session)

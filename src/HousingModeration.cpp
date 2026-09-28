@@ -28,7 +28,8 @@ namespace
         if (begin == std::string::npos)
             return "";
         clean = clean.substr(begin, clean.find_last_not_of(' ') - begin + 1);
-        return clean.size() > maxLength ? clean.substr(0, maxLength) : clean;
+        PlayerHousingMgr::TruncateUtf8(clean, maxLength);
+        return clean;
     }
 }
 
@@ -48,8 +49,15 @@ bool PlayerHousingMgr::ReportIsland(Player* reporter, std::string const& text, s
         return false;
     }
 
-    // One open report per account per island.
+    // One open report per account per island, and five an hour in all.
     uint32 account = reporter->GetSession()->GetAccountId();
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM mod_playerhousing_report WHERE reporter_account={} AND created_at > NOW() - INTERVAL 1 HOUR", account))
+        if ((*result)[0].Get<uint64>() >= 5)
+        {
+            reason = "You've sent a lot of reports this hour. The GMs have them; try again later.";
+            return false;
+        }
     if (CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_report WHERE owner_guid={} AND reporter_account={} AND closed_at IS NULL",
             owner, account))
     {

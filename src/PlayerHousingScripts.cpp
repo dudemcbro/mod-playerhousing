@@ -452,6 +452,13 @@ public:
         std::string reason;
         PlayerHousingMgr* mgr = sPlayerHousingMgr;
 
+        // The addon's state request is quiet and cheap; everything else counts.
+        if (sub != "state" && !gm && mgr->CommandFlood(player))
+        {
+            Reply(player, "Too many housing commands at once: give it a moment.");
+            return true;
+        }
+
         if (sub == "state")
         {
             // Quiet: for the client addon.

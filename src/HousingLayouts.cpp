@@ -44,8 +44,7 @@ namespace
         if (begin == std::string::npos)
             return "";
         clean = clean.substr(begin, clean.find_last_not_of(' ') - begin + 1);
-        if (clean.size() > LAYOUT_NAME_MAX)
-            clean = clean.substr(0, LAYOUT_NAME_MAX);
+        PlayerHousingMgr::TruncateUtf8(clean, LAYOUT_NAME_MAX);
         return clean;
     }
 
@@ -321,6 +320,8 @@ void PlayerHousingMgr::DescribeShortfall(Player* player, std::map<uint32, uint32
 
 bool PlayerHousingMgr::GetMissingForLayout(Player* player, uint32 layoutId, std::string& reason)
 {
+    if (OnCooldown(player, COOLDOWN_HEAVY, 3000, reason))
+        return false;
     ObjectGuid::LowType self = player->GetGUID().GetCounter();
     std::map<uint32, uint32> missing = LayoutShortfall(player, layoutId);
     uint32 gettable = 0;
@@ -372,6 +373,8 @@ bool PlayerHousingMgr::GetMissingForLayout(Player* player, uint32 layoutId, std:
 
 bool PlayerHousingMgr::SwitchLayout(Player* player, uint32 layoutId, std::string& reason)
 {
+    if (OnCooldown(player, COOLDOWN_HEAVY, 3000, reason))
+        return false;
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason, true);
     if (!session)

@@ -294,7 +294,9 @@ std::vector<VisitEntry> PlayerHousingMgr::GetGuests(ObjectGuid::LowType ownerGui
 std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uint8 list) const
 {
     ObjectGuid::LowType self = player->GetGUID().GetCounter();
-    std::vector<ObjectGuid::LowType> candidates;
+    // Each candidate with its island's privacy and flags, all in one query, so deciding who
+    // may enter costs no query of its own for public islands.
+    std::vector<HouseRecord> candidates;
 
     auto collect = [&](QueryResult result)
     {
@@ -302,7 +304,11 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
             return;
         do
         {
-            candidates.push_back((*result)[0].Get<uint32>());
+            HouseRecord house;
+            house.ownerGuid = (*result)[0].Get<uint32>();
+            house.privacy = std::min<uint8>((*result)[1].Get<uint8>(), PRIVACY_FRIENDS);
+            house.flags = (*result)[2].Get<uint32>();
+            candidates.push_back(house);
         } while (result->NextRow());
     };
 
@@ -310,47 +316,55 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
     {
         case 0:  // party
             if (Group const* group = player->GetGroup())
+            {
+                std::string members;
                 for (Group::MemberSlot const& slot : group->GetMemberSlots())
                     if (slot.guid != player->GetGUID())
-                        candidates.push_back(slot.guid.GetCounter());
+                        members += (members.empty() ? "" : ",") + std::to_string(slot.guid.GetCounter());
+                if (!members.empty())
+                    collect(CharacterDatabase.Query(
+                        "SELECT owner_guid, is_private, flags FROM mod_playerhousing_house WHERE owner_guid IN ({})", members));
+            }
             break;
         case 1:  // guild
             if (uint32 guildId = player->GetGuildId())
                 collect(CharacterDatabase.Query(
-                    "SELECT gm.guid FROM guild_member gm JOIN mod_playerhousing_house h ON h.owner_guid = gm.guid "
+                    "SELECT h.owner_guid, h.is_private, h.flags FROM guild_member gm JOIN mod_playerhousing_house h ON h.owner_guid = gm.guid "
                     "WHERE gm.guildid={} AND gm.guid<>{} LIMIT 100", guildId, self));
             break;
         case 2:  // friends
             collect(CharacterDatabase.Query(
-                "SELECT s.friend FROM character_social s JOIN mod_playerhousing_house h ON h.owner_guid = s.friend "
+                "SELECT h.owner_guid, h.is_private, h.flags FROM character_social s JOIN mod_playerhousing_house h ON h.owner_guid = s.friend "
                 "WHERE s.guid={} AND (s.flags & {}) LIMIT 100", self, SOCIAL_FLAG_FRIEND));
             break;
         case 3:  // invited
-            collect(CharacterDatabase.Query("SELECT owner_guid FROM mod_playerhousing_acl WHERE guest_guid={} LIMIT 100", self));
+            collect(CharacterDatabase.Query(
+                "SELECT h.owner_guid, h.is_private, h.flags FROM mod_playerhousing_acl a JOIN mod_playerhousing_house h ON h.owner_guid = a.owner_guid "
+                "WHERE a.guest_guid={} LIMIT 100", self));
             break;
         case 5:  // most liked, most first
             collect(CharacterDatabase.Query(
-                "SELECT owner_guid FROM mod_playerhousing_like WHERE owner_guid<>{} GROUP BY owner_guid ORDER BY COUNT(*) DESC, MIN(liked_at) LIMIT 100",
-                self));
+                "SELECT h.owner_guid, h.is_private, h.flags FROM mod_playerhousing_like l JOIN mod_playerhousing_house h ON h.owner_guid = l.owner_guid "
+                "WHERE l.owner_guid<>{} GROUP BY h.owner_guid, h.is_private, h.flags ORDER BY COUNT(*) DESC, MIN(l.liked_at) LIMIT 100", self));
             break;
-        default:  // public
+        default:  // public, hidden ones left out
             collect(CharacterDatabase.Query(
-                "SELECT owner_guid FROM mod_playerhousing_house WHERE is_private={} AND owner_guid<>{} ORDER BY updated_at DESC LIMIT 100",
-                uint32(PRIVACY_PUBLIC), self));
+                "SELECT owner_guid, is_private, flags FROM mod_playerhousing_house WHERE is_private={} AND (flags & {}) = 0 AND owner_guid<>{} "
+                "ORDER BY updated_at DESC LIMIT 100", uint32(PRIVACY_PUBLIC), uint32(HOUSE_FLAG_HIDDEN), self));
             break;
     }
 
     // Only islands this player may enter, so every entry works when clicked.
     std::vector<VisitEntry> entries;
     std::set<ObjectGuid::LowType> seen;
-    for (ObjectGuid::LowType owner : candidates)
+    for (HouseRecord const& house : candidates)
     {
+        ObjectGuid::LowType owner = house.ownerGuid;
         if (!seen.insert(owner).second)
             continue;
 
-        HouseRecord house;
         std::string ignored;
-        if (!GetHouseRecord(owner, house) || !CanVisit(player, house, ignored))
+        if (!CanVisit(player, house, ignored))
             continue;
 
         VisitEntry entry;
@@ -394,6 +408,9 @@ bool PlayerHousingMgr::ToggleLike(Player* player, std::string& reason)
         reason = "You can't like your own island (everyone else can).";
         return false;
     }
+
+    if (OnCooldown(player, COOLDOWN_LIKE, 10000, reason))
+        return false;
 
     // One like per account, so alts don't count twice.
     uint32 account = player->GetSession()->GetAccountId();
@@ -457,8 +474,7 @@ bool PlayerHousingMgr::SetGreeting(Player* player, std::string const& greeting, 
     text.erase(std::remove(text.begin(), text.end(), '|'), text.end());
     text.erase(0, text.find_first_not_of(" \t"));
     text.erase(text.find_last_not_of(" \t") + 1);
-    if (text.size() > MAX_GREETING)
-        text.resize(MAX_GREETING);
+    TruncateUtf8(text, MAX_GREETING);
 
     ObjectGuid::LowType owner = player->GetGUID().GetCounter();
     EnsureHouse(owner);

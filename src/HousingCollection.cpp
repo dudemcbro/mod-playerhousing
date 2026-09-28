@@ -426,6 +426,8 @@ bool PlayerHousingMgr::GetCopies(Player* player, uint32 itemEntry, uint32 count,
 
 bool PlayerHousingMgr::GetOneOfEverything(Player* player, std::string& reason)
 {
+    if (OnCooldown(player, COOLDOWN_HEAVY, 3000, reason))
+        return false;
     if (!_freeMode && !_unlockAll)
     {
         reason = "That's only available on test servers.";

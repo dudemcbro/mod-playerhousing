@@ -13,6 +13,7 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
+#include "GameTime.h"
 #include "Player.h"
 #include "QuestDef.h"
 #include "SharedDefines.h"
@@ -107,6 +108,12 @@ void PlayerHousingMgr::LoadConfig()
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
     _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 5), 60);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
+    // It goes into a query: letters, digits and underscores only.
+    if (_layoutCode.empty() || _layoutCode.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
+    {
+        LOG_WARN("module", "mod-playerhousing: PlayerHousing.Layout \"{}\" isn't a layout name; using cleared.", _layoutCode);
+        _layoutCode = "cleared";
+    }
 
     _sizeMin = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Min", 0.5f), 0.1f, 1.0f);
     _sizeMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Max", 2.0f), 1.0f, 10.0f);
@@ -470,6 +477,45 @@ char const* PlayerHousingMgr::AdjustModeName(uint8 mode)
     }
 }
 
+void PlayerHousingMgr::TruncateUtf8(std::string& text, size_t maxBytes)
+{
+    if (text.size() <= maxBytes)
+        return;
+    size_t cut = maxBytes;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
+        --cut;
+    text.resize(cut);
+}
+
+bool PlayerHousingMgr::OnCooldown(Player* player, uint8 kind, uint32 ms, std::string& reason)
+{
+    uint64 now = GameTime::GetGameTimeMS().count();
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto& readyAt = _cooldowns[player->GetGUID()];
+    if (readyAt[kind] > now)
+    {
+        reason = Acore::StringFormat("One moment: try again in {} {}.", (readyAt[kind] - now + 999) / 1000,
+            (readyAt[kind] - now + 999) / 1000 == 1 ? "second" : "seconds");
+        return true;
+    }
+    readyAt[kind] = now + ms;
+    return false;
+}
+
+bool PlayerHousingMgr::CommandFlood(Player* player)
+{
+    // Up to 15 commands in any 3 seconds.
+    uint64 now = GameTime::GetGameTimeMS().count();
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    CommandWindow& window = _commandWindows[player->GetGUID()];
+    if (now - window.start > 3000)
+    {
+        window.start = now;
+        window.count = 0;
+    }
+    return ++window.count > 15;
+}
+
 std::string PlayerHousingMgr::FormatYards(float yards)
 {
     // 0.25, 0.5, 1, 2
@@ -648,6 +694,8 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _ambienceTimers.erase(player->GetGUID());
+        _cooldowns.erase(player->GetGUID());
+        _commandWindows.erase(player->GetGUID());
     }
 
     // A piece placed in the player's last moments still owes its item, and a move not
@@ -658,6 +706,7 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _pendingTrips.erase(player->GetGUID());
+        _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
     }
     EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
 }
@@ -679,6 +728,7 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
         {
             std::lock_guard<std::recursive_mutex> guard(_lock);
             _pendingTrips.erase(player->GetGUID());
+        _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
         }
         Say(player, "Trip home canceled.");
         return;
@@ -690,6 +740,7 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _pendingTrips.erase(player->GetGUID());
+        _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
     }
 
     std::string reason;
@@ -700,6 +751,18 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
 void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
 {
     if (!_enabled || !player)
+        return;
+
+    // Most players have nothing to do with housing: not on the island, not in an island's
+    // phase, no trip home under way. They leave without touching the lock.
+    if (!IsInHousingArea(player) && !IsHousingPhase(player->GetPhaseMask()) && _pendingTripCount.load(std::memory_order_relaxed) == 0)
+        return;
+
+    // Every player runs this every update, on every map thread. When another thread holds
+    // the housing lock (a big layout being set out, say), skip this update rather than
+    // hold up the whole map: it all happens on the next one.
+    std::unique_lock<std::recursive_mutex> busy(_lock, std::try_to_lock);
+    if (!busy.owns_lock())
         return;
 
     ProcessPendingConsumes(player);
@@ -1283,6 +1346,7 @@ bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         PendingTrip& trip = _pendingTrips[player->GetGUID()];
+        _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
         trip.at = std::time(nullptr) + _keyDelaySeconds;
         trip.x = player->GetPositionX();
         trip.y = player->GetPositionY();

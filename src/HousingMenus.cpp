@@ -10,7 +10,9 @@
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <ctime>
 #include <iterator>
 #include <mutex>
 #include <unordered_map>
@@ -110,6 +112,10 @@ namespace
     };
     std::mutex dressChoicesLock;
     std::unordered_map<ObjectGuid, DressChoice> dressChoices;
+
+    // The visit menu's counts, per player, for half a minute (see ShowVisit).
+    std::mutex visitCountsLock;
+    std::unordered_map<ObjectGuid, std::pair<time_t, std::array<size_t, 6>>> visitCounts;
 
     // What the player last searched the Collection for, for its pages.
     std::mutex searchesLock;
@@ -1010,7 +1016,9 @@ void HousingMenus::ShowCollectionSearch(Player* player, MenuSource const& source
     // Trimmed, and short enough for a menu line.
     size_t begin = text.find_first_not_of(" \t");
     size_t end = text.find_last_not_of(" \t");
-    std::string wanted = begin == std::string::npos ? "" : text.substr(begin, end - begin + 1).substr(0, 40);
+    std::string wanted = begin == std::string::npos ? "" : text.substr(begin, end - begin + 1);
+    wanted.erase(std::remove(wanted.begin(), wanted.end(), '|'), wanted.end());
+    PlayerHousingMgr::TruncateUtf8(wanted, 40);
     {
         std::lock_guard<std::mutex> guard(searchesLock);
         if (wanted.empty())
@@ -1049,12 +1057,31 @@ void HousingMenus::ShowStorage(Player* player, MenuSource const& source)
 
 void HousingMenus::ShowVisit(Player* player, MenuSource const& source)
 {
+    // The counts take a query or more each, so a player opening this again and again gets
+    // the same counts for half a minute.
+    std::array<size_t, VISIT_LIST_COUNT> counts{};
+    time_t now = time(nullptr);
+    bool cached = false;
+    {
+        std::lock_guard<std::mutex> guard(visitCountsLock);
+        auto itr = visitCounts.find(player->GetGUID());
+        if (itr != visitCounts.end() && now - itr->second.first < 30)
+        {
+            counts = itr->second.second;
+            cached = true;
+        }
+    }
+    if (!cached)
+    {
+        for (uint8 list = 0; list < VISIT_LIST_COUNT; ++list)
+            counts[list] = sPlayerHousingMgr->GetVisitList(player, list).size();
+        std::lock_guard<std::mutex> guard(visitCountsLock);
+        visitCounts[player->GetGUID()] = { now, counts };
+    }
+
     ClearGossipMenuFor(player);
     for (uint8 list = 0; list < VISIT_LIST_COUNT; ++list)
-    {
-        size_t count = sPlayerHousingMgr->GetVisitList(player, list).size();
-        Add(player, GOSSIP_ICON_TAXI, Acore::StringFormat("{} ({})", VISIT_LISTS[list], count), CMD_VISIT_LIST, list);
-    }
+        Add(player, GOSSIP_ICON_TAXI, Acore::StringFormat("{} ({})", VISIT_LISTS[list], counts[list]), CMD_VISIT_LIST, list);
     Ask(player, GOSSIP_ICON_TAXI, "Find by character name...", CMD_VISIT_NAME);
     Add(player, GOSSIP_ICON_CHAT, "Back", CMD_HOME);
     Send(player, source, TEXT_VISIT);

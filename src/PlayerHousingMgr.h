@@ -6,6 +6,7 @@
 #include "Position.h"
 
 #include <array>
+#include <atomic>
 #include <ctime>
 #include <deque>
 #include <map>
@@ -498,6 +499,18 @@ public:
     std::string NameOf(ObjectGuid::LowType guid) const;
     static std::string FormatMoney(uint64 copper);
     static std::string FormatYards(float yards);
+    // Cuts text to at most maxBytes without splitting a UTF-8 character.
+    static void TruncateUtf8(std::string& text, size_t maxBytes);
+    // Heavy or spammable actions wait between uses: true (and a reason) while waiting.
+    enum Cooldown : uint8
+    {
+        COOLDOWN_HEAVY = 0,  // pack up, set out a layout, get missing pieces, one of everything
+        COOLDOWN_LIKE,
+        COOLDOWN_COUNT
+    };
+    bool OnCooldown(Player* player, uint8 kind, uint32 ms, std::string& reason);
+    // .house commands: a burst is fine, a flood isn't.
+    bool CommandFlood(Player* player);
     static char const* CategoryName(uint8 category);
 
 private:
@@ -689,6 +702,14 @@ private:
     std::unordered_map<ObjectGuid, WorldLocation> _returnLocations;
     std::unordered_map<ObjectGuid::LowType, Journal> _journals;
     std::unordered_map<ObjectGuid, PendingTrip> _pendingTrips;
+    std::atomic<uint32> _pendingTripCount{0};  // _pendingTrips.size(), read without the lock
+    std::unordered_map<ObjectGuid, std::array<uint64, COOLDOWN_COUNT>> _cooldowns;  // ready again at (ms)
+    struct CommandWindow
+    {
+        uint64 start{0};
+        uint32 count{0};
+    };
+    std::unordered_map<ObjectGuid, CommandWindow> _commandWindows;
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
     // Items used to place pieces; removed on the player's next update because the cast that
     // placed them still holds the item.
