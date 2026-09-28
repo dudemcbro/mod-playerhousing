@@ -135,8 +135,8 @@ something is waiting, with "Take all" and per-item buttons. Items are never dest
 House levels go away. Instead, furnishings (and house styles) unlock from what players do
 in the world, the way LOTRO hands out trophies and decorations for quests, instances and
 festivals, and FFXIV for dungeons, achievements and reputation. This section is the framework; the
-full list of which piece comes from which activity is its own content pass (section 9,
-phase 3).
+full list of which piece comes from which activity is its own to-do (section 9,
+"Content list").
 
 ### What players experience
 
@@ -404,24 +404,54 @@ The test server config turns both on. Live servers leave them off.
   right models and names.
 - Houses and guest lists are unchanged.
 
-## 9. Build order
+## 9. To do
 
-Each phase ships on its own, keeps the end-to-end test green, and adds to it.
+Tick items off here as they land. Each phase ships on its own, keeps the end-to-end test
+green, and adds to it.
+
+- [x] UX plan (this document)
+- [ ] Content list: which piece and style comes from which activity (next; Phase 3 needs it)
+- [ ] Phase 1: the must-haves
+- [ ] Phase 2: click to edit
+- [ ] Phase 3: progression unlocks
+- [ ] Phase 4: people
+- [ ] Phase 5: polish and optional extras
+
+### Content list
+
+Planning, not code. Can be done before or alongside Phase 1. The result is
+`docs/UNLOCKS.md`, which Phase 3 turns into database rows.
+
+- [ ] One row per unlock: the piece or style, its model from the game data, its Collection
+  category, what earns it (achievement ID first, other sources only where no achievement
+  fits), and the hint shown while it's locked
+- [ ] Starter set everyone gets on day one
+- [ ] Exploration: pieces themed on each zone or region
+- [ ] Dungeons: a piece for every Classic, Burning Crusade and Wrath dungeon
+- [ ] Raids: a trophy for every raid (and the bosses worth their own), figurines where
+  no trophy model exists
+- [ ] Reputation: faction pieces at Honored, Revered and Exalted
+- [ ] Professions: working stations at skill milestones (anvil, forge, alchemy lab)
+- [ ] Holidays: Brewfest, Hallow's End, Winter Veil and the rest
+- [ ] Capstones: working mailbox and other useful pieces for big milestones
+- [ ] House styles and what unlocks each
+- [ ] Check every model exists in the game data; look at the doubtful ones in game
 
 ### Phase 1: the must-haves
 
-- `PlayerHousing.FreeMode`
-- house levels removed; one furnishing limit for everyone; gold refunds
-- furnishings are items only; catalog converted; kit names and models fixed; for now
-  every furnishing is available (progression arrives in phase 3)
-- pick up returns the item; House Storage for full bags
-- undo and redo list; "Undo: ..." at the top of the in-house menu; `.house undo/redo`
-- House Key item and `.house`; menus that change with where you are; paging for all lists
-- steward spawns in capital cities; `.krook add` GM-only
-- placement anywhere on the island with only the three rules; the exact clicked spot is
-  kept; Unstuck; bringing swimmers back to the beach
-- silent targeting (no Flare side effects)
-- clearer messages with counts
+- [ ] `PlayerHousing.FreeMode`
+- [ ] house levels removed; one furnishing limit for everyone; gold refunds
+- [ ] furnishings are items only; catalog converted; kit names and models fixed; for now
+  every furnishing is available (progression arrives in Phase 3)
+- [ ] pick up returns the item; House Storage for full bags
+- [ ] undo and redo list; "Undo: ..." at the top of the in-house menu; `.house undo/redo`
+- [ ] House Key item and `.house`; menus that change with where you are; paging for all
+  lists
+- [ ] steward spawns in capital cities; `.krook add` GM-only
+- [ ] placement anywhere on the island with only the three rules; the exact clicked spot
+  is kept; Unstuck; bringing swimmers back to the beach
+- [ ] silent targeting (no Flare side effects)
+- [ ] clearer messages with counts
 
 Test additions: place, then undo, and the item is back in bags; undo the undo (redo);
 pick up to full bags goes to storage and "Take all" works; with FreeMode on, every cost is
@@ -431,21 +461,22 @@ past the edge of the private copy is refused.
 
 ### Phase 2: click to edit
 
-- clickable copies of every furniture object (same model); outside decorate mode,
+- [ ] clickable copies of every furniture object (same model); outside decorate mode,
   working furniture keeps working (chairs sit, mailbox and crafting stations work)
-- Decorate mode, piece menu (rotate, face, nudge, raise and lower, move here)
+- [ ] Decorate mode, piece menu (rotate, face, nudge, raise and lower, move here)
 
 Test additions: the test client clicks a piece and drives the piece menu; rotate, nudge
 and height are checked in the database; a guest clicking a chair sits and can't edit.
 
 ### Phase 3: progression unlocks
 
-- the unlock engine: sources (achievements first, then kills, reputation, exploration,
-  professions, quests, level, holidays), live unlock messages, veteran credit at login
-- the Collection menu, with categories, counts, hints and "get a copy"
-- `PlayerHousing.UnlockAll` and the GM unlock commands
-- the content pass: the full list of pieces and styles and what earns each one,
-  including working furniture and boss figurines
+- [ ] the unlock engine: sources (achievements first, then kills, reputation,
+  exploration, professions, quests, level, holidays), live unlock messages, veteran
+  credit at login
+- [ ] the Collection menu, with categories, counts, hints and "get a copy"
+- [ ] `PlayerHousing.UnlockAll` and the GM unlock commands
+- [ ] the content list loaded into the database, including working furniture and boss
+  figurines
 
 Test additions: with `UnlockAll = 0`, a new character has only the starter set; a GM
 grants an achievement and the matching piece unlocks with a message; a character that
@@ -453,20 +484,22 @@ already had the achievement gets it at login; locked entries show their hint.
 
 ### Phase 4: people
 
-- guest list you can click, invite target or party, visit lists, privacy presets,
-  arrival and invite messages
+- [ ] guest list you can click, invite target or party
+- [ ] visit lists (party, guild, friends, invited, public)
+- [ ] privacy presets (Private, Friends & guild, Public)
+- [ ] arrival and invite messages
 
 Test additions: the guest finds the owner's house in "Houses you're invited to" and gets
 in with one click; "Friends & guild" lets a guild member in and keeps a stranger out.
 
 ### Phase 5: polish and optional extras
 
-- one-time tips and the first-visit greeting
-- visitor greeting message, "Pack up everything" (undoable)
-- optional LOTRO-style hooks: glowing "snap here" spots on walls and tables that place a
-  piece at the right height and angle in one click, for players who don't want to
+- [ ] one-time tips and the first-visit greeting
+- [ ] visitor greeting message, "Pack up everything" (undoable)
+- [ ] optional LOTRO-style hooks: glowing "snap here" spots on walls and tables that place
+  a piece at the right height and angle in one click, for players who don't want to
   fine-tune
-- optional client addon: a real furnishing window with icons, drag to place and
+- [ ] optional client addon: a real furnishing window with icons, drag to place and
   mouse-wheel rotation, talking to the same server commands. It stays optional; the
   native menus remain complete without it.
 
