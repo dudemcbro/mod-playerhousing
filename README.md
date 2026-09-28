@@ -447,10 +447,11 @@ container (server and all the clients on one machine):
 
 | Players | Pieces placed | Place, p95 | Undo, p95 | Visit, p95 | Go home, p95 | Server update: mean, p99, max |
 | --- | --- | --- | --- | --- | --- | --- |
-| 99 | 792 in 41 s | 168 ms | 134 ms | 559 ms | 5.9 s | 15 ms, 133 ms, 533 ms |
+| 40 | 320 in 35 s | 112 ms | 95 ms | 547 ms | 1.0 s | 10 ms, 62 ms, 102 ms |
+| 99 | 792 in 42 s | 195 ms | 140 ms | 553 ms | 6.3 s | 14 ms, 142 ms, 361 ms |
 
-Going home is a teleport to another continent, all 99 at the same moment; a visit is a
-short hop on the island. The worldserver used about 2 GB.
+Going home is a teleport to another continent, every player at the same moment; a visit
+is a short hop on the island. The worldserver used about 1.9 GB.
 
 No island showed another island's pieces, and no action failed.
 
