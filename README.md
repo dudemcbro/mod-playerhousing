@@ -467,8 +467,9 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (104 checks: placing, undo, decorating, storage, the Collection,
-buildings, mannequins, visitors, working furniture, addon messages, relogging).
+headless clients (218 checks: placing, undo, decorating, storage, the Collection,
+buildings, mannequins, layouts, ambience, visitors, roommates, moderation, working
+furniture, addon messages, relogging, and the safety rules above), and a load test.
 
 ## Rollback
 
