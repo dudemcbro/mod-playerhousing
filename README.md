@@ -231,6 +231,10 @@ fits, since players already see and track those.
   `920000 + (item - 900000)` while decorating, a clickable copy of chairs and stations that
   opens the piece menu instead of working. Buildings stay visible from farther away.
   Housing objects have server-side collision turned off.
+- **Sizes and outlines** come from the game data: small models from
+  `GameObjectDisplayInfo.dbc`, buildings made of world models from the server's collision
+  data (`vmaps/GameObjectModels.dtree`). A building's outline, turned the way it faces, is
+  what counts as inside it when picking it up with what's inside.
 - **Placement** uses a targeting circle: each piece's item carries a ground-target spell
   whose circle matches the piece's size (ten spells, 1 to 20 yards, listed in
   `tools/content/build_content.py`). The spell is caught before it casts, so there's no
@@ -261,7 +265,7 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (103 checks: placing, undo, decorating, storage, the Collection,
+headless clients (104 checks: placing, undo, decorating, storage, the Collection,
 buildings, mannequins, visitors, working furniture, addon messages, relogging).
 
 ## Rollback

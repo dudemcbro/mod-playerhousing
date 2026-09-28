@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (103 checks):
+checking the database and what the client sees after each step (104 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -134,7 +134,8 @@ checking the database and what the client sees after each step (103 checks):
 - full bags: pieces go to House Storage, undo takes them back out, "Take everything"
 - the Collection: categories, hints with progress, free copies, a level up unlocking a
   shelter on the spot, a GM unlocking the mailbox for the owner
-- buildings: placing a faction building, the pick up choice, the building and what's
+- buildings: placing a faction building, the pick up choice, what counts as inside (a
+  lantern in a corner does, a table past the wall doesn't), the building and what's
   inside coming back, undo
 - a mannequin: it takes after its owner, its menu, dressing it from the bags (the item
   leaves the bags but stays the same item), the figure holding the sword and wearing the

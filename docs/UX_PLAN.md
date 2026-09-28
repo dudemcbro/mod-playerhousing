@@ -326,7 +326,7 @@ to match, or the server and the players' games disagree about where walls are:
 | Part | What changes | Status |
 | --- | --- | --- |
 | Players' game client | A patch file (`patch-H.MPQ`) moves the hall out of sight. Every player puts it in their WoW `Data` folder once. | Built by `make_client_patch.sh` from a 3.3.5a client. Checked against a test file only; **never yet tried with a real client**, so that's the first to-do. |
-| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 103/103. |
+| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 104/104. |
 | Database | The arrival spot moves to the old hall's plateau. | The `cleared` row of `mod_playerhousing_layout`, now the default (`PlayerHousing.Layout`); tested. |
 
 A player without the patch would still see the hall and bump into walls that aren't
@@ -534,7 +534,7 @@ command `.house unlock all <character>`. Live servers leave both off.
 Tick items off here as they land. Each phase ships on its own, keeps the end-to-end test
 green, and adds to it.
 
-**Where it stands:** all six phases are built and pass the end-to-end test (103 checks, on
+**Where it stands:** all six phases are built and pass the end-to-end test (104 checks, on
 the cleared island, in the development container). What hasn't met a real 3.3.5a client
 yet: the cleared island patch, how pieces look (on tabletops, building models and their
 walls), the targeting circle, and the client addon's window. Those need your client, so
@@ -570,6 +570,11 @@ With your client, once the patch works:
 - [ ] a lantern on a table (the blue rune while decorating) sits on the tabletop
 - [ ] buildings: the shelters and a faction building look right, can be walked into, and
   are seen from a distance
+- [ ] building outlines that look too big for the building (their models may include
+  surrounding pieces), which decide what counts as inside: Human Guard Tower (70 by 55
+  yd), Ruined Guard Tower (75 by 59), Tauren Druid Tent (117 by 100), Orc Barracks (96 by
+  87), Night Elf Druid Tower (71 by 73). Correct any that are wrong with a footprint in
+  `tools/content/pieces.py`
 - [ ] sit on a chair, use a placed mailbox and an anvil
 - [ ] a mannequin: it looks like a person of the chosen race, wears the armor you give
   it and holds the weapons; changing the figure; whether it should stand frozen like a

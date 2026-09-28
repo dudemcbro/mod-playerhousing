@@ -20,8 +20,9 @@ Fields:
             complete group unlocks the piece. No rules: everyone has it.
   flags     surface (things go on top), small (fits on a surface), gift (first login),
             wreckage (standing on the island at the first visit), per_char
-  footprint, height  override the size read from the game data (buildings made of
-            world models have none recorded)
+  footprint, height  override the size read from the game data. Buildings made of
+            world models take theirs from the server's collision data; set these only to
+            correct one whose outline includes surrounding pieces (check in game first)
   legacy    the old catalog id this piece replaces
 """
 
@@ -110,45 +111,45 @@ PIECES = [
     dict(item=902208, name="Covered Wagon", cat="Buildings", display=3678, style="building", rules=[[level(20)]]),
     dict(item=902209, name="Water Hut", cat="Buildings", display=7517, style="building", rules=[[level(20)]]),
     dict(item=902210, name="Westfall Shed", cat="Buildings", display=662, style="building", rules=[[level(20)]]),
-    dict(item=902211, name="Burnt Westfall Farmhouse", cat="Buildings", display=7464, style="building", rules=[[level(30)]], footprint=16, height=12),
-    dict(item=902212, name="Burnt Duskwood Farmhouse", cat="Buildings", display=7436, style="building", rules=[[level(30)]], footprint=16, height=12),
-    dict(item=902213, name="Broken House", cat="Buildings", display=7461, style="building", rules=[[level(30)]], footprint=14, height=12),
-    dict(item=902214, name="Ruined Guard Tower", cat="Buildings", display=7462, style="building", rules=[[level(30)]], footprint=10, height=20),
+    dict(item=902211, name="Burnt Westfall Farmhouse", cat="Buildings", display=7464, style="building", rules=[[level(30)]]),
+    dict(item=902212, name="Burnt Duskwood Farmhouse", cat="Buildings", display=7436, style="building", rules=[[level(30)]]),
+    dict(item=902213, name="Broken House", cat="Buildings", display=7461, style="building", rules=[[level(30)]]),
+    dict(item=902214, name="Ruined Guard Tower", cat="Buildings", display=7462, style="building", rules=[[level(30)]]),
 
     # ------------------------------------------------------------------ Buildings: faction, at Exalted
-    dict(item=902220, name="Westfall Farmhouse", cat="Buildings", display=7465, style="building", rules=exalted(STORMWIND), footprint=16, height=12),
-    dict(item=902221, name="Duskwood Farmhouse", cat="Buildings", display=7432, style="building", rules=exalted(STORMWIND), footprint=16, height=12),
-    dict(item=902222, name="Redridge Farmhouse", cat="Buildings", display=8010, style="building", rules=exalted(STORMWIND), footprint=16, height=12),
-    dict(item=902223, name="Redridge Barn", cat="Buildings", display=8013, style="building", rules=exalted(STORMWIND), footprint=16, height=14),
-    dict(item=902224, name="Duskwood Stable", cat="Buildings", display=8016, style="building", rules=exalted(STORMWIND), footprint=14, height=10),
-    dict(item=902225, name="Duskwood Blacksmith", cat="Buildings", display=7668, style="building", rules=exalted(STORMWIND), footprint=14, height=12),
-    dict(item=902226, name="Redridge Lumber Mill", cat="Buildings", display=8012, style="building", rules=exalted(STORMWIND), footprint=20, height=16),
-    dict(item=902227, name="Redridge Chapel", cat="Buildings", display=7428, style="building", rules=exalted(STORMWIND), footprint=16, height=20),
-    dict(item=902228, name="Duskwood Two-Story House", cat="Buildings", display=7463, style="building", rules=exalted(STORMWIND), footprint=16, height=16),
-    dict(item=902229, name="Human Guard Tower", cat="Buildings", display=7595, style="building", rules=exalted(STORMWIND), footprint=14, height=30),
+    dict(item=902220, name="Westfall Farmhouse", cat="Buildings", display=7465, style="building", rules=exalted(STORMWIND)),
+    dict(item=902221, name="Duskwood Farmhouse", cat="Buildings", display=7432, style="building", rules=exalted(STORMWIND)),
+    dict(item=902222, name="Redridge Farmhouse", cat="Buildings", display=8010, style="building", rules=exalted(STORMWIND)),
+    dict(item=902223, name="Redridge Barn", cat="Buildings", display=8013, style="building", rules=exalted(STORMWIND)),
+    dict(item=902224, name="Duskwood Stable", cat="Buildings", display=8016, style="building", rules=exalted(STORMWIND)),
+    dict(item=902225, name="Duskwood Blacksmith", cat="Buildings", display=7668, style="building", rules=exalted(STORMWIND)),
+    dict(item=902226, name="Redridge Lumber Mill", cat="Buildings", display=8012, style="building", rules=exalted(STORMWIND)),
+    dict(item=902227, name="Redridge Chapel", cat="Buildings", display=7428, style="building", rules=exalted(STORMWIND)),
+    dict(item=902228, name="Duskwood Two-Story House", cat="Buildings", display=7463, style="building", rules=exalted(STORMWIND)),
+    dict(item=902229, name="Human Guard Tower", cat="Buildings", display=7595, style="building", rules=exalted(STORMWIND)),
     dict(item=902230, name="Night Elf Tent", cat="Buildings", display=9148, style="building", rules=exalted(DARNASSUS)),
-    dict(item=902231, name="Night Elf Druid Tower", cat="Buildings", display=7458, style="building", rules=exalted(DARNASSUS), footprint=14, height=30),
-    dict(item=902232, name="Draenei Hut", cat="Buildings", display=7667, style="building", rules=exalted(EXODAR), footprint=12, height=12),
+    dict(item=902231, name="Night Elf Druid Tower", cat="Buildings", display=7458, style="building", rules=exalted(DARNASSUS)),
+    dict(item=902232, name="Draenei Hut", cat="Buildings", display=7667, style="building", rules=exalted(EXODAR)),
     dict(item=902233, name="Northrend Human House", cat="Buildings", display=7832, style="building", rules=exalted(ALLIANCE_VANGUARD)),
     dict(item=902234, name="Tall Human Tower", cat="Buildings", display=8335, style="building", rules=exalted(ALLIANCE_VANGUARD)),
-    dict(item=902235, name="The Skybreaker", cat="Buildings", display=8254, style="building", rules=exalted(ALLIANCE_VANGUARD), footprint=45, height=40),
+    dict(item=902235, name="The Skybreaker", cat="Buildings", display=8254, style="building", rules=exalted(ALLIANCE_VANGUARD)),
     dict(item=902240, name="Orc Tent", cat="Buildings", display=8184, style="building", rules=exalted(ORGRIMMAR)),
     dict(item=902241, name="Orc Zeppelin House", cat="Buildings", display=7466, style="building", rules=exalted(ORGRIMMAR)),
-    dict(item=902242, name="Orc Great Hall", cat="Buildings", display=7670, style="building", rules=exalted(ORGRIMMAR), footprint=22, height=20),
-    dict(item=902243, name="Orc Barracks", cat="Buildings", display=7672, style="building", rules=exalted(ORGRIMMAR), footprint=20, height=18),
-    dict(item=902244, name="Tauren Druid Tent", cat="Buildings", display=9127, style="building", rules=exalted(THUNDER_BLUFF), footprint=20, height=20),
+    dict(item=902242, name="Orc Great Hall", cat="Buildings", display=7670, style="building", rules=exalted(ORGRIMMAR)),
+    dict(item=902243, name="Orc Barracks", cat="Buildings", display=7672, style="building", rules=exalted(ORGRIMMAR)),
+    dict(item=902244, name="Tauren Druid Tent", cat="Buildings", display=9127, style="building", rules=exalted(THUNDER_BLUFF)),
     dict(item=902245, name="Forsaken Tent", cat="Buildings", display=7872, style="building", rules=exalted(UNDERCITY)),
     dict(item=902246, name="Troll Watch Tower", cat="Buildings", display=3, style="building", rules=exalted(DARKSPEAR)),
-    dict(item=902247, name="Winter Tauren Smoke Hut", cat="Buildings", display=7807, style="building", rules=exalted(HORDE_EXPEDITION), footprint=10, height=10),
-    dict(item=902248, name="Orgrim's Hammer", cat="Buildings", display=8253, style="building", rules=exalted(HORDE_EXPEDITION), footprint=45, height=40),
+    dict(item=902247, name="Winter Tauren Smoke Hut", cat="Buildings", display=7807, style="building", rules=exalted(HORDE_EXPEDITION)),
+    dict(item=902248, name="Orgrim's Hammer", cat="Buildings", display=8253, style="building", rules=exalted(HORDE_EXPEDITION)),
     dict(item=902250, name="Goblin Tent", cat="Buildings", display=7725, style="building", rules=exalted(BOOTY_BAY)),
     dict(item=902251, name="Gypsy Wagon", cat="Buildings", go=180045, style="building", rules=exalted(BOOTY_BAY)),
-    dict(item=902252, name="Pirate Ship Run Aground", cat="Buildings", display=7552, style="building", rules=exalted(BOOTY_BAY), footprint=35, height=30),
-    dict(item=902253, name="Old Stratholme Farm", cat="Buildings", display=7847, style="building", rules=exalted(KEEPERS_OF_TIME), footprint=18, height=14),
+    dict(item=902252, name="Pirate Ship Run Aground", cat="Buildings", display=7552, style="building", rules=exalted(BOOTY_BAY)),
+    dict(item=902253, name="Old Stratholme Farm", cat="Buildings", display=7847, style="building", rules=exalted(KEEPERS_OF_TIME)),
     dict(item=902254, name="Ulduar Tower", cat="Buildings", display=8590, style="building", rules=exalted(KIRIN_TOR)),
     dict(item=902255, name="Wintergrasp Tower", cat="Buildings", display=7878, style="building", rules=exalted(VALIANCE)),
     dict(item=902256, name="Wintergrasp Tower (Horde)", cat="Buildings", display=7878, style="building", rules=exalted(WARSONG)),
-    dict(item=902257, name="Blizzard's Test House", cat="Buildings", display=467, style="building", rules=[[NEVER]], footprint=16, height=14,
+    dict(item=902257, name="Blizzard's Test House", cat="Buildings", display=467, style="building", rules=[[NEVER]],
          hint="Blizzard's own unfinished player housing prototype, still in the game files. GMs only"),
 
     # ------------------------------------------------------------------ Exploration

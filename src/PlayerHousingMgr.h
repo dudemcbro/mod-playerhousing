@@ -168,9 +168,15 @@ namespace Housing
         uint32 sortOrder{0};
         std::string hint;
         uint32 legacyCatalogId{0};
+        // The rectangle on the ground in the piece's own frame (x forward): inside a building.
+        float outlineMinX{0.0f};
+        float outlineMinY{0.0f};
+        float outlineMaxX{0.0f};
+        float outlineMaxY{0.0f};
         std::vector<PieceRule> rules;
 
         bool IsBuilding() const { return kind == PIECE_BUILDING; }
+        bool HasOutline() const { return outlineMaxX > outlineMinX && outlineMaxY > outlineMinY; }
         bool HasFlag(uint32 flag) const { return (flags & flag) != 0; }
     };
 

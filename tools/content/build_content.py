@@ -261,9 +261,13 @@ def build(args):
         height = piece.get("height", height) or (8.0 if building else 1.0)
         if stand:
             footprint, height = 0.5, 2.0
+        # The outline on the ground, in the piece's own frame (x forward): what counts as
+        # inside a building.
+        outline = (box[0] * size, box[1] * size, box[3] * size, box[4] * size)
         if length <= 0 or depth <= 0 or stand or "footprint" in piece:
-            # World models record no bounds: the footprint given in pieces.py is all there is.
+            # No bounds recorded, or overridden: the footprint is all there is.
             length = depth = 2 * footprint
+            outline = (-footprint, -footprint, footprint, footprint)
 
         if not stand and display not in models:
             raise SystemExit("%s (%d) uses model %d, which isn't in GameObjectDisplayInfo.dbc: it would be invisible"
@@ -277,6 +281,15 @@ def build(args):
         world_box = world_bounds.get(display)
         if world_box and model.lower().endswith(".wmo"):
             preview_size = tuple((world_box[i + 3] - world_box[i]) * size for i in range(3))
+            # The same outline sizes the building itself (its targeting circle, and what
+            # counts as inside it), unless pieces.py says otherwise. Some models include
+            # surrounding pieces and come out too big: check those in game and set their
+            # footprint in pieces.py.
+            if "footprint" not in piece:
+                footprint = max(abs(world_box[0]), abs(world_box[1]), abs(world_box[3]), abs(world_box[4])) * size
+                outline = (world_box[0] * size, world_box[1] * size, world_box[3] * size, world_box[4] * size)
+            if "height" not in piece and world_box[5] > 0:
+                height = world_box[5] * size
         if stand:
             model = "player"
         elif not model or model.lower().endswith(".wmo"):
@@ -299,9 +312,10 @@ def build(args):
         cost = piece.get("cost", cost)
         hint = describe(piece, world, names)
 
-        piece_rows.append("(%d, %d, %d, %s, %d, %d, %s, %s, %s, %d, %d, %d, %s, %d)" % (
+        piece_rows.append("(%d, %d, %d, %s, %d, %d, %s, %s, %s, %d, %d, %d, %s, %d, %s)" % (
             item, 1 if building else 0, CATEGORIES.index(category), sql_text(name), live, edit, repr(piece.get("scale", 1.0)),
-            repr(round(footprint, 2)), repr(round(height, 2)), flags, cost, order, sql_text(hint), piece.get("legacy", 0)))
+            repr(round(footprint, 2)), repr(round(height, 2)), flags, cost, order, sql_text(hint), piece.get("legacy", 0),
+            ", ".join(repr(round(v, 2)) for v in outline)))
         for group_index, group in enumerate(groups):
             for rule_index, (kind, p1, p2) in enumerate(group):
                 rule_rows.append("(%d, %d, %d, %d, %d, %d)" % (item, group_index, rule_index, kind, p1, p2))
@@ -361,7 +375,8 @@ def build(args):
         ",\n".join(items) + ";",
         "",
         "INSERT INTO `mod_playerhousing_piece` (`item_entry`, `kind`, `category`, `name`, `go_entry`, `edit_go_entry`, `scale`, "
-        "`footprint`, `height`, `flags`, `copy_cost`, `sort_order`, `hint`, `legacy_catalog_id`) VALUES",
+        "`footprint`, `height`, `flags`, `copy_cost`, `sort_order`, `hint`, `legacy_catalog_id`, "
+        "`outline_min_x`, `outline_min_y`, `outline_max_x`, `outline_max_y`) VALUES",
         ",\n".join(piece_rows) + ";",
         "",
         "INSERT INTO `mod_playerhousing_piece_rule` (`item_entry`, `rule_group`, `rule_index`, `rule_type`, `param1`, `param2`) VALUES",

@@ -47,7 +47,9 @@ INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landin
 --             6 Professions, 7 Holidays, 8 Capstones
 --   go_entry  the object spawned normally; edit_go_entry a clickable copy used while
 --             decorating (only for pieces that work like the real thing: chairs, stations)
---   footprint radius in yards (what counts as inside a building); height of the top surface
+--   footprint radius in yards (targeting circle, distance to a building); height of the top
+--             surface; outline the rectangle on the ground in the piece's own frame (x forward),
+--             which is what counts as inside a building
 --   flags     1 surface, 2 small, 4 unlock per character, 8 first-login gift, 16 starter wreckage
 DROP TABLE IF EXISTS `mod_playerhousing_piece`;
 CREATE TABLE `mod_playerhousing_piece` (
@@ -65,6 +67,10 @@ CREATE TABLE `mod_playerhousing_piece` (
   `sort_order` int unsigned NOT NULL DEFAULT 0,
   `hint` varchar(160) NOT NULL DEFAULT '',
   `legacy_catalog_id` int unsigned NOT NULL DEFAULT 0,
+  `outline_min_x` float NOT NULL DEFAULT 0,
+  `outline_min_y` float NOT NULL DEFAULT 0,
+  `outline_max_x` float NOT NULL DEFAULT 0,
+  `outline_max_y` float NOT NULL DEFAULT 0,
   PRIMARY KEY (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

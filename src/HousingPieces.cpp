@@ -912,8 +912,13 @@ std::vector<Placement> PlayerHousingMgr::GetPiecesInside(ObjectGuid::LowType own
         return inside;
 
     Placement const& building = buildingItr->second;
-    float radius = buildingPieceItr->second.footprint;
-    float top = building.z + std::max(4.0f, buildingPieceItr->second.height);
+    PieceDefinition const& buildingPiece = buildingPieceItr->second;
+    float radius = buildingPiece.footprint;
+    float top = building.z + std::max(4.0f, buildingPiece.height);
+    // Into the building's own frame (x forward), where its outline is a plain rectangle.
+    float cosO = std::cos(building.o);
+    float sinO = std::sin(building.o);
+    float scale = buildingPiece.scale > 0.0f ? building.scale / buildingPiece.scale : 1.0f;
     for (auto const& [id, placement] : session.placements)
     {
         if (id == buildingPlacementId)
@@ -925,7 +930,17 @@ std::vector<Placement> PlayerHousingMgr::GetPiecesInside(ObjectGuid::LowType own
 
         float dx = placement.x - building.x;
         float dy = placement.y - building.y;
-        if (dx * dx + dy * dy <= radius * radius && placement.z >= building.z - 1.5f && placement.z <= top)
+        bool within;
+        if (buildingPiece.HasOutline())
+        {
+            float localX = (cosO * dx + sinO * dy) / scale;
+            float localY = (-sinO * dx + cosO * dy) / scale;
+            within = localX >= buildingPiece.outlineMinX && localX <= buildingPiece.outlineMaxX &&
+                     localY >= buildingPiece.outlineMinY && localY <= buildingPiece.outlineMaxY;
+        }
+        else
+            within = dx * dx + dy * dy <= radius * radius;
+        if (within && placement.z >= building.z - 1.5f && placement.z <= top)
             inside.push_back(placement);
     }
     return inside;

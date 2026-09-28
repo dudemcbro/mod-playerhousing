@@ -142,8 +142,8 @@ bool PlayerHousingMgr::LoadDefinitions()
     }
 
     QueryResult pieceResult = WorldDatabase.Query(
-        "SELECT item_entry, kind, category, name, go_entry, edit_go_entry, scale, footprint, height, flags, copy_cost, sort_order, hint, legacy_catalog_id "
-        "FROM mod_playerhousing_piece");
+        "SELECT item_entry, kind, category, name, go_entry, edit_go_entry, scale, footprint, height, flags, copy_cost, sort_order, hint, legacy_catalog_id, "
+        "outline_min_x, outline_min_y, outline_max_x, outline_max_y FROM mod_playerhousing_piece");
     if (!pieceResult)
     {
         LOG_ERROR("module", "mod-playerhousing: No pieces found. Did you apply the db_world SQL?");
@@ -168,6 +168,10 @@ bool PlayerHousingMgr::LoadDefinitions()
         piece.sortOrder = fields[11].Get<uint32>();
         piece.hint = fields[12].Get<std::string>();
         piece.legacyCatalogId = fields[13].Get<uint32>();
+        piece.outlineMinX = fields[14].Get<float>();
+        piece.outlineMinY = fields[15].Get<float>();
+        piece.outlineMaxX = fields[16].Get<float>();
+        piece.outlineMaxY = fields[17].Get<float>();
 
         // Stands are figures, not objects: they have no gameobject.
         bool needsObject = !(piece.flags & PIECE_FLAG_STAND);

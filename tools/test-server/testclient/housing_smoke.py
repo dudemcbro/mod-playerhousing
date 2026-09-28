@@ -499,6 +499,17 @@ def main():
     wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
     move(owner, L["inside"][0] - 2, L["inside"][1], L["inside"][2])
     owner.use_item(CHAIR, spell_of(CHAIR), L["inside"])
+    # "Inside" is the building's outline, turned the way it faces: a lantern in a corner
+    # (inside the outline, but farther from the middle than the old circle reached) counts;
+    # a table just past the wall doesn't.
+    house = placement_of(owner_guid, FARMHOUSE)
+
+    def around_house(forward, left):
+        o = house["o"]
+        return (house["x"] + math.cos(o) * forward - math.sin(o) * left,
+                house["y"] + math.sin(o) * forward + math.cos(o) * left, L["inside"][2])
+    owner.use_item(LANTERN, spell_of(LANTERN), around_house(8.5, 8.5))
+    owner.use_item(TABLE, spell_of(TABLE), around_house(13.0, 0.0))
     owner.command(".house")
     owner.gossip_select("Change a piece near me")
     _, _ = owner.gossip_select("Westfall Farmhouse")
@@ -508,13 +519,15 @@ def main():
     menu = owner.last_gossip
     check("choose the building only, or the building and what's inside",
           "Pick up the building only" in options(menu) and any("inside it" in o for o in options(menu)), str(options(menu)))
+    check("inside follows the building's outline: the corner lantern counts, the table past the wall doesn't",
+          any(o.startswith("Pick up the building and the 2 pieces inside it") for o in options(menu)), str(options(menu)))
     _, msgs = owner.gossip_select("Pick up the building and the")
     wait_for(lambda: owner.count_item(FARMHOUSE) == 1, 3, owner)
     check("the building and the chair inside come back", placement_of(owner_guid, FARMHOUSE) is None and placement_of(owner_guid, CHAIR) is None
           and owner.count_item(FARMHOUSE) == 1 and owner.count_item(CHAIR) == 1, joined(msgs))
     msgs = owner.command(".house undo")
-    check("undo puts the building and the chair back", placement_of(owner_guid, FARMHOUSE) is not None and placement_of(owner_guid, CHAIR) is not None,
-          joined(msgs))
+    check("undo puts the building and the chair back", placement_of(owner_guid, FARMHOUSE) is not None and placement_of(owner_guid, CHAIR) is not None
+          and placement_of(owner_guid, LANTERN) is not None and placement_of(owner_guid, TABLE) is not None, joined(msgs))
 
     # ------------------------------------------------------------- stands
     log("== mannequin")
