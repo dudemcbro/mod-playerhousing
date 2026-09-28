@@ -60,7 +60,14 @@ restart_world() {
 
 case "${1:-}" in
     start)
-        LABEL="${SELINUX_LABEL-Z}"
+        # As podman-test.sh: no SELinux labels on NTFS or exFAT, so labeling goes off instead.
+        if [ -z "${SELINUX_LABEL+set}" ]; then
+            case "$(findmnt -n -o FSTYPE --target "$MODULE_DIR" 2>/dev/null)" in
+                ntfs*|fuseblk|exfat|vfat|msdos) SELINUX_LABEL="" ;;
+                *) SELINUX_LABEL="Z" ;;
+            esac
+        fi
+        LABEL="$SELINUX_LABEL"
         volume="$MODULE_DIR:$IN"
         options=()
         if [ -n "$LABEL" ]; then volume="$volume:$LABEL"; else options+=(--security-opt label=disable); fi
