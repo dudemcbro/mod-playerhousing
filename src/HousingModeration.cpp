@@ -194,10 +194,10 @@ bool PlayerHousingMgr::GmPackUp(Player* gm, ObjectGuid::LowType ownerGuid, std::
     {
         session->placements.clear();
         session->selected.clear();
-        // Undo lists on this island point at pieces that are gone.
-        for (ObjectGuid const& occupant : session->occupants)
-            _journals.erase(occupant.GetCounter());
     }
+    // Undo lists on this island point at pieces that are gone (the island may be waiting to
+    // reload with people still on it, so not only its session's occupants).
+    ForgetJournals(ownerGuid);
 
     LOG_INFO("module", "mod-playerhousing: {} packed up the island of {} ({} pieces).", gm->GetName(), NameOf(ownerGuid), placements.size());
     if (Player* owner = ObjectAccessor::FindPlayerByLowGUID(ownerGuid))

@@ -224,6 +224,9 @@ void PlayerHousingMgr::ApplyAmbienceToIsland(ObjectGuid::LowType ownerGuid, bool
 
 bool PlayerHousingMgr::SetWeather(Player* player, uint8 weather, std::string& reason)
 {
+    // Everyone on the island gets each change: one a second.
+    if (OnCooldown(player, COOLDOWN_AMBIENCE, IN_MILLISECONDS, reason))
+        return false;
     if (weather >= WeatherCount())
     {
         reason = "Unknown weather.";
@@ -240,6 +243,9 @@ bool PlayerHousingMgr::SetWeather(Player* player, uint8 weather, std::string& re
 
 bool PlayerHousingMgr::SetTimeOfDay(Player* player, uint8 timeOfDay, std::string& reason)
 {
+    // Everyone on the island gets each change: one a second.
+    if (OnCooldown(player, COOLDOWN_AMBIENCE, IN_MILLISECONDS, reason))
+        return false;
     if (timeOfDay >= TimeOfDayCount())
     {
         reason = "Unknown time of day.";
@@ -258,6 +264,8 @@ bool PlayerHousingMgr::SetTimeOfDay(Player* player, uint8 timeOfDay, std::string
 bool PlayerHousingMgr::SetMusic(Player* player, uint32 soundId, std::string& reason)
 {
     ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    if (OnCooldown(player, COOLDOWN_AMBIENCE, IN_MILLISECONDS, reason))
+        return false;
     if (soundId && !MusicName(soundId))
     {
         reason = "The music box doesn't know that tune.";

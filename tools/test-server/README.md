@@ -151,8 +151,9 @@ checking the database and what the client sees after each step (214 checks, 215 
 - the catalog of every object: left out with `curated`; with `everything`, the Catalog
   category counts every object and a Wanted Poster places like any piece
 - the Bank Chest: unlocked at level 20, its menu, the bank opening through an unseen
-  banker at the chest, a bank slot bought there, and refused from across the island; a
-  guest finding it locked
+  banker at the chest, a bank slot bought there, and refused from across the island;
+  placing a lantern and banking it in the same packet batch (the lantern is used up, not
+  banked); a guest finding it locked
 - buildings: placing a faction building, the pick up choice, what counts as inside (a
   lantern in a corner does, a table past the wall doesn't), the building and what's
   inside coming back, undo
@@ -184,11 +185,31 @@ checking the database and what the client sees after each step (214 checks, 215 
 - the addon messages: at login, on request, the selected piece and the undo label
 - pack up everything and undo, unstuck, logging out on the island and back in (an
   unfinished move's item is gone)
-- last, a GM packing up the island: every piece in House Storage, the mannequin's sword
-  in the mail
+- a GM packing up the island: every piece in House Storage, the mannequin's sword in the
+  mail, and the owner's undo list gone with the pieces
+- last, deleting a character: a fourth account's character makes the guest a roommate,
+  the guest places a chair there, the character is deleted, and the chair is in the
+  guest's House Storage while the island is gone
 
 Add `--verbose` to see every chat line, and `--layout guildhouse` when the server keeps
 the guild hall. The exit code is 0 only if every check passes.
+
+## The load test
+
+`testclient/load_test.py` puts many players on their islands at once (accounts
+`LOADTEST01` and up, created on first run). Each goes home, opens the island, places
+pieces, turns, nudges, undoes and redoes, and visits a neighbor, while the GM account
+samples `.server info`. It reports how long each kind of action took to answer, the
+server's update times, the worldserver's memory, and any island that showed another
+island's pieces:
+
+```
+docker exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/load_test.py --players 99
+```
+
+It waits for its characters to be out of the world before resetting them, and logs them
+out cleanly at the end, so runs can follow each other. Results are in the module README
+(Load).
 
 ## Not covered by the test
 

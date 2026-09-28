@@ -60,7 +60,7 @@ namespace
         CMD_NUDGE_MENU,       // action: placement id
         CMD_PICKUP_MENU,      // action: placement id (buildings: choose what to take)
         CMD_HOOK_MENU,        // action: surface placement id
-        CMD_HOOK_PLACE,       // action: surface id << 12 | (item entry - ITEM_BASE)
+        CMD_HOOK_PLACE,       // action: surface id << 16 | (item entry - ITEM_BASE)
         CMD_PACKUP,
         CMD_KEY,
         CMD_STAND_DRESS_MENU, // action: placement id | page << 24
@@ -1185,11 +1185,15 @@ void HousingMenus::ShowHook(Player* player, MenuSource const& source, uint32 sur
     uint32 shown = 0;
     for (auto const& [itemEntry, count] : available)
     {
+        // Both halves have to fit the one number a menu option carries (every piece does;
+        // a surface only after 65535 placements on one island wouldn't).
+        if (surfacePlacementId > 0xFFFF || itemEntry - ITEM_BASE > 0xFFFF)
+            continue;
         if (++shown > PAGE_SIZE)
             break;
         PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(itemEntry);
         Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Put {} here (you have {})", piece->name, count),
-            CMD_HOOK_PLACE, (surfacePlacementId << 12) | (itemEntry - ITEM_BASE));
+            CMD_HOOK_PLACE, (surfacePlacementId << 16) | (itemEntry - ITEM_BASE));
     }
     Add(player, GOSSIP_ICON_CHAT, "Done", CMD_CLOSE);
     Send(player, source, TEXT_HOOK);
@@ -1199,6 +1203,14 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
 {
     std::string reason;
     std::string text = code ? code : "";
+
+    // Menu clicks count with the .house commands: a burst is fine, a flood isn't.
+    if (player->GetSession()->GetSecurity() < SEC_GAMEMASTER && sPlayerHousingMgr->CommandFlood(player))
+    {
+        CloseGossipMenuFor(player);
+        Say(player, "Too many housing commands at once: give it a moment.");
+        return;
+    }
 
     switch (sender)
     {
@@ -1519,7 +1531,7 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             ShowHook(player, source, action);
             return;
         case CMD_HOOK_PLACE:
-            sPlayerHousingMgr->PlaceOnHook(player, action >> 12, (action & 0xFFF) + ITEM_BASE, reason);
+            sPlayerHousingMgr->PlaceOnHook(player, action >> 16, (action & 0xFFFF) + ITEM_BASE, reason);
             Say(player, reason);
             CloseGossipMenuFor(player);
             return;

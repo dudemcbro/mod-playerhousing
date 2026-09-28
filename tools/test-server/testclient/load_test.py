@@ -140,9 +140,15 @@ def worker(index, args, names, stats, ready, go):
                 deadline = time.time() + 5
                 while wc.count_item(CHAIR) == 0 and time.time() < deadline:
                     wc.pump(0.05)
+            before = wc.count_item(CHAIR)
             if timed(stats, wc, "place", lambda: wc.use_item(CHAIR, spell, spot, wait=0), "Placed"):
                 with stats.lock:
                     stats.placed += 1
+                # The chair is taken on the player's next update: wait for it, or the next
+                # placement would try to use the same one.
+                deadline = time.time() + 5
+                while wc.count_item(CHAIR) >= before and time.time() < deadline:
+                    wc.pump(0.05)
             wc.pump(0.2)
 
         for edit in range(args.edits):
@@ -168,9 +174,14 @@ def worker(index, args, names, stats, ready, go):
         stats.add("visit (teleport)", time.time() - start)
         wc.pump(2.0)
         wc.command(".house leave", wait=1.0)
-        wc.close()
     except Exception as exc:  # noqa: BLE001
         stats.error("%s: %r" % (account, exc))
+    finally:
+        # A clean logout, so the next run doesn't find the character still in the world.
+        try:
+            wc.logout()
+        except Exception:  # noqa: BLE001
+            wc.close()
 
 
 def watch_server(args, stop, samples):
@@ -198,7 +209,10 @@ def watch_server(args, stop, samples):
         if sample:
             samples.append(sample)
         stop.wait(args.interval)
-    admin.close()
+    try:
+        admin.logout()
+    except Exception:  # noqa: BLE001
+        admin.close()
 
 
 def percentile(values, p):
@@ -221,10 +235,19 @@ def main():
     for i in range(args.players):
         ensure_account("LOADTEST%02d" % (i + 1), "loadtest")
 
-    # A fresh start for the load characters' housing.
+    # A fresh start for the load characters' housing. Only once they are out of the world: a
+    # character still in it from an earlier run keeps its old bags and island in memory, and
+    # logging in again picks those up instead of the reset.
     guids = [r[0] for r in db("SELECT guid FROM characters WHERE name IN (%s)" % ",".join("'%s'" % n for n in names))]
     if guids:
         ids = ",".join(guids)
+        deadline = time.time() + 120
+        while int(db("SELECT COUNT(*) FROM characters WHERE online=1 AND guid IN (%s)" % ids)[0][0]) and time.time() < deadline:
+            time.sleep(2)
+        still = int(db("SELECT COUNT(*) FROM characters WHERE online=1 AND guid IN (%s)" % ids)[0][0])
+        if still:
+            print("%d load characters are still in the world; try again in a minute" % still)
+            return 2
         for table, column in (("mod_playerhousing_placement", "owner_guid"), ("mod_playerhousing_house", "owner_guid"),
                               ("mod_playerhousing_storage", "owner_guid"), ("mod_playerhousing_character", "guid"),
                               ("mod_playerhousing_visit_log", "owner_guid"), ("mod_playerhousing_placement_gear", "owner_guid")):

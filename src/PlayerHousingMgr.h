@@ -309,6 +309,8 @@ public:
     void OnPlayerUpdate(Player* player, uint32 diffMs);
     void OnPlayerMapChanged(Player* player);
     void OnPlayerDelete(ObjectGuid guid);
+    // The character is gone for good (not only deleted to be restorable): its housing goes too.
+    void OnPlayerDeleteFromDB(ObjectGuid::LowType guid);
     void OnBeforeSetPhaseMask(uint32 oldPhaseMask, uint32 newPhaseMask, bool& useCombinedPhases) const;
 
     bool IsEnabled() const { return _enabled; }
@@ -388,6 +390,7 @@ public:
     void SelectPlacement(Player const* player, uint32 placementId);
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
     void ProcessPendingConsumes(Player* player);
+    bool HasPendingConsumes() const { return _pendingConsumeCount.load(std::memory_order_relaxed) != 0; }
 
     // ---- moderation (HousingModeration.cpp)
     bool ReportIsland(Player* reporter, std::string const& text, std::string& reason);
@@ -463,7 +466,13 @@ public:
     // ---- people (HousingPeople.cpp)
     bool GetHouseRecord(ObjectGuid::LowType ownerGuid, Housing::HouseRecord& outRecord) const;
     bool EnsureHouse(ObjectGuid::LowType ownerGuid) const;
-    bool CanVisit(Player const* visitor, Housing::HouseRecord const& house, std::string& reason) const;
+    // Who has the visitor on a guest list or a friends list, looked up once for a whole list.
+    struct VisitContext
+    {
+        std::unordered_set<ObjectGuid::LowType> guestOf;
+        std::unordered_set<ObjectGuid::LowType> friendOf;
+    };
+    bool CanVisit(Player const* visitor, Housing::HouseRecord const& house, std::string& reason, VisitContext const* context = nullptr) const;
     bool SetPrivacy(Player* player, uint8 privacy, std::string& reason);
     bool CyclePrivacy(Player* player, std::string& reason);
     bool InviteGuest(Player* player, ObjectGuid::LowType guestGuid, std::string& reason);
@@ -506,11 +515,15 @@ public:
     {
         COOLDOWN_HEAVY = 0,  // pack up, set out a layout, get missing pieces, one of everything
         COOLDOWN_LIKE,
+        COOLDOWN_UNDO,       // undo or redo of a step with many pieces
+        COOLDOWN_AMBIENCE,   // weather, time and music: sent to everyone on the island
         COOLDOWN_COUNT
     };
     bool OnCooldown(Player* player, uint8 kind, uint32 ms, std::string& reason);
     // .house commands: a burst is fine, a flood isn't.
     bool CommandFlood(Player* player);
+    // Messages to another player (invites, likes, roommate news): not over and over.
+    bool MayNotify(Player const* sender, ObjectGuid::LowType target);
     static char const* CategoryName(uint8 category);
 
 private:
@@ -541,6 +554,7 @@ private:
 
     struct Journal
     {
+        ObjectGuid::LowType island{0};  // the island its steps were made on
         std::deque<Housing::JournalEntry> undo;
         std::deque<Housing::JournalEntry> redo;
     };
@@ -630,6 +644,15 @@ private:
     bool ApplyChanges(Player* player, Session& session, std::vector<Housing::Change> const& changes, bool towardsAfter, std::string& reason);
     bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
     void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes);
+    // A journal step still fits the island: every piece it touches is the one it was written for.
+    bool JournalStillApplies(Session const& session, Housing::JournalEntry const& entry, bool towardsAfter) const;
+    // Undo lists that point at an island's pieces, when those pieces go some other way.
+    void ForgetJournals(ObjectGuid::LowType ownerGuid);
+    // What roommates put on an island goes back to them: pieces to House Storage, gear by mail.
+    void ReturnRoommatePieces(ObjectGuid::LowType ownerGuid);
+    // Housing of characters that no longer exist, at startup.
+    void PurgeLeftovers();
+    void RemoveHousingOf(ObjectGuid::LowType guid);
     bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason);
     // Checks the island, applies the changes and records them as one step; the first change
     // is the piece the label names.
@@ -677,6 +700,7 @@ private:
     mutable std::recursive_mutex _lock;
 
     bool _enabled{true};
+    bool _ready{false};  // started up: definitions loaded, leftovers purged
     bool _freeMode{false};
     bool _unlockAll{false};
     bool _gmVisitBypass{false};
@@ -710,10 +734,12 @@ private:
         uint32 count{0};
     };
     std::unordered_map<ObjectGuid, CommandWindow> _commandWindows;
+    std::unordered_map<ObjectGuid::LowType, std::unordered_map<ObjectGuid::LowType, uint64>> _notified;  // sender -> target -> sent at (ms)
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
-    // Items used to place pieces; removed on the player's next update because the cast that
-    // placed them still holds the item.
+    // Items used to place pieces; removed before the player's next packet or update, because
+    // the cast that placed them still holds the item.
     std::unordered_map<ObjectGuid, std::map<uint32, uint32>> _pendingConsumes;
+    std::atomic<uint32> _pendingConsumeCount{0};  // _pendingConsumes.size(), read without the lock
     std::unordered_map<ObjectGuid, MannequinLook> _mannequins;
     std::unordered_map<ObjectGuid, ObjectGuid> _chestBankers;  // player -> the banker their chest brought
 

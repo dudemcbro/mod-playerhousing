@@ -21,6 +21,9 @@ BUILD = 12340
 
 # Opcodes (from src/server/game/Server/Protocol/Opcodes.h)
 CMSG_CHAR_CREATE = 0x036
+CMSG_CHAR_DELETE = 0x038
+SMSG_CHAR_DELETE = 0x03C
+CMSG_AUTOBANK_ITEM = 0x283
 CMSG_DESTROYITEM = 0x111
 CMSG_CHAR_ENUM = 0x037
 SMSG_CHAR_CREATE = 0x03A
@@ -418,6 +421,15 @@ class WorldClient:
     def send(self, opcode, body=b""):
         self._send_raw(opcode, body, encrypt=True)
 
+    def send_many(self, packets):
+        """Several packets in one write, so the server takes them in the same go."""
+        data = b""
+        with self.send_lock:
+            for opcode, body in packets:
+                header = struct.pack(">H", len(body) + 4) + struct.pack("<I", opcode)
+                data += self.enc.process(header) + body
+            self.sock.sendall(data)
+
     def _reader(self):
         try:
             self.sock.settimeout(None)
@@ -808,6 +820,17 @@ class WorldClient:
         finally:
             self.close()
 
+    def logout_to_characters(self):
+        """Back to the character list, still connected (20 seconds outside an inn or city)."""
+        self.send(CMSG_LOGOUT_REQUEST)
+        self.wait_for(SMSG_LOGOUT_COMPLETE, timeout=30)
+        self.player_guid = 0
+
+    def delete_char(self, guid):
+        self.send(CMSG_CHAR_DELETE, struct.pack("<Q", guid))
+        _, data = self.wait_for(SMSG_CHAR_DELETE)
+        return data[0]
+
     def close(self):
         self.alive = False
         try:
@@ -916,6 +939,20 @@ class WorldClient:
             if guid and guid in items:
                 item = items[guid]
                 slots[slot] = (guid, item.entry, item.fields.get(14, 1))
+        return slots
+
+    def bank_items(self):
+        """The bank's own 28 slots (39-66), as backpack() gives the backpack's."""
+        with self.objects_lock:
+            me = self.objects.get(self.player_guid)
+            fields = dict(me.fields) if me else {}
+            items = {g: o for g, o in self.objects.items() if o.type_id == TYPEID_ITEM}
+        slots = {}
+        for slot in range(39, 67):
+            low, high = fields.get(324 + 2 * slot, 0), fields.get(325 + 2 * slot, 0)
+            guid = low | (high << 32)
+            if guid and guid in items:
+                slots[slot] = (guid, items[guid].entry, items[guid].fields.get(14, 1))
         return slots
 
     def count_item(self, entry):

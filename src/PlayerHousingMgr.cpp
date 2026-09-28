@@ -329,6 +329,8 @@ void PlayerHousingMgr::OnStartup()
     }
 
     ConvertLegacyData();
+    PurgeLeftovers();
+    _ready = true;
 }
 
 bool PlayerHousingMgr::IsHousingPhase(uint32 phaseMask)
@@ -500,6 +502,18 @@ bool PlayerHousingMgr::OnCooldown(Player* player, uint8 kind, uint32 ms, std::st
     }
     readyAt[kind] = now + ms;
     return false;
+}
+
+bool PlayerHousingMgr::MayNotify(Player const* sender, ObjectGuid::LowType target)
+{
+    // One message a minute from one player to another; the action itself still happens.
+    uint64 now = GameTime::GetGameTimeMS().count();
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    uint64& last = _notified[sender->GetGUID().GetCounter()][target];
+    if (last && now - last < MINUTE * IN_MILLISECONDS)
+        return false;
+    last = now;
+    return true;
 }
 
 bool PlayerHousingMgr::CommandFlood(Player* player)
@@ -696,6 +710,7 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         _ambienceTimers.erase(player->GetGUID());
         _cooldowns.erase(player->GetGUID());
         _commandWindows.erase(player->GetGUID());
+        _notified.erase(player->GetGUID().GetCounter());
     }
 
     // A piece placed in the player's last moments still owes its item, and a move not
@@ -936,30 +951,15 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     if (!_enabled)
         return;
 
+    // Every deletion, also one a GM can undo: the island closes, and what roommates put on it
+    // goes back to them now, since nobody can reach it any more. The rest of the island stays
+    // until the character is gone for good (OnPlayerDeleteFromDB), so a restored character
+    // finds it as it was.
     ObjectGuid::LowType guidLow = guid.GetCounter();
     RemovePlayerTracking(guid, true);
 
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} OR guest_guid={}", guidLow, guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_placement WHERE owner_guid={}", guidLow);
-    // Gear on stands is out of the inventory, so the core's character deletion misses it. One
-    // transaction, so the items go before the rows that point at them.
-    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-    trans->Append("DELETE ii FROM item_instance ii JOIN mod_playerhousing_placement_gear g ON g.item_guid = ii.guid WHERE g.owner_guid={}", guidLow);
-    trans->Append("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={}", guidLow);
-    CharacterDatabase.CommitTransaction(trans);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_storage WHERE owner_guid={}", guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_piece WHERE owner_guid={}", guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_like WHERE owner_guid={} OR liker_guid={}", guidLow, guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_report WHERE owner_guid={}", guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_visit_log WHERE owner_guid={} OR visitor_guid={}", guidLow, guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_saved_layout WHERE owner_guid={}", guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);
-    CharacterDatabase.Execute("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);
-
-    // Guests still there are moved out by OnPlayerUpdate once the session is gone.
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    _journals.erase(guidLow);
+    // Guests still there are moved out by OnPlayerUpdate once the session is gone.
     auto sessionItr = _sessionsByOwner.find(guidLow);
     if (sessionItr != _sessionsByOwner.end())
     {
@@ -971,6 +971,93 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
 
         _sessionsByOwner.erase(sessionItr);
     }
+    _journals.erase(guidLow);
+    ForgetJournals(guidLow);
+    ReturnRoommatePieces(guidLow);
+}
+
+void PlayerHousingMgr::OnPlayerDeleteFromDB(ObjectGuid::LowType guidLow)
+{
+    // Before the module is up (the core purges old deleted characters early in startup), or
+    // while it's off, PurgeLeftovers catches up at the next start.
+    if (_ready)
+        RemoveHousingOf(guidLow);
+}
+
+void PlayerHousingMgr::RemoveHousingOf(ObjectGuid::LowType guidLow)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    ReturnRoommatePieces(guidLow);
+
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    trans->Append("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} OR guest_guid={}", guidLow, guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_placement WHERE owner_guid={}", guidLow);
+    // Gear on stands is out of the inventory, so the core's character deletion misses it. The
+    // items go before the rows that point at them. (Only the owner's gear is left by now.)
+    trans->Append("DELETE ii FROM item_instance ii JOIN mod_playerhousing_placement_gear g ON g.item_guid = ii.guid WHERE g.owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_storage WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_saved_piece WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_like WHERE owner_guid={} OR liker_guid={}", guidLow, guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_report WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_visit_log WHERE owner_guid={} OR visitor_guid={}", guidLow, guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_saved_layout WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);
+    CharacterDatabase.CommitTransaction(trans);
+}
+
+void PlayerHousingMgr::ReturnRoommatePieces(ObjectGuid::LowType ownerGuid)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::map<uint32, Placement> theirs;
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT placement_id, source_item_entry, placed_by FROM mod_playerhousing_placement WHERE owner_guid={} AND placed_by NOT IN (0, {})",
+            ownerGuid, ownerGuid))
+    {
+        do
+        {
+            Placement placement;
+            placement.id = (*result)[0].Get<uint32>();
+            placement.itemEntry = (*result)[1].Get<uint32>();
+            placement.placedBy = (*result)[2].Get<uint32>();
+            theirs[placement.id] = placement;
+        } while (result->NextRow());
+    }
+    if (theirs.empty())
+        return;
+
+    LoadGear(ownerGuid, theirs);
+    _report = {};
+    for (auto const& [id, placement] : theirs)
+    {
+        for (auto const& [slot, gear] : placement.gear)
+            ReturnGear(nullptr, ownerGuid, placement.placedBy, id, slot, gear);
+        DeletePlacement(ownerGuid, id);
+        CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_placement SET parent_id=0 WHERE owner_guid={} AND parent_id={}", ownerGuid, id);
+        AddToStorage(placement.placedBy, placement.itemEntry, 1);
+    }
+    LOG_INFO("module", "mod-playerhousing: The island of {} closed: {} pieces went back to the roommates who placed them.", ownerGuid, theirs.size());
+}
+
+void PlayerHousingMgr::PurgeLeftovers()
+{
+    // Characters removed for good while the module wasn't running, or before it was up.
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT h.guid FROM (SELECT owner_guid AS guid FROM mod_playerhousing_house UNION SELECT owner_guid FROM mod_playerhousing_placement "
+        "UNION SELECT owner_guid FROM mod_playerhousing_storage UNION SELECT guid FROM mod_playerhousing_character) h "
+        "LEFT JOIN characters c ON c.guid = h.guid WHERE c.guid IS NULL");
+    if (!result)
+        return;
+
+    uint32 count = 0;
+    do
+    {
+        RemoveHousingOf((*result)[0].Get<uint32>());
+        ++count;
+    } while (result->NextRow());
+    LOG_INFO("server.loading", "mod-playerhousing: Removed the housing of {} characters deleted for good.", count);
 }
 
 bool PlayerHousingMgr::EnsureSession(ObjectGuid::LowType ownerGuid)
@@ -1018,7 +1105,8 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
 
     DespawnSessionObjects(session, map);
     session.placements.clear();
-    session.nextPlacementId = 1;
+    // A reload with people still there (the owner left mid-decorating) keeps counting up: their
+    // undo lists may name ids of pieces picked up since, and those ids must not come back.
 
     if (QueryResult result = CharacterDatabase.Query(
             "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id, pitch, roll, placed_by FROM mod_playerhousing_placement "

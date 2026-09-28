@@ -390,15 +390,69 @@ fits, since players already see and track those.
   the clicked spot by then. Players who have old copies of the items cached see the old
   circle size until they clear their `WDB` folder.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
-  redo replay them exactly, handing items back or taking them as needed. The list lives in
-  memory and is cleared when the owner leaves the island.
+  redo replay them exactly, handing items back or taking them as needed. Each player has
+  their own list, in memory, cleared when they leave the island. A step only applies to
+  the very pieces it was written for (see Safety and limits).
 - **Mannequins** are creatures (entry 900201) with the mirror image flag, the way the
   Mirror Image spell works: the client asks what the figure wears and the module answers
   (a `ServerScript` catching `CMSG_GET_MIRRORIMAGE_DATA`), while weapons are virtual items.
   Gear on a stand leaves the inventory but stays in `item_instance`, the way mail keeps
   items, with a row in `mod_playerhousing_placement_gear`; so enchants, gems and the item's
-  guid survive, and undo returns the same item. Deleting a character deletes its stand
-  gear; the characters rollback mails any gear still on stands back to its owners.
+  guid survive, and undo returns the same item. Deleting a character for good deletes
+  its own stand gear; gear roommates left on its island is mailed back to them first.
+  The characters rollback mails any gear still on stands back to its owners.
+
+### Safety and limits
+
+Nothing on an island can be duplicated or lost:
+
+- Every piece placed takes its item, and every piece picked up gives one back. The item a
+  piece is placed with is taken before anything else the player sends is handled, so
+  moving it to the bank, the mail or a trade in the same moment doesn't keep it.
+- An undo or redo step only applies to the pieces it was written for. If someone else has
+  since picked one up or replaced it, the step is dropped with a message. Placement ids
+  are never handed out twice while anyone is on the island, and a GM packing up an island
+  or its owner being deleted clears every undo list that points at it.
+- Gear on a mannequin is only ever changed by the player it belongs to; anyone else's undo
+  moves the stand and leaves what it wears alone.
+- When a character is deleted, pieces roommates placed on its island go to the roommates'
+  House Storage and their mannequin gear comes by mail. The island itself stays until the
+  character is gone for good, so a GM can still restore it; it goes when the core removes
+  the character (also when the core purges old deleted characters), and anything left by
+  characters removed while the module was off is cleaned up at the next start. Deleted
+  characters' islands drop off the visit lists and can't be visited.
+
+Limits, per player (GMs are exempt from the first):
+
+- 15 housing commands or menu clicks in any 3 seconds.
+- 3 seconds between heavy actions: pack up, set out a layout, get the missing pieces, one of
+  everything, and undoing or redoing a step of more than 20 pieces.
+- 1 second between weather, time of day and music changes, which everyone on the island
+  receives.
+- A like every 10 seconds, and one message a minute from one player to the same other
+  player (invites, roommate news, likes). Five reports an hour per account.
+
+Player text (greetings, layout names, reports) is escaped for SQL, stripped of control
+characters and link codes, and cut to length without splitting a character. `nan` and `inf`
+aren't accepted as numbers. Players who aren't on an island cost the module one check per
+update, without taking its lock, and the visit lists look up guests and friends once per
+list rather than once per island.
+
+### Load
+
+`tools/test-server/testclient/load_test.py` puts many players on their islands at once:
+each goes home, opens the island, places pieces, turns, nudges, undoes and redoes, and
+visits a neighbor, while a GM samples the server's update times. On the development
+container (server and all the clients on one machine):
+
+| Players | Pieces placed | Place, p95 | Undo, p95 | Visit, p95 | Go home, p95 | Server update: mean, p99, max |
+| --- | --- | --- | --- | --- | --- | --- |
+| 99 | 792 in 41 s | 168 ms | 134 ms | 559 ms | 5.9 s | 15 ms, 133 ms, 533 ms |
+
+Going home is a teleport to another continent, all 99 at the same moment; a visit is a
+short hop on the island. The worldserver used about 2 GB.
+
+No island showed another island's pieces, and no action failed.
 
 ### Upgrading from the house levels version
 

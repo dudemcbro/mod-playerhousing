@@ -8,11 +8,14 @@ admin (GM). The test characters' housing state is reset at the start of every ru
 
 import argparse
 import math
+import os
+import struct
 import subprocess
 import sys
 import time
 
-from wowclient import TYPEID_GAMEOBJECT, TYPEID_UNIT, WorldClient, auth_login
+from wowclient import (CMSG_AUTOBANK_ITEM, CMSG_USE_ITEM, TARGET_FLAG_DEST_LOCATION, TYPEID_GAMEOBJECT, TYPEID_UNIT, WorldClient,
+                       auth_login, srp6_verifier)
 
 HOUSING_MAP = 1
 STEWARD = 900200
@@ -96,6 +99,13 @@ def joined(messages):
 
 def options(menu):
     return [i["text"] for i in (menu or {}).get("items", [])]
+
+
+def ensure_account(name, password):
+    salt = os.urandom(32)
+    verifier = srp6_verifier(name.upper(), password, salt)
+    db("INSERT INTO account (username, salt, verifier, expansion) VALUES ('%s', 0x%s, 0x%s, 2) "
+       "ON DUPLICATE KEY UPDATE salt=VALUES(salt), verifier=VALUES(verifier)" % (name.upper(), salt.hex(), verifier.hex()), "acore_auth")
 
 
 def connect(args, account, password):
@@ -775,6 +785,30 @@ def main():
           and owner.bank_banker == banker.guid and math.dist((banker.x, banker.y), L["chest"][:2]) < 1.0, str(owner.bank_banker))
     result = owner.buy_bank_slot(owner.bank_banker) if owner.bank_banker else None
     check("the bank works there (buying a bank slot)", result == BANKSLOT_OK, str(result))
+
+    # The item a piece was placed with is taken before anything else the player sends is
+    # handled: placing it and banking it in the same breath doesn't keep both.
+    owner.command(".house collection lantern")
+    owner.gossip_select("Lantern")
+    owner.gossip_select("Get one")
+    wait_for(lambda: owner.count_item(LANTERN) >= 1, 3, owner)
+    slot, lantern_guid = owner.find_item(LANTERN)
+    lanterns = owner.count_item(LANTERN)
+    placed_lanterns = [p["id"] for p in placements(owner_guid) if p["item"] == LANTERN]
+    stored_lanterns = storage(owner_guid).get(LANTERN, 0)
+    if lantern_guid:
+        spot = (L["chest"][0] - 2.0, L["chest"][1], L["chest"][2])
+        targets = struct.pack("<I", TARGET_FLAG_DEST_LOCATION) + b"\x00" + struct.pack("<fff", *spot)
+        owner.send_many([(CMSG_USE_ITEM, struct.pack("<BBBIQIB", 255, slot, 1, spell_of(LANTERN), lantern_guid, 0, 0) + targets),
+                         (CMSG_AUTOBANK_ITEM, struct.pack("<BB", 255, slot))])
+        owner.pump(2.0)
+    banked = sum(1 for _, e, _ in owner.bank_items().values() if e == LANTERN)
+    new_lanterns = [p["id"] for p in placements(owner_guid) if p["item"] == LANTERN and p["id"] not in placed_lanterns]
+    check("placing a piece and banking its item at once doesn't keep both", lantern_guid and len(new_lanterns) == 1 and banked == 0
+          and owner.count_item(LANTERN) == lanterns - 1 and storage(owner_guid).get(LANTERN, 0) == stored_lanterns,
+          "placed %d, banked %d, bags %d -> %d" % (len(new_lanterns), banked, lanterns, owner.count_item(LANTERN)))
+    for placement_id in new_lanterns:
+        owner.command(".house pickup %d" % placement_id)
     move(owner, *L["landing"])
     result = owner.buy_bank_slot(owner.bank_banker) if owner.bank_banker else None
     check("but not from across the island", result == BANKSLOT_NOTBANKER, str(result))
@@ -1339,6 +1373,9 @@ def main():
           str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
 
     # Last: a GM packs the island up. Nothing is lost: pieces to House Storage, gear by mail.
+    owner.command(".house decorate on")
+    if placements(owner_guid):
+        owner.command(".house nudge forward 0.25 %d" % placements(owner_guid)[0]["id"])
     count = len(placements(owner_guid))
     stored = sum(storage(owner_guid).values())
     mark = owner.message_mark()
@@ -1350,6 +1387,39 @@ def main():
           and owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT) is None, joined(msgs) + " " + joined(owner.messages_since(mark)))
     check("the mannequin's sword came by mail", db("SELECT COUNT(*) FROM mail_items mi JOIN item_instance ii ON ii.guid = mi.item_guid "
                                                    "WHERE mi.receiver=%d AND ii.itemEntry=%d" % (owner_guid, SWORD)) == [["1"]])
+    msgs = owner.command(".house undo")
+    check("and the owner's undo list went with the pieces", has(msgs, "Nothing to undo"), joined(msgs))
+
+    # Deleting a character closes their island, and what a roommate put there goes back to
+    # the roommate.
+    log("== deleting a character")
+    ensure_account("housetemp", "housetemp")
+    temp = connect(args, "housetemp", "housetemp")
+    for stale in [c for c in temp.enum_chars() if c["name"] == "Krooktemp"]:
+        temp.delete_char(stale["guid"])  # left by an aborted run
+    temp_char = get_or_create_char(temp, "Krooktemp")
+    temp_guid = temp_char["guid"] & 0xFFFFFFFF
+    temp.login(temp_char["guid"])
+    temp.command(".house home", wait=1.0)
+    wait_for_map(temp, HOUSING_MAP)
+    temp.command(".house roommate %s" % args.guest_char)
+    mark = guest.message_mark()
+    guest.command(".house visit Krooktemp", wait=1.0)
+    wait_for(lambda: has(guest.messages_since(mark), "Welcome to Krooktemp's island"), 10, guest)
+    guest.command(".house decorate on")
+    msgs = guest.use_item(CHAIR, spell_of(CHAIR), (guest.pos[0] + 2.0, guest.pos[1], guest.pos[2])) if guest.count_item(CHAIR) else []
+    check("a roommate places a chair on another island", db("SELECT COUNT(*) FROM mod_playerhousing_placement WHERE owner_guid=%d AND placed_by=%d"
+                                                           % (temp_guid, guest_guid)) == [["1"]], joined(msgs))
+    stored_chairs = storage(guest_guid).get(CHAIR, 0)
+    temp.logout_to_characters()
+    code = temp.delete_char(temp_char["guid"])
+    island_rows = lambda: db("SELECT (SELECT COUNT(*) FROM mod_playerhousing_placement WHERE owner_guid=%d) + "
+                             "(SELECT COUNT(*) FROM mod_playerhousing_house WHERE owner_guid=%d)" % (temp_guid, temp_guid))
+    wait_for(lambda: island_rows() == [["0"]], 5, guest)
+    check("deleting that island's owner sends the roommate's chair to their House Storage, and removes the island",
+          code == 0x47 and storage(guest_guid).get(CHAIR, 0) == stored_chairs + 1 and island_rows() == [["0"]],
+          "code 0x%x, chairs in storage %d -> %d" % (code, stored_chairs, storage(guest_guid).get(CHAIR, 0)))
+    temp.close()
 
     return finish()
 

@@ -24,6 +24,7 @@ namespace
     constexpr float PI_F = 3.14159265358979323846f;
     constexpr float TWO_PI_F = 6.28318530717958647692f;
     constexpr size_t JOURNAL_SIZE = 30;
+    constexpr size_t BIG_STEP = 20;  // pieces; undoing or redoing more waits between goes
     constexpr float NO_HEIGHT = -50000.0f;
 
     float NormalizeAngle(float angle)
@@ -305,17 +306,30 @@ void PlayerHousingMgr::ProcessPendingConsumes(Player* player)
             return;
         consumes.swap(itr->second);
         _pendingConsumes.erase(itr);
+        _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
     }
 
+    // This runs before the player's next packet is handled (see CanPacketReceive), so the
+    // item can't have been banked, mailed, traded or sold in between.
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
     for (auto const& [itemEntry, count] : consumes)
     {
         uint32 inBags = player->GetItemCount(itemEntry);
         uint32 fromBags = std::min(inBags, count);
         if (fromBags)
             player->DestroyItemCount(itemEntry, fromBags, true);
-        // Used up meanwhile (sold, destroyed): take the rest from storage so nothing is free.
-        for (uint32 i = fromBags; i < count; ++i)
-            AddToStorage(player->GetGUID().GetCounter(), itemEntry, -1);
+        if (fromBags == count)
+            continue;
+
+        // Gone some other way (a GM took it, say): the rest from storage, as far as it goes.
+        uint32 missing = count - fromBags;
+        std::map<uint32, uint32> storage = GetStorage(self);
+        uint32 fromStorage = std::min(missing, storage.count(itemEntry) ? storage[itemEntry] : 0u);
+        if (fromStorage)
+            AddToStorage(self, itemEntry, -int32(fromStorage));
+        if (fromStorage < missing)
+            LOG_WARN("module", "mod-playerhousing: {} placed {} x item {} no longer in their bags or House Storage.",
+                player->GetName(), missing - fromStorage, itemEntry);
     }
 }
 
@@ -554,6 +568,7 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     }
 
     uint32& reserved = _pendingConsumes[player->GetGUID()][piece->itemEntry];
+    _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
     if (player->GetItemCount(piece->itemEntry) <= reserved)
     {
         reason = Acore::StringFormat("You don't have another {}.", piece->name);
@@ -604,8 +619,8 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
         return false;
     }
 
-    // The item is still in use by the cast that brought us here; it is removed on the
-    // player's next update (see ProcessPendingConsumes).
+    // The item is still in use by the cast that brought us here; it is removed before the
+    // player's next packet or update (see ProcessPendingConsumes).
     ++reserved;
 
     session->placements[placement.id] = placement;
@@ -709,11 +724,16 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
             return itr != gear.end() && itr->second.itemGuid == itemGuid;
         };
 
+        // Gear on a stand is only ever changed by whoever it belongs to; anyone else's undo
+        // moves the stand and leaves what it wears alone.
+        if (ItemOwnerOf(session, current) != player->GetGUID().GetCounter())
+            applied.gear = current.gear;
+
         // Gear comes off first, so a swap frees the slot, then the new gear goes on.
         for (auto const& [slot, gear] : current.gear)
-            if (!sameItem(target->gear, slot, gear.itemGuid))
+            if (!sameItem(applied.gear, slot, gear.itemGuid))
                 ReturnGear(player, session.ownerGuid, ItemOwnerOf(session, current), placementId, slot, gear);
-        for (auto const& [slot, gear] : target->gear)
+        for (auto const& [slot, gear] : std::map<uint8, GearItem>(applied.gear))
         {
             if (sameItem(current.gear, slot, gear.itemGuid))
                 continue;
@@ -765,10 +785,45 @@ bool PlayerHousingMgr::ApplyChanges(Player* player, Session& session, std::vecto
 void PlayerHousingMgr::Record(Player* player, std::string const& label, std::vector<Change> changes)
 {
     Journal& journal = _journals[player->GetGUID().GetCounter()];
+    ObjectGuid::LowType island = GetIslandOwner(player);
+    if (journal.island != island)
+    {
+        journal = Journal{};
+        journal.island = island;
+    }
     journal.undo.push_back(JournalEntry{ label, std::move(changes) });
     while (journal.undo.size() > JOURNAL_SIZE)
         journal.undo.pop_front();
     journal.redo.clear();
+}
+
+bool PlayerHousingMgr::JournalStillApplies(Session const& session, JournalEntry const& entry, bool towardsAfter) const
+{
+    // Undo expects each piece as the step left it, redo as it was before. A piece that's gone
+    // is fine (it comes back, paid for as ever); a different piece, or one where there was
+    // none, means the island changed under this step, and it no longer applies.
+    for (Change const& change : entry.changes)
+    {
+        std::optional<Placement> const& expected = towardsAfter ? change.before : change.after;
+        auto itr = session.placements.find(change.placementId);
+        if (itr == session.placements.end())
+            continue;
+        if (!expected || itr->second.itemEntry != expected->itemEntry || itr->second.placedBy != expected->placedBy)
+            return false;
+    }
+    return true;
+}
+
+void PlayerHousingMgr::ForgetJournals(ObjectGuid::LowType ownerGuid)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    for (auto itr = _journals.begin(); itr != _journals.end();)
+    {
+        if (itr->second.island == ownerGuid)
+            itr = _journals.erase(itr);
+        else
+            ++itr;
+    }
 }
 
 std::string PlayerHousingMgr::UndoLabel(Player const* player) const
@@ -835,14 +890,28 @@ bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
         return false;
 
     Journal& journal = _journals[player->GetGUID().GetCounter()];
+    if (journal.island != session->ownerGuid)
+        journal = Journal{};
     if (journal.undo.empty())
     {
         reason = "Nothing to undo.";
         return false;
     }
 
+    // A step with many pieces is real work for the server: not over and over.
+    if (journal.undo.back().changes.size() > BIG_STEP && OnCooldown(player, COOLDOWN_UNDO, 3 * IN_MILLISECONDS, reason))
+        return false;
+
     JournalEntry entry = journal.undo.back();
     journal.undo.pop_back();
+    if (!JournalStillApplies(*session, entry, false))
+    {
+        // Dropped: older steps touch pieces of their own and are checked when their turn comes.
+        reason = Acore::StringFormat("Can't undo \"{}\": those pieces have changed since (someone else moved, picked up or replaced them).",
+            entry.label);
+        SendAddonState(player);
+        return false;
+    }
 
     _report = {};
     std::string failure;
@@ -865,14 +934,28 @@ bool PlayerHousingMgr::Redo(Player* player, std::string& reason)
         return false;
 
     Journal& journal = _journals[player->GetGUID().GetCounter()];
+    if (journal.island != session->ownerGuid)
+        journal = Journal{};
     if (journal.redo.empty())
     {
         reason = "Nothing to redo.";
         return false;
     }
 
+    // A step with many pieces is real work for the server: not over and over.
+    if (journal.redo.back().changes.size() > BIG_STEP && OnCooldown(player, COOLDOWN_UNDO, 3 * IN_MILLISECONDS, reason))
+        return false;
+
     JournalEntry entry = journal.redo.back();
     journal.redo.pop_back();
+    if (!JournalStillApplies(*session, entry, true))
+    {
+        // Dropped: older steps touch pieces of their own and are checked when their turn comes.
+        reason = Acore::StringFormat("Can't redo \"{}\": those pieces have changed since (someone else moved, picked up or replaced them).",
+            entry.label);
+        SendAddonState(player);
+        return false;
+    }
 
     _report = {};
     std::string failure;
@@ -1133,6 +1216,12 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
             reason = "That would take it off your island.";
             return false;
         }
+        if (change.after && !(std::isfinite(change.after->o) && std::isfinite(change.after->pitch) && std::isfinite(change.after->roll)
+                && std::isfinite(change.after->scale)))
+        {
+            reason = "That isn't a number the island understands.";
+            return false;
+        }
     }
 
     _report = {};
@@ -1304,9 +1393,10 @@ bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position c
             target.GetPositionZ() - placement->z, 0.0f, false, 0.0f, reason))
         return false;
 
-    // The item is still in use by the cast; it goes on the player's next update.
+    // The item is still in use by the cast; it goes before the player's next packet or update.
     _pendingMoves.erase(player->GetGUID());
     ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
+    _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
     SendAddonState(player);
     return true;
 }
@@ -1819,16 +1909,19 @@ bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool al
         if (!all && entry != itemEntry)
             continue;
 
-        for (uint32 i = 0; i < count; ++i)
+        uint32 added = 0;
+        for (; added < count; ++added)
         {
             if (!player->AddItem(entry, 1))
             {
                 bagsFull = true;
                 break;
             }
-            AddToStorage(player->GetGUID().GetCounter(), entry, -1);
-            ++taken;
         }
+        // One write per kind of piece, however many were taken.
+        if (added)
+            AddToStorage(player->GetGUID().GetCounter(), entry, -int32(added));
+        taken += added;
 
         if (bagsFull)
             break;

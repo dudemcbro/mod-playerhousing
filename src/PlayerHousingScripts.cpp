@@ -147,9 +147,10 @@ public:
     }
 };
 
-// A mannequin's armor reaches the client as mirror image data, which the client asks for
-// when the figure comes into view. The core only answers for real mirror images (spells), so
-// the module answers for mannequins.
+// Incoming packets, for two things. Items owed for placed pieces are settled first. And a
+// mannequin's armor reaches the client as mirror image data, which the client asks for when
+// the figure comes into view: the core only answers for real mirror images (spells), so the
+// module answers for mannequins.
 class mod_playerhousing_serverscript : public ServerScript
 {
 public:
@@ -157,6 +158,12 @@ public:
 
     bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
     {
+        // An item used to place a piece is taken before anything else the player sends is
+        // handled: moving it to the bank or the mail in the same breath doesn't keep it.
+        if (sPlayerHousingMgr->HasPendingConsumes())
+            if (Player* player = session->GetPlayer(); player && player->IsInWorld())
+                sPlayerHousingMgr->ProcessPendingConsumes(player);
+
         if (packet.GetOpcode() != CMSG_GET_MIRRORIMAGE_DATA || packet.size() < sizeof(uint64))
             return true;
 
@@ -438,7 +445,9 @@ public:
         {
             if (tokens.size() <= index)
                 return fallback;
-            return Acore::StringTo<float>(tokens[index]).value_or(fallback);
+            // nan and inf read as numbers too; they aren't turns or distances.
+            std::optional<float> value = Acore::StringTo<float>(tokens[index]);
+            return value && std::isfinite(*value) ? *value : fallback;
         };
         auto restFrom = [&](size_t index) -> std::string
         {
@@ -805,6 +814,7 @@ public:
     void OnPlayerUpdate(Player* player, uint32 diffMs) override { sPlayerHousingMgr->OnPlayerUpdate(player, diffMs); }
     void OnPlayerMapChanged(Player* player) override { sPlayerHousingMgr->OnPlayerMapChanged(player); }
     void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override { sPlayerHousingMgr->OnPlayerDelete(guid); }
+    void OnPlayerDeleteFromDB(CharacterDatabaseTransaction /*trans*/, uint32 guid) override { sPlayerHousingMgr->OnPlayerDeleteFromDB(guid); }
 
     void OnPlayerGossipSelect(Player* player, uint32 menuId, uint32 sender, uint32 action) override
     {
