@@ -1,7 +1,7 @@
 -- Removes everything mod-playerhousing added to the world database.
-DELETE FROM `creature` WHERE `id1` IN (900200, 900201);
-DELETE FROM `creature_template_model` WHERE `CreatureID` IN (900200, 900201);
-DELETE FROM `creature_template` WHERE `entry` IN (900200, 900201);
+DELETE FROM `creature` WHERE `id1` IN (900200, 900201, 900202);
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (900200, 900201, 900202);
+DELETE FROM `creature_template` WHERE `entry` IN (900200, 900201, 900202);
 DELETE FROM `npc_vendor` WHERE `entry` = 900200;
 DELETE FROM `item_template` WHERE `entry` BETWEEN 901100 AND 901199 OR `entry` BETWEEN 902000 AND 902999;
 DELETE FROM `gameobject_template` WHERE `entry` = 903990 OR `entry` BETWEEN 911100 AND 922999;

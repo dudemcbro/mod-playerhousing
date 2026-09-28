@@ -6,6 +6,7 @@
 
 SET @STEWARD := 900200;
 SET @MANNEQUIN := 900201;
+SET @CHEST_BANKER := 900202;
 SET @HOUSE_KEY := 902000;
 SET @MARKER := 903990;
 
@@ -117,6 +118,18 @@ INSERT INTO `creature_template_model`
 (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (@MANNEQUIN, 0, 49, 1.0, 1.0, 0);
 
+-- A Bank Chest's banker: unseen (the invisible stalker's model), unselectable, standing at
+-- the chest for a few minutes after its owner opens it, so the bank works the usual way
+-- (only within reach, and only while it's there).
+DELETE FROM `creature_template_model` WHERE `CreatureID` = @CHEST_BANKER;
+DELETE FROM `creature_template` WHERE `entry` = @CHEST_BANKER;
+INSERT INTO `creature_template`
+(`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `unit_class`, `unit_flags`, `type`, `AIName`, `MovementType`, `RegenHealth`, `ScriptName`, `VerifiedBuild`) VALUES
+(@CHEST_BANKER, 'Bank Chest', '', 0, 1, 1, 35, 131072, 1, 33554434, 10, '', 0, 1, '', 0);
+INSERT INTO `creature_template_model`
+(`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(@CHEST_BANKER, 0, 11686, 1.0, 1.0, 0);
+
 -- Krook in the capital cities, beside each innkeeper.
 SET @GUID := (SELECT COALESCE(MAX(`guid`), 0) FROM `creature`);
 INSERT INTO `creature` (`guid`, `id1`, `map`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `MovementType`, `Comment`) VALUES
@@ -153,7 +166,7 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;
 INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
 (900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone.', '', 1),
-(900301, 'Everything you can own. Unlocked pieces give you a copy when clicked; the rest tell you how to earn them.', '', 1),
+(900301, 'Everything you can own. Click an unlocked piece to get copies; locked ones tell you how to earn them.', '', 1),
 (900302, 'What should happen to this piece?', '', 1),
 (900303, 'Whose island would you like to visit?', '', 1),
 (900304, 'Who can visit, and what they see when they arrive.', '', 1),
@@ -162,4 +175,5 @@ INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
 (900307, 'What should go on top?', '', 1),
 (900308, 'Guests can always visit, whatever your privacy setting.', '', 1),
 (900309, 'Pieces near you, closest first.', '', 1),
-(900310, 'A mannequin, showing off its owner''s gear.', '', 1);
+(900310, 'A mannequin, showing off its owner''s gear.', '', 1),
+(900311, 'A sturdy chest. Your bank is in here, and so is House Storage.', '', 1);

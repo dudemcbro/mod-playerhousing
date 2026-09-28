@@ -33,6 +33,7 @@ namespace Housing
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 HOOK_MARKER_GO = 903990;
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
+    constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     // "Move a Piece" items, one per targeting circle size (tools/content/build_content.py):
     // handed out to move a piece with the circle, gone once used.
     constexpr uint32 MOVER_ITEM_FIRST = 901190;
@@ -50,6 +51,7 @@ namespace Housing
     constexpr uint32 TEXT_GUESTS = 900308;
     constexpr uint32 TEXT_NEARBY = 900309;
     constexpr uint32 TEXT_STAND = 900310;
+    constexpr uint32 TEXT_CHEST = 900311;
 
     enum PieceKind : uint8
     {
@@ -64,7 +66,8 @@ namespace Housing
         PIECE_FLAG_PER_CHARACTER = 0x04,  // unlock belongs to the character, not the account
         PIECE_FLAG_GIFT = 0x08,           // given on first login
         PIECE_FLAG_WRECKAGE = 0x10,       // standing on the island at the first visit
-        PIECE_FLAG_STAND = 0x20           // a mannequin that wears real gear from the bags
+        PIECE_FLAG_STAND = 0x20,          // a mannequin that wears real gear from the bags
+        PIECE_FLAG_CHEST = 0x40           // opens its owner's bank
     };
 
     enum Category : uint8
@@ -325,6 +328,8 @@ public:
     uint32 GetPendingMover(Player const* player) const;
     static bool IsMoverItem(uint32 itemEntry) { return itemEntry >= Housing::MOVER_ITEM_FIRST && itemEntry <= Housing::MOVER_ITEM_LAST; }
     bool PackUpEverything(Player* player, std::string& reason);
+    // A Bank Chest: the owner's bank, through a banker standing unseen at the chest.
+    bool OpenBankAtChest(Player* player, uint32 placementId, std::string& reason);
     bool Undo(Player* player, std::string& reason);
     bool Redo(Player* player, std::string& reason);
     std::string UndoLabel(Player const* player) const;
@@ -598,6 +603,7 @@ private:
     // placed them still holds the item.
     std::unordered_map<ObjectGuid, std::map<uint32, uint32>> _pendingConsumes;
     std::unordered_map<ObjectGuid, MannequinLook> _mannequins;
+    std::unordered_map<ObjectGuid, ObjectGuid> _chestBankers;  // player -> the banker their chest brought
 
     struct PendingMove
     {

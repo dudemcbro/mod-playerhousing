@@ -83,6 +83,7 @@ namespace
         CMD_LAYOUT_GET_MISSING, // action: layout id
         CMD_LAYOUT_COPYABLE,
         CMD_LAYOUT_COPY_ISLAND,
+        CMD_CHEST_BANK,       // action: placement id
         CMD_CLOSE
     };
 
@@ -870,6 +871,19 @@ void HousingMenus::ShowCollection(Player* player, MenuSource const& source)
     Send(player, source, TEXT_COLLECTION);
 }
 
+void HousingMenus::ShowChest(Player* player, MenuSource const& source, uint32 placementId)
+{
+    uint32 stored = 0;
+    for (auto const& [itemEntry, count] : sPlayerHousingMgr->GetStorage(player->GetGUID().GetCounter()))
+        stored += count;
+
+    ClearGossipMenuFor(player);
+    Add(player, GOSSIP_ICON_MONEY_BAG, "Open my bank", CMD_CHEST_BANK, placementId);
+    Add(player, GOSSIP_ICON_MONEY_BAG, Acore::StringFormat("House Storage ({} {})", stored, stored == 1 ? "piece" : "pieces"), CMD_STORAGE, 0);
+    Add(player, GOSSIP_ICON_CHAT, "Done", CMD_CLOSE);
+    Send(player, source, TEXT_CHEST);
+}
+
 void HousingMenus::ShowSavedLayouts(Player* player, MenuSource const& source)
 {
     ShowLayouts(player, source);
@@ -1085,6 +1099,11 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             return;
         case CMD_LAYOUTS:
             ShowLayouts(player, source);
+            return;
+        case CMD_CHEST_BANK:
+            CloseGossipMenuFor(player);
+            if (!sPlayerHousingMgr->OpenBankAtChest(player, action, reason))
+                Say(player, reason);
             return;
         case CMD_LAYOUT_SAVE_NEW:
             sPlayerHousingMgr->SaveLayout(player, 0, text, reason);

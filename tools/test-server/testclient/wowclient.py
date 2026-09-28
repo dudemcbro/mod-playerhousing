@@ -46,6 +46,9 @@ CMSG_GET_MAIL_LIST = 0x23A
 CMSG_GET_MIRRORIMAGE_DATA = 0x401
 SMSG_MIRRORIMAGE_DATA = 0x402
 SMSG_MAIL_LIST_RESULT = 0x23B
+SMSG_SHOW_BANK = 0x1B8
+CMSG_BUY_BANK_SLOT = 0x1B9
+SMSG_BUY_BANK_SLOT_RESULT = 0x1BA
 CMSG_CAST_SPELL = 0x12E
 SMSG_CAST_FAILED = 0x130
 SMSG_SPELL_GO = 0x132
@@ -344,6 +347,8 @@ class WorldClient:
         self.addon_messages = []
         self.stand_state = 0
         self.mailbox_opened = 0
+        self.bank_banker = None        # the banker of the last SMSG_SHOW_BANK
+        self.bank_slot_results = []    # SMSG_BUY_BANK_SLOT_RESULT codes
         self.mirror_images = {}
         self.msg_lock = threading.Lock()
         self.player_guid = 0
@@ -434,6 +439,10 @@ class WorldClient:
             self.stand_state = data[0]
         elif opcode == SMSG_MAIL_LIST_RESULT:
             self.mailbox_opened += 1
+        elif opcode == SMSG_SHOW_BANK:
+            self.bank_banker = struct.unpack_from("<Q", data)[0]
+        elif opcode == SMSG_BUY_BANK_SLOT_RESULT:
+            self.bank_slot_results.append(struct.unpack_from("<I", data)[0])
         elif opcode == SMSG_MIRRORIMAGE_DATA:
             r = Reader(data)
             guid = r.u64()
@@ -908,6 +917,15 @@ class WorldClient:
         self.send(CMSG_DESTROYITEM, struct.pack("<BBBBBB", INVENTORY_SLOT_BAG_0, slot, min(count, 255), 0, 0, 0))
         self.pump(wait)
         return True
+
+    def buy_bank_slot(self, banker_guid, wait=1.0):
+        """What the bank window's Purchase button sends. Returns the server's answer."""
+        before = len(self.bank_slot_results)
+        self.send(CMSG_BUY_BANK_SLOT, struct.pack("<Q", banker_guid))
+        deadline = time.time() + wait + 2.0
+        while len(self.bank_slot_results) == before and time.time() < deadline:
+            self.pump(0.2)
+        return self.bank_slot_results[-1] if len(self.bank_slot_results) > before else None
 
     def open_mailbox(self, guid, wait=1.5):
         """What the client does on right-clicking a mailbox; the server answers only if the

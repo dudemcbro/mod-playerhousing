@@ -26,6 +26,8 @@ FARMHOUSE = 902220                                      # Exalted with Stormwind
 LAMP_POST = 902300                                      # Explore Elwynn Forest
 MAILBOX = 902900                                        # level 80: a working mailbox
 MANNEQUIN, MANNEQUIN_NPC = 901107, 900201               # a stand, and the figure it shows
+BANK_CHEST, CHEST_BANKER = 901108, 900202               # level 20: opens the bank
+BANKSLOT_NOTBANKER, BANKSLOT_OK = 2, 3
 SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
 UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
 SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
@@ -52,6 +54,7 @@ LAYOUTS = {
         inside=(16259.0, 16340.0, 12.99),
         mailbox_stand=(16237.0, 16294.0), mailbox=(16234.0, 16290.0, 12.92),
         stand_stand=(16233.0, 16300.0), stand=(16230.0, 16300.0, 12.92),
+        chest_stand=(16248.0, 16306.0), chest=(16250.0, 16310.0, 12.92),
         sea_stand=(16250.0, 16120.0, 0.0), sea_target=(16250.0, 16098.0, 0.0),
         past_edge=(16250.0, 16108.0, 0.0)),
 }
@@ -260,7 +263,7 @@ def main():
     test_items = "itemEntry BETWEEN 901100 AND 902999 OR itemEntry IN (%d, %d, %d)" % (WORN_DAGGER, SWORD, PANTS)
     db("DELETE FROM character_inventory WHERE guid IN (%s) AND item IN (SELECT guid FROM item_instance WHERE %s)" % (ids, test_items))
     db("DELETE FROM item_instance WHERE owner_guid IN (%s) AND (%s)" % (ids, test_items))
-    db("UPDATE characters SET level=15, money=1000000 WHERE guid=%d" % owner_guid)
+    db("UPDATE characters SET level=15, money=1000000, bankSlots=0 WHERE guid=%d" % owner_guid)
     # Everyone starts in Northshire, so no login teleport gets in the way.
     db("UPDATE characters SET map=0, position_x=-8949.95, position_y=-132.49, position_z=83.53, orientation=0 "
        "WHERE guid IN (%s, %d)" % (ids, admin_char["guid"] & 0xFFFFFFFF))
@@ -680,6 +683,35 @@ def main():
     check("keep it here leaves it standing", placement_of(owner_guid, MAILBOX) is not None)
     owner.command(".house adjust buildings")
 
+    # The Bank Chest opens its owner's bank through a banker that only works by the chest.
+    check("level 20 unlocked the Bank Chest too", BANK_CHEST in unlocked(owner_account, owner_guid))
+    owner.command(".house collection bank chest")
+    owner.gossip_select("Bank Chest")
+    owner.gossip_select("Get one")
+    wait_for(lambda: owner.count_item(BANK_CHEST) == 1, 3, owner)
+    move(owner, L["chest_stand"][0], L["chest_stand"][1], L["ground"])
+    msgs = owner.use_item(BANK_CHEST, spell_of(BANK_CHEST), L["chest"])
+    check("a Bank Chest places like any piece", placement_of(owner_guid, BANK_CHEST) is not None, joined(msgs))
+    owner.command(".house decorate off")  # decorating, a click opens the piece's own menu
+    wait_for(lambda: nearest_go(owner, live(BANK_CHEST)) is not None, 3, owner)
+    chest_go = nearest_go(owner, live(BANK_CHEST))
+    menu, msgs = owner.use_gameobject(chest_go.guid) if chest_go else (None, [])
+    check("clicking it offers the bank and House Storage", menu is not None and "Open my bank" in options(menu)
+          and any(o.startswith("House Storage (") for o in options(menu)), joined(msgs) + " " + str(options(menu)))
+    owner.bank_banker = None
+    if menu:
+        owner.gossip_select("Open my bank")
+    wait_for(lambda: owner.bank_banker is not None, 3, owner)
+    banker = owner.nearest(CHEST_BANKER, TYPEID_UNIT)
+    check("the bank opens, with an unseen banker at the chest", owner.bank_banker is not None and banker is not None
+          and owner.bank_banker == banker.guid and math.dist((banker.x, banker.y), L["chest"][:2]) < 1.0, str(owner.bank_banker))
+    result = owner.buy_bank_slot(owner.bank_banker) if owner.bank_banker else None
+    check("the bank works there (buying a bank slot)", result == BANKSLOT_OK, str(result))
+    move(owner, *L["landing"])
+    result = owner.buy_bank_slot(owner.bank_banker) if owner.bank_banker else None
+    check("but not from across the island", result == BANKSLOT_NOTBANKER, str(result))
+    owner.command(".house decorate on")
+
     # ------------------------------------------------------------- buildings
     log("== buildings")
     owner.command(".house collection")
@@ -946,6 +978,13 @@ def main():
     check("the guest sees the owner's farmhouse", live(FARMHOUSE) in go_entries(guest), str(sorted(go_entries(guest))))
     msgs = guest.command(".house undo")
     check("guests can't change anything", has(msgs, "Only the owner"), joined(msgs))
+    chest_go = nearest_go(guest, live(BANK_CHEST))
+    if chest_go:
+        stand_next_to(guest, chest_go, 2.0)
+        menu, msgs = guest.use_gameobject(chest_go.guid)
+        check("a guest finds the Bank Chest locked", menu is None and has(msgs, "The chest is locked"), joined(msgs) + " " + str(options(menu)))
+    else:
+        check("a guest finds the Bank Chest locked", False, "no chest in sight")
     guest.command(".house")
     _, msgs = guest.gossip_select("Save a copy of this island's layout")
     copied = db("SELECT l.name, COUNT(p.placement_id) FROM mod_playerhousing_saved_layout l JOIN mod_playerhousing_saved_piece p "

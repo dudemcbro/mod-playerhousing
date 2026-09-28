@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (157 checks):
+checking the database and what the client sees after each step (164 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -142,6 +142,9 @@ checking the database and what the client sees after each step (157 checks):
   the new counts on the Home menu, a piece's page (what you have, get one, get 5),
   showing unlocked pieces only, searching by name (`.house collection lamp`), a level up
   unlocking a shelter on the spot, a GM unlocking the mailbox for the owner
+- the Bank Chest: unlocked at level 20, its menu, the bank opening through an unseen
+  banker at the chest, a bank slot bought there, and refused from across the island; a
+  guest finding it locked
 - buildings: placing a faction building, the pick up choice, what counts as inside (a
   lantern in a corner does, a table past the wall doesn't), the building and what's
   inside coming back, undo

@@ -1664,6 +1664,51 @@ bool PlayerHousingMgr::PackUpEverything(Player* player, std::string& reason)
     return true;
 }
 
+bool PlayerHousingMgr::OpenBankAtChest(Player* player, uint32 placementId, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece || !piece->HasFlag(PIECE_FLAG_CHEST))
+    {
+        reason = "That isn't a Bank Chest.";
+        return false;
+    }
+
+    Placement const& chest = itr->second;
+    if (player->GetExactDist2d(chest.x, chest.y) > 8.0f)
+    {
+        reason = "Step closer to the chest.";
+        return false;
+    }
+
+    // The banker stays for a few minutes; the bank works only near it, as with any banker.
+    Map* map = player->GetMap();
+    auto previous = _chestBankers.find(player->GetGUID());
+    if (previous != _chestBankers.end())
+    {
+        if (Creature* old = map->GetCreature(previous->second))
+            old->DespawnOrUnsummon();
+        _chestBankers.erase(previous);
+    }
+
+    Creature* banker = player->SummonCreature(CHEST_BANKER_ENTRY, chest.x, chest.y, chest.z + 0.5f, chest.o, TEMPSUMMON_TIMED_DESPAWN,
+        5 * MINUTE * IN_MILLISECONDS);
+    if (!banker)
+    {
+        reason = "The chest won't open. Try again in a moment.";
+        return false;
+    }
+    banker->SetPhaseMask(session->phaseMask, true);
+    _chestBankers[player->GetGUID()] = banker->GetGUID();
+    player->GetSession()->SendShowBank(banker->GetGUID());
+    return true;
+}
+
 bool PlayerHousingMgr::SetDecorating(Player* player, bool on, std::string& reason)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);

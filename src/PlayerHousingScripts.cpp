@@ -264,6 +264,20 @@ public:
             return true;
         }
 
+        // A Bank Chest opens for its owner only (it's their bank).
+        if (std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId))
+        {
+            PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(placement->itemEntry);
+            if (piece && piece->HasFlag(PIECE_FLAG_CHEST))
+            {
+                if (sPlayerHousingMgr->IsOnOwnIsland(player))
+                    HousingMenus::ShowChest(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
+                else
+                    Reply(player, "The chest is locked: it holds its owner's bank.");
+                return true;
+            }
+        }
+
         if (sPlayerHousingMgr->IsOnOwnIsland(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
         {
             sPlayerHousingMgr->SelectPlacement(player, placementId);

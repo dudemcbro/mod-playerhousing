@@ -16,6 +16,7 @@ Fields:
             building  a building: its own limit, seen from farther away
             stand     a mannequin that wears real gear from the owner's bags (no go or
                       display: the figure takes after its owner)
+            chest     opens its owner's bank (and House Storage)
   rules     list of groups; each group is a list of rules that must all be met. Any
             complete group unlocks the piece. No rules: everyone has it.
   flags     surface (things go on top), small (fits on a surface), gift (first login),
@@ -80,6 +81,8 @@ PIECES = [
     dict(item=901102, name="Bedroll", cat="Starter", go=193684),
     dict(item=901103, name="Supply Crate", cat="Starter", go=181302, flags=["surface"]),
     dict(item=901107, name="Mannequin", cat="Starter", style="stand"),
+    dict(item=901108, name="Bank Chest", cat="Starter", go=2850, style="chest", rules=[[level(20)], [ach(546)]],
+         hint="Reach level 20, or buy 7 bank slots (Safe Deposit)"),
     dict(item=902101, name="Barrel", cat="Starter", go=180779, flags=["surface"], legacy=1003),
     dict(item=902102, name="Candle", cat="Starter", go=180338, flags=["small"], legacy=1004),
     dict(item=902103, name="Wooden Bench", cat="Starter", go=24538, style="keep"),

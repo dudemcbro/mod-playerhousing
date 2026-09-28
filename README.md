@@ -70,6 +70,13 @@ Swim too far out and you're brought back to the beach.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone
   too.
 
+### The Bank Chest
+
+Unlocked at level 20 (or by buying 7 bank slots). Place it anywhere, and click it when
+you're not decorating: **Open my bank** brings up your own bank, right there, and **House
+Storage** lists the pieces waiting there. It works the way a banker does: only near the
+chest, for a few minutes after you open it. Visitors find it locked.
+
 ### Saved layouts
 
 Home menu, Saved layouts (or `.house layout`). Save your island as it is, try something
