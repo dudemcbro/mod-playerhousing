@@ -239,6 +239,10 @@ def build(args):
         if stand:
             footprint, height = 0.5, 2.0
 
+        if not stand and display not in models:
+            raise SystemExit("%s (%d) uses model %d, which isn't in GameObjectDisplayInfo.dbc: it would be invisible"
+                             % (name, item, display))
+
         # What the addon shows before placing. Model frames can't draw world models (.wmo),
         # so most buildings get their size only.
         model = models.get(display, "")

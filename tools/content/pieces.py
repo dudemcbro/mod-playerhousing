@@ -229,7 +229,7 @@ PIECES = [
     dict(item=902403, name="Hospital Bed", cat="Dungeons", go=178226, rules=[[ach(637)]], legacy=1502),
     dict(item=902404, name="Scarlet Bookshelf", cat="Dungeons", go=183268, flags=["surface"], rules=[[ach(637)]], legacy=1501),
     dict(item=902405, name="Dark Brazier", cat="Dungeons", go=182014, rules=[[ach(642)]], legacy=1504),
-    dict(item=902406, name="Coffin", cat="Dungeons", go=19425, rules=[[ach(646)]], legacy=1403),
+    dict(item=902406, name="Ancient Coffin", cat="Dungeons", go=184599, scale=0.3, rules=[[ach(646)]], legacy=1403),
     dict(item=902407, name="Musty Coffin", cat="Dungeons", go=190948, rules=[[ach(645)]], legacy=1505),
     dict(item=902408, name="Lab Table", cat="Dungeons", go=190665, flags=["surface"], rules=[[ach(645)]]),
     dict(item=902409, name="Ogre Campfire", cat="Dungeons", display=4611, rules=[[ach(644)]]),

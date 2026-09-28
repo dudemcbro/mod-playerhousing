@@ -170,7 +170,7 @@ belong to the character that earned it; everything else is shared across the acc
 | Hospital Bed | furnishing | Complete Scarlet Monastery | object 178226 |  |
 | Scarlet Bookshelf | furnishing | Complete Scarlet Monastery | object 183268 | things go on top |
 | Dark Brazier | furnishing | Complete Blackrock Depths | object 182014 |  |
-| Coffin | furnishing | Complete Stratholme | object 19425 |  |
+| Ancient Coffin | furnishing | Complete Stratholme | object 184599 |  |
 | Musty Coffin | furnishing | Complete Scholomance | object 190948 |  |
 | Lab Table | furnishing | Complete Scholomance | object 190665 | things go on top |
 | Ogre Campfire | furnishing | Complete King of Dire Maul | model 4611 |  |
