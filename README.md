@@ -143,6 +143,8 @@ menus. It's optional: the House Key menus do everything without it.
   Collection, Storage, Visit and the full menu, one click each.
 - For the selected piece: turn left or right (or use the mouse wheel over the window:
   Shift for small steps, Ctrl to raise or lower), face me, move here, nudge, and pick up.
+  Move gives a button that brings up a targeting circle the size of the piece: click the
+  new spot, and whatever stands on it (or is inside a building) comes along.
 - Opens by itself when you arrive home (`/housing auto` turns that off). `/housing`
   shows or hides it, and `/housing <command>` runs any `.house` command.
 - Key bindings for the window, undo, redo, decorate, turning and selecting the nearest

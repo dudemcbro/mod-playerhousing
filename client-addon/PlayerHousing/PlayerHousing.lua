@@ -15,7 +15,7 @@ local COLUMNS, ROWS = 8, 4
 local SLOT_SIZE, SLOT_GAP = 36, 4
 local PAGE_SIZE = COLUMNS * ROWS
 local WIDTH = 24 + COLUMNS * (SLOT_SIZE + SLOT_GAP)
-local BASE_HEIGHT, SELECTED_HEIGHT = 356, 100
+local BASE_HEIGHT, SELECTED_HEIGHT = 356, 124
 local SEND_INTERVAL = 0.3   -- seconds between mouse wheel commands; turns in between add up
 
 BINDING_HEADER_PLAYERHOUSING = "Player Housing"
@@ -32,11 +32,13 @@ local state = {
     selected = 0, selectedName = "", selectedBuilding = false,
     furnishings = 0, maxFurnishings = 0, buildings = 0, maxBuildings = 0,
     undo = "", redo = "", islandOwner = "",
+    pendingMover = 0,
 }
 
 local db                    -- PlayerHousingDB, once loaded
 local known = false         -- the server has housing: it sent us a state
 local pieces = {}           -- housing items in the bags, one entry per kind of item
+local movers = {}           -- Move a Piece items in the bags: item id to "bag slot"
 local filter = "all"        -- all, furnishings or buildings
 local search = ""
 local page = 1
@@ -49,7 +51,7 @@ local preview, previewModel, previewName, previewSize, previewNote
 local plan, planRect, planBorder, planYou, planYouLabel
 local previewFacing = 0
 local homeButton, decorateButton, undoButton, redoButton, prevButton, nextButton
-local pickUpAllButton
+local pickUpAllButton, spotButton, selectedHelp
 local filterButtons = {}
 local slots = {}
 
@@ -57,9 +59,14 @@ local function Print(text)
     DEFAULT_CHAT_FRAME:AddMessage("|cffffd000Housing:|r " .. text)
 end
 
+-- Move a Piece: one item per size of targeting circle, handed out by .house move.
+local function IsMoverItem(id)
+    return id >= 901190 and id <= 901199
+end
+
 -- Furnishings and buildings from the module's content generator; 902000 is the House Key.
 local function IsHousingItem(id)
-    return (id >= 901100 and id <= 901199) or (id >= 902001 and id <= 902999)
+    return ((id >= 901100 and id <= 901199) or (id >= 902001 and id <= 902999)) and not IsMoverItem(id)
 end
 
 function PlayerHousing_Command(command)
@@ -83,12 +90,15 @@ end
 
 local function ScanBags()
     wipe(pieces)
+    wipe(movers)
     local byId = {}
     for bag = 0, NUM_BAG_SLOTS do
         for slot = 1, GetContainerNumSlots(bag) do
             local link = GetContainerItemLink(bag, slot)
             local id = link and tonumber(link:match("item:(%d+)"))
-            if id and IsHousingItem(id) then
+            if id and IsMoverItem(id) then
+                movers[id] = bag .. " " .. slot
+            elseif id and IsHousingItem(id) then
                 local texture, count = GetContainerItemInfo(bag, slot)
                 local entry = byId[id]
                 if entry then
@@ -125,6 +135,22 @@ local function FilteredPieces()
         end
     end
     return list
+end
+
+-- While a move waits for its spot, a button uses the Move a Piece item, so there's no need
+-- to find it in the bags. It's a secure button too.
+local function UpdateSpotButton()
+    local location = state.own and state.pendingMover > 0 and movers[state.pendingMover]
+    if location then
+        spotButton:SetAttribute("type", "item")
+        spotButton:SetAttribute("item", location)
+        selectedHelp:Hide()
+        spotButton:Show()
+    else
+        spotButton:SetAttribute("item", nil)
+        spotButton:Hide()
+        selectedHelp:Show()
+    end
 end
 
 -- The grid holds secure buttons, which can only change out of combat.
@@ -170,6 +196,7 @@ local function UpdateGrid()
     pageText:SetText(("Page %d of %d"):format(page, pages))
     if page > 1 then prevButton:Enable() else prevButton:Disable() end
     if page < pages then nextButton:Enable() else nextButton:Disable() end
+    UpdateSpotButton()
 end
 
 ---------------------------------------------------------------------------------------------
@@ -215,6 +242,11 @@ local function UpdateButtons()
     -- Resizing a window that holds secure buttons also waits for the end of combat.
     if not InCombatLockdown() then
         frame:SetHeight(BASE_HEIGHT + (showSelected and SELECTED_HEIGHT or 0))
+        if bagsDirty then
+            UpdateGrid()
+        else
+            UpdateSpotButton()
+        end
     else
         layoutPending = true
     end
@@ -251,6 +283,7 @@ local function OnState(fields)
     state.islandOwner = fields[11] or ""
     state.redo = fields[12] or ""
     state.selectedBuilding = fields[13] == "1"
+    state.pendingMover = tonumber(fields[14] or "") or 0
 
     -- The window comes up by itself on arriving home, and goes again on leaving.
     if not frame then
@@ -698,6 +731,8 @@ local function CreateWindow()
         { "Turn right", function() Turn(-15) end, "Turn right", "15 degrees." },
         { "Face me", Command("face"), "Face me", "Turns it to face you." },
         { "Here", Command("here"), "Move here", "Moves it to where you're standing." },
+        { "Move", Command("move"), "Move with the targeting circle",
+          "A button appears below: click it, then click the new spot. What's on it moves too." },
         { "Pick up", function() PickUp(false) end, "Pick up", "Back to your bags. Undo puts it back." },
     })
 
@@ -715,11 +750,23 @@ local function CreateWindow()
     pickUpAllButton:SetPoint("TOPRIGHT", -12, -66)
     pickUpAllButton:Hide()
 
-    local help = selectedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    help:SetPoint("TOPLEFT", 14, -68)
-    help:SetPoint("TOPRIGHT", -170, -68)
-    help:SetJustifyH("LEFT")
-    help:SetText("Mouse wheel: turn. Shift: finer. Ctrl: up and down.")
+    selectedHelp = selectedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    selectedHelp:SetPoint("TOPLEFT", 14, -68)
+    selectedHelp:SetPoint("TOPRIGHT", -170, -68)
+    selectedHelp:SetJustifyH("LEFT")
+    selectedHelp:SetText("Mouse wheel: turn. Shift: finer. Ctrl: up and down.")
+
+    spotButton = CreateFrame("Button", "PlayerHousingSpotButton", selectedPanel, "SecureActionButtonTemplate,UIPanelButtonTemplate")
+    spotButton:SetWidth(170)
+    spotButton:SetHeight(22)
+    spotButton:SetPoint("TOPLEFT", 12, -66)
+    spotButton:SetText("Click, then pick the spot")
+    spotButton:RegisterForClicks("AnyUp")
+    spotButton.tooltipTitle = "Pick the new spot"
+    spotButton.tooltipText = "The targeting circle is as big as the piece. Right-click or Escape cancels the circle; the menu can start over."
+    spotButton:SetScript("OnEnter", ShowButtonTooltip)
+    spotButton:SetScript("OnLeave", GameTooltip_Hide)
+    spotButton:Hide()
     selectedPanel:Hide()
 
     SetFilter("all")

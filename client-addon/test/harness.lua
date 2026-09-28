@@ -69,7 +69,8 @@ local bags = {
   [0] = { [1] = {901105, 3}, [2] = {902200, 1}, [5] = {902000, 1} },
   [1] = { [3] = {901105, 2}, [4] = {902101, 1} },
 }
-local names = { [901105] = "Furnishing: Westfall Chair", [902200] = "Building: Broken Cart", [902000] = "House Key", [902101] = "Furnishing: Barrel" }
+local names = { [901105] = "Furnishing: Westfall Chair", [902200] = "Building: Broken Cart", [902000] = "House Key", [902101] = "Furnishing: Barrel",
+  [901190] = "Move a Piece", [901193] = "Move a Piece" }
 function GetContainerNumSlots(bag) return bags[bag] and 16 or 0 end
 function GetContainerItemLink(bag, slot)
   local it = bags[bag] and bags[bag][slot]
@@ -124,7 +125,7 @@ PlayerHousingSlot3.scripts.OnLeave(PlayerHousingSlot3)
 PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)
 assert(not PlayerHousingPreviewPlan:IsShown() and PlayerHousingPreviewModel:IsShown(), "model shown, no floor plan")
 PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
-assert(PlayerHousingFrame.height == 456)
+assert(PlayerHousingFrame.height == 480)
 
 -- Filters and search.
 PlayerHousingButton11.scripts.OnClick()  -- Buildings
@@ -171,19 +172,45 @@ PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
 OnUpdate(driver, 0.5)
 assert(last() == ".house nudge up 0.10", last())
 IsControlKeyDown = function() return false end
-PlayerHousingButton19.scripts.OnClick(); assert(last() == ".house nudge forward")
+PlayerHousingButton20.scripts.OnClick(); assert(last() == ".house nudge forward")
 
 -- Buildings ask before being picked up.
-PlayerHousingButton18.scripts.OnClick()
+PlayerHousingButton19.scripts.OnClick()
 assert(popups[1][1] == "PLAYERHOUSING_PICKUP_BUILDING" and popups[1][2] == "Broken Cart")
 StaticPopupDialogs.PLAYERHOUSING_PICKUP_BUILDING.OnAccept({}, 12); assert(last() == ".house pickup 12")
-PlayerHousingButton25.scripts.OnClick()
+PlayerHousingButton26.scripts.OnClick()
 StaticPopupDialogs.PLAYERHOUSING_PICKUP_BUILDING_ALL.OnAccept({}, 12); assert(last() == ".house pickup 12 inside")
 
 -- A furnishing picks up straight away.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicked up Broken Cart\tKrookowner\tplaced Barrel\t0", "WHISPER", "Krookowner")
 assert(PlayerHousingButton4.enabled == true, "redo available")
-PlayerHousingButton18.scripts.OnClick(); assert(last() == ".house pickup 13")
+PlayerHousingButton19.scripts.OnClick(); assert(last() == ".house pickup 13")
+
+-- Moving with the targeting circle: the server hands over a Move a Piece item and says
+-- which; a button uses it. The item never shows in the grid.
+PlayerHousingButton18.scripts.OnClick(); assert(last() == ".house move", last())
+assert(not PlayerHousingSpotButton:IsShown(), "no spot button before the move starts")
+bags[0][6] = {901193, 1}
+fire("BAG_UPDATE")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicked up Broken Cart\tKrookowner\t\t0\t901193", "WHISPER", "Krookowner")
+assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "0 6", "spot button uses the mover")
+assert(PlayerHousingSpotButton.attrs.type == "item")
+assert(not PlayerHousingSlot4:IsShown(), "the mover isn't a furnishing")
+-- Placed: the item is used up and the server says so.
+bags[0][6] = nil
+fire("BAG_UPDATE")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+assert(not PlayerHousingSpotButton:IsShown(), "spot button gone after the move")
+-- The item can arrive after the state: the next bag scan brings the button.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t901190", "WHISPER", "Krookowner")
+assert(not PlayerHousingSpotButton:IsShown())
+bags[1][9] = {901190, 1}
+fire("BAG_UPDATE")
+driver.scripts.OnUpdate(driver, 1)
+assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "1 9", "spot button after the bag update")
+bags[1][9] = nil
+fire("BAG_UPDATE")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 
 -- Combat: the grid waits, the window can't toggle.
 combat = true
