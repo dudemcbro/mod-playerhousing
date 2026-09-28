@@ -118,12 +118,15 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (96 checks):
+checking the database and what the client sees after each step (103 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
   starter wreckage
-- placing with the targeting circle where it was clicked, facing you; undo returns the
+- placing with the targeting circle where it was clicked, facing you; each item sends its
+  own spell, and the circles fit the pieces (small for a chair, large for a farmhouse);
+  no menu after placing furniture, the menu after a building, and with `.house adjust
+  all` the menu after anything, with Take it back and Keep it here; undo returns the
   item, redo places it again; no spacing rules; placing far out on the island; refusing
   spots off the island; swimmers brought back to the beach
 - decorate mode: clickable copies, the snap rune on tables, the piece menu (turn, nudge,

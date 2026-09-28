@@ -45,6 +45,8 @@ local autoShown = false
 local pendingTurn, pendingLift, sinceSend = 0, 0, 0
 
 local frame, statusText, grid, emptyText, pageText, selectedPanel, selectedText
+local preview, previewModel, previewName, previewSize, previewNote
+local previewFacing = 0
 local homeButton, decorateButton, undoButton, redoButton, prevButton, nextButton
 local pickUpAllButton
 local filterButtons = {}
@@ -381,6 +383,89 @@ local function SavePosition()
     db.point = { point, relativePoint, x, y }
 end
 
+---------------------------------------------------------------------------------------------
+-- Preview: the piece's model, slowly turning, and its size, while hovering its icon.
+-- PlayerHousing_Models (PieceModels.lua) comes from the module's content builder.
+
+local function Yards(value)
+    if value < 1 then
+        return "under 1 yd"
+    end
+    return ("%d yd"):format(math.floor(value + 0.5))
+end
+
+local function CreatePreview()
+    preview = CreateFrame("Frame", "PlayerHousingPreview", UIParent)
+    preview:SetWidth(220)
+    preview:SetHeight(268)
+    preview:SetPoint("TOPRIGHT", frame, "TOPLEFT", -4, 0)
+    preview:SetFrameStrata("DIALOG")
+    preview:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 32, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+
+    previewName = preview:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    previewName:SetPoint("TOPLEFT", 10, -10)
+    previewName:SetPoint("TOPRIGHT", -10, -10)
+
+    previewModel = CreateFrame("PlayerModel", "PlayerHousingPreviewModel", preview)
+    previewModel:SetPoint("TOPLEFT", 10, -28)
+    previewModel:SetWidth(200)
+    previewModel:SetHeight(190)
+
+    previewNote = preview:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    previewNote:SetPoint("CENTER", previewModel, "CENTER")
+    previewNote:SetWidth(180)
+
+    previewSize = preview:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    previewSize:SetPoint("BOTTOMLEFT", 10, 12)
+    previewSize:SetPoint("BOTTOMRIGHT", -10, 12)
+
+    preview:SetScript("OnUpdate", function(self, elapsed)
+        previewFacing = (previewFacing + elapsed * 0.6) % (2 * math.pi)
+        previewModel:SetFacing(previewFacing)
+    end)
+    preview:Hide()
+end
+
+local function ShowPreview(piece)
+    if not preview or not piece then
+        return
+    end
+
+    local data = PlayerHousing_Models and PlayerHousing_Models[piece.id]
+    previewName:SetText(piece.name)
+    previewSize:SetText(data and (Yards(data[2]) .. " across, " .. Yards(data[3]) .. " tall") or "")
+    previewNote:SetText("")
+
+    local model = data and data[1]
+    if model == "player" then
+        previewModel:SetUnit("player")
+        previewModel:Show()
+        previewNote:SetText("")
+    elseif model then
+        previewModel:ClearModel()
+        previewModel:SetModel(model)
+        -- Big and small pieces both fill the frame.
+        previewModel:SetModelScale(math.min(1.5, 2.5 / math.max(data[2], data[3], 0.5)))
+        previewModel:SetPosition(0, 0, 0)
+        previewModel:Show()
+    else
+        previewModel:Hide()
+        previewNote:SetText("No preview for this building. The targeting circle shows its size.")
+    end
+    preview:Show()
+end
+
+local function HidePreview()
+    if preview then
+        preview:Hide()
+    end
+end
+
 local function MakeSlot(index)
     local button = CreateFrame("Button", "PlayerHousingSlot" .. index, grid, "SecureActionButtonTemplate")
     button:SetWidth(SLOT_SIZE)
@@ -407,8 +492,12 @@ local function MakeSlot(index)
         GameTooltip:AddLine("Click it, then click where it should go.", 0.4, 1, 0.4)
         GameTooltip:AddLine("Drag it to an action bar to keep it handy.", 0.7, 0.7, 0.7)
         GameTooltip:Show()
+        ShowPreview(self.piece)
     end)
-    button:SetScript("OnLeave", GameTooltip_Hide)
+    button:SetScript("OnLeave", function()
+        GameTooltip_Hide()
+        HidePreview()
+    end)
     -- Onto an action bar, like dragging it out of the bag.
     button:SetScript("OnDragStart", function(self)
         if self.piece and not InCombatLockdown() then
@@ -585,6 +674,8 @@ local function CreateWindow()
     selectedPanel:Hide()
 
     SetFilter("all")
+    CreatePreview()
+    frame:HookScript("OnHide", HidePreview)
 end
 
 function PlayerHousing_Toggle()

@@ -1,7 +1,7 @@
 -- Runs PlayerHousing.lua outside the game against a few stubbed WoW 3.3.5 API calls and
 -- checks what it does with state messages, bag contents, clicks and the mouse wheel.
 --
---   lua5.1 client-addon/test/harness.lua client-addon/PlayerHousing/PlayerHousing.lua
+--   lua5.1 client-addon/test/harness.lua client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHousing.lua
 --
 -- (luajit works too.) It can't show how the window looks; that needs the real client.
 local sent, printed = {}, {}
@@ -30,6 +30,9 @@ function Widget:CreateFontString() return setmetatable({scripts={}, attrs={}, ev
 function Widget:CreateTexture() return setmetatable({scripts={}, attrs={}, events={}, shown=true}, Widget) end
 function Widget:GetPoint() return "CENTER", nil, "CENTER", 10, 20 end
 function Widget:Enable() self.enabled = true end
+function Widget:SetModel(path) self.modelPath = path end
+function Widget:ClearModel() self.modelPath = nil end
+function Widget:SetUnit(unit) self.unit = unit end
 function Widget:Disable() self.enabled = false end
 
 function CreateFrame(kind, name, parent, template)
@@ -70,7 +73,7 @@ function GetContainerItemLink(bag, slot)
 end
 function GetContainerItemInfo(bag, slot) local it = bags[bag][slot]; return "Interface\\Icons\\X", it[2] end
 
-dofile(arg[1])
+for i = 1, #arg do dofile(arg[i]) end
 
 local driver
 for _, f in ipairs(frames) do if f.events.CHAT_MSG_ADDON then driver = f end end
@@ -96,6 +99,18 @@ assert(PlayerHousingSlot1.attrs.item == "1 4", "barrel first (by name)")
 assert(PlayerHousingSlot2.attrs.item == "0 1" and PlayerHousingSlot2.count.text == 5, "chairs stacked: " .. tostring(PlayerHousingSlot2.count.text))
 assert(PlayerHousingSlot3.attrs.item == "0 2", "buildings last")
 assert(PlayerHousingSelected:IsShown(), "selected panel shown")
+
+-- Hovering a piece previews its model and size; leaving hides it.
+PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)
+assert(PlayerHousingPreview:IsShown(), "preview shown")
+assert(PlayerHousingPreviewModel.modelPath == PlayerHousing_Models[901105][1], "chair model: " .. tostring(PlayerHousingPreviewModel.modelPath))
+PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
+assert(not PlayerHousingPreview:IsShown(), "preview hidden on leave")
+-- Buildings made of world models get their size only.
+PlayerHousing_Models[902200][1] = false
+PlayerHousingSlot3.scripts.OnEnter(PlayerHousingSlot3)
+assert(not PlayerHousingPreviewModel:IsShown(), "no model for a world model building")
+PlayerHousingSlot3.scripts.OnLeave(PlayerHousingSlot3)
 assert(PlayerHousingFrame.height == 456)
 
 -- Filters and search.

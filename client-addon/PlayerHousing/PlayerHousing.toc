@@ -5,4 +5,5 @@
 ## Version: 1.0
 ## SavedVariablesPerCharacter: PlayerHousingDB
 
+PieceModels.lua
 PlayerHousing.lua

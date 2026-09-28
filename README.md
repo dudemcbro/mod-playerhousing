@@ -25,8 +25,13 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 
 ### Placing things
 
-1. Right-click a furnishing or building in your bags.
+1. Right-click a furnishing or building in your bags. The targeting circle is the size of
+   the piece (from 1 yard for a candle to 20 for a manor), so you can see the room it takes.
 2. Click where it should go. It lands on that exact spot, facing you.
+
+After placing a building, its menu opens by itself: Keep it here, Take it back, turn or
+nudge it. The piece standing there is the preview. Island settings (or `.house adjust`)
+switches this to every piece, or off.
 
 That's the whole flow. You can place anywhere on your island, indoors or out, up to the
 beach. The only rules: it has to be on your island, you have to be able to see the spot,
@@ -116,6 +121,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
 | `.house privacy <private\|friends\|public>` | Who can visit |
 | `.house greeting <text\|clear>` | The message visitors see |
+| `.house adjust <all\|buildings\|off>` | When a piece's menu opens by itself after placing |
 
 Without an id, commands act on the selected piece (the one you last clicked).
 
@@ -129,6 +135,8 @@ menus. It's optional: the House Key menus do everything without it.
 
 - Your furnishings and buildings as icons, with filters and search. Click one, then click
   where it goes. Drag one to an action bar to keep it handy.
+- Hover an icon to preview the piece: its model, slowly turning, and its size. (Buildings
+  made of world models can't be drawn in a window; they show their size only.)
 - Go home or leave, Decorate, Undo and Redo (the tooltip says what they'd undo),
   Collection, Storage, Visit and the full menu, one click each.
 - For the selected piece: turn left or right (or use the mouse wheel over the window:
@@ -145,7 +153,7 @@ The addon talks to the server with the same `.house` commands and reads a state 
 the server whispers to the player (addon prefix `HOUSING`, fields in
 `PlayerHousingMgr::SendAddonState`). `client-addon/test/harness.lua` runs it outside the
 game against stubbed WoW functions: `lua5.1 client-addon/test/harness.lua
-client-addon/PlayerHousing/PlayerHousing.lua`.
+client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHousing.lua`.
 
 ## Install
 
@@ -190,8 +198,9 @@ Every setting can also come from an environment variable, for example
 
 The pieces, their models and what unlocks them are written as a Python list in
 `tools/content/pieces.py`. `tools/content/build_content.py` turns it into
-`sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces and rules)
-and `docs/UNLOCKS.md`. It reads the world database (to copy models and behavior from
+`sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces, rules and
+the targeting circle spells), `docs/UNLOCKS.md` and the addon's model list
+(`client-addon/PlayerHousing/PieceModels.lua`). It reads the world database (to copy models and behavior from
 existing objects) and the client data's `dbc` folder (for model sizes and names):
 
 ```
@@ -220,9 +229,12 @@ fits, since players already see and track those.
   `920000 + (item - 900000)` while decorating, a clickable copy of chairs and stations that
   opens the piece menu instead of working. Buildings stay visible from farther away.
   Housing objects have server-side collision turned off.
-- **Placement** uses the Flare targeting circle: the item's spell is caught before it casts,
-  so there's no cast bar, sound or cooldown. The core has already checked range and line of
-  sight to the clicked spot by then.
+- **Placement** uses a targeting circle: each piece's item carries a ground-target spell
+  whose circle matches the piece's size (ten spells, 1 to 20 yards, listed in
+  `tools/content/build_content.py`). The spell is caught before it casts, so there's no
+  cast bar, sound or cooldown. The core has already checked range and line of sight to
+  the clicked spot by then. Players who have old copies of the items cached see the old
+  circle size until they clear their `WDB` folder.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. The list lives in
   memory and is cleared when the owner leaves the island.
@@ -247,7 +259,7 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (96 checks: placing, undo, decorating, storage, the Collection,
+headless clients (103 checks: placing, undo, decorating, storage, the Collection,
 buildings, mannequins, visitors, working furniture, addon messages, relogging).
 
 ## Rollback

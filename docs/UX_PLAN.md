@@ -326,7 +326,7 @@ to match, or the server and the players' games disagree about where walls are:
 | Part | What changes | Status |
 | --- | --- | --- |
 | Players' game client | A patch file (`patch-H.MPQ`) moves the hall out of sight. Every player puts it in their WoW `Data` folder once. | Built by `make_client_patch.sh` from a 3.3.5a client. Checked against a test file only; **never yet tried with a real client**, so that's the first to-do. |
-| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 96/96. |
+| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 103/103. |
 | Database | The arrival spot moves to the old hall's plateau. | The `cleared` row of `mod_playerhousing_layout`, now the default (`PlayerHousing.Layout`); tested. |
 
 A player without the patch would still see the hall and bump into walls that aren't
@@ -534,7 +534,7 @@ command `.house unlock all <character>`. Live servers leave both off.
 Tick items off here as they land. Each phase ships on its own, keeps the end-to-end test
 green, and adds to it.
 
-**Where it stands:** all six phases are built and pass the end-to-end test (96 checks, on
+**Where it stands:** all six phases are built and pass the end-to-end test (103 checks, on
 the cleared island, in the development container). What hasn't met a real 3.3.5a client
 yet: the cleared island patch, how pieces look (on tabletops, building models and their
 walls), the targeting circle, and the client addon's window. Those need your client, so
@@ -575,7 +575,9 @@ With your client, once the patch works:
   it and holds the weapons; changing the figure; whether it should stand frozen like a
   statue instead of breathing (a small change if so)
 - [ ] the client addon (`client-addon/PlayerHousing`): the window, icons, mouse wheel
-  turning, key bindings
+  turning, key bindings, and the preview (does each model fit the frame and turn nicely)
+- [ ] the targeting circles look right for small, medium and large pieces (clear the
+  `WDB` folder first so the client forgets the old circle)
 - [ ] look at the doubtful models listed in the content list
 
 ### Content list
@@ -746,3 +748,57 @@ plaques.
   version of each weapon and shield model (built from your client, like the island
   patch), and pieces would tilt flat against a wall. Helms and shoulders are made for a
   body, so they stay on mannequins.
+
+## 13. Seeing a piece before it's placed
+
+Asked for: a see-through copy that follows the mouse, as in retail WoW's housing. The
+3.3.5 client can't do that: the server only learns the spot when you click, addons can't
+read the 3D position under the cursor, and placed objects have no transparency. Built
+instead:
+
+- [x] **A circle the size of the piece**, 1 to 20 yards, instead of Flare's 10 for all.
+- [x] **The placed piece is the preview**: after placing a building (or anything, per
+  player setting), its menu opens with Keep it here, Take it back, turn and nudge.
+- [x] **Addon preview**: hovering a piece shows its model turning and its size.
+- [ ] **Possible later**: a see-through hologram where you click, before placing. Units
+  can be drawn see-through (stealthed party members, hologram NPCs), but only 9 of the 315
+  piece models exist as unit models; the client patch would add the rest. Try one piece
+  with your client first.
+
+## 14. A catalog of (almost) every object
+
+The goal: players earn and place most of the game's objects and buildings, or server
+admins switch them all on.
+
+**How big "everything" is.** The world database has 21,609 object templates, but they
+share only 3,478 distinct models (2,987 small models and 88 building-sized world models; a
+single inn chair model is behind hundreds of templates). A piece is one per model, so
+"everything" is at most about 3,500 pieces.
+
+**Database cost.** Each piece is an item, one or two object templates and a piece row:
+about 15,000 small rows for everything, a few megabytes next to a 437 MB world database,
+and fixed however many players there are. What grows with players stays capped by the
+island limits (one row per placed piece, at most 210 per island) and the Collection (one
+row per unlocked piece per account, at most about 3,500). Placed pieces on islands exist
+only in memory while someone is there. So the database isn't the concern; curation is.
+
+**Why still one template per piece, not a flag on the originals.** The original objects
+are used all over the world (the Stormwind mailbox, every inn chair), many are chests,
+doors, traps or quest objects that must not work on an island, and players see each
+template's name when hovering it. Copies keep the originals untouched and each piece named.
+Items can't be flagged either: in 3.3.5 an item's name and icon come from its template.
+
+**The plan.**
+
+- [ ] The content builder generates the catalog from the game data: every distinct model
+  that isn't a door, trap, transport or invisible marker, named after its most common
+  template, with its size, and grouped by where it's spawned (zone, dungeon, raid).
+- [ ] Unlocks come from where the model appears: a dungeon's models unlock with that
+  dungeon's achievement, a zone's with its exploration achievement, and so on. The
+  hand-picked pieces keep their own rules.
+- [ ] `PlayerHousing.Catalog = curated | everything` for admins: curated is today's list;
+  everything adds the generated catalog. `UnlockAll` still unlocks it all for testing.
+- [ ] Finding things among thousands: search by name in the Collection (House Key and the
+  addon), and the addon's preview.
+- [ ] A few big world model buildings (keeps, inns, towers) as buildings, each checked in
+  game for doors and walls.
