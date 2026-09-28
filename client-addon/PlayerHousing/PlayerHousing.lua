@@ -15,7 +15,7 @@ local COLUMNS, ROWS = 8, 4
 local SLOT_SIZE, SLOT_GAP = 36, 4
 local PAGE_SIZE = COLUMNS * ROWS
 local WIDTH = 24 + COLUMNS * (SLOT_SIZE + SLOT_GAP)
-local BASE_HEIGHT, SELECTED_HEIGHT = 356, 124
+local BASE_HEIGHT, SELECTED_HEIGHT = 356, 144
 local SEND_INTERVAL = 0.3   -- seconds between mouse wheel commands; turns in between add up
 
 BINDING_HEADER_PLAYERHOUSING = "Player Housing"
@@ -32,7 +32,7 @@ local state = {
     selected = 0, selectedName = "", selectedBuilding = false,
     furnishings = 0, maxFurnishings = 0, buildings = 0, maxBuildings = 0,
     undo = "", redo = "", islandOwner = "",
-    pendingMover = 0,
+    pendingMover = 0, pendingCopy = 0,
 }
 
 local db                    -- PlayerHousingDB, once loaded
@@ -51,7 +51,7 @@ local preview, previewModel, previewName, previewSize, previewNote
 local plan, planRect, planBorder, planYou, planYouLabel
 local previewFacing = 0
 local homeButton, decorateButton, undoButton, redoButton, prevButton, nextButton
-local pickUpAllButton, spotButton, selectedHelp
+local pickUpAllButton, spotButton
 local filterButtons = {}
 local slots = {}
 
@@ -137,19 +137,32 @@ local function FilteredPieces()
     return list
 end
 
--- While a move waits for its spot, a button uses the Move a Piece item, so there's no need
--- to find it in the bags. It's a secure button too.
+local function PieceLocation(id)
+    for _, piece in ipairs(pieces) do
+        if piece.id == id then
+            return piece.bag .. " " .. piece.slot
+        end
+    end
+end
+
+-- While a move or a copy waits for its spot, a button uses the item (Move a Piece, or the
+-- copy), so there's no need to find it in the bags. It's a secure button too.
 local function UpdateSpotButton()
-    local location = state.own and state.pendingMover > 0 and movers[state.pendingMover]
+    local location
+    if state.own and state.pendingMover > 0 then
+        location = movers[state.pendingMover]
+        spotButton:SetText("Now pick the spot")
+    elseif state.own and state.pendingCopy > 0 then
+        location = PieceLocation(state.pendingCopy)
+        spotButton:SetText("Now place the copy")
+    end
     if location then
         spotButton:SetAttribute("type", "item")
         spotButton:SetAttribute("item", location)
-        selectedHelp:Hide()
         spotButton:Show()
     else
         spotButton:SetAttribute("item", nil)
         spotButton:Hide()
-        selectedHelp:Show()
     end
 end
 
@@ -284,6 +297,7 @@ local function OnState(fields)
     state.redo = fields[12] or ""
     state.selectedBuilding = fields[13] == "1"
     state.pendingMover = tonumber(fields[14] or "") or 0
+    state.pendingCopy = tonumber(fields[15] or "") or 0
 
     -- The window comes up by itself on arriving home, and goes again on leaving.
     if not frame then
@@ -357,6 +371,14 @@ end
 
 local function Turn(degrees)
     pendingTurn = pendingTurn + degrees
+end
+
+-- The turn buttons: 15 degrees, Shift for 5, Ctrl for 90.
+local function TurnButton(direction)
+    return function()
+        local step = IsShiftKeyDown() and 5 or (IsControlKeyDown() and 90 or 15)
+        Turn(direction * step)
+    end
 end
 
 local function Lift(yards)
@@ -727,8 +749,8 @@ local function CreateWindow()
     selectedText:SetJustifyH("LEFT")
 
     Row(selectedPanel, -18, {
-        { "Turn left", function() Turn(15) end, "Turn left", "15 degrees. The mouse wheel over this window turns it too." },
-        { "Turn right", function() Turn(-15) end, "Turn right", "15 degrees." },
+        { "Turn left", TurnButton(1), "Turn left", "15 degrees. Shift: 5. Ctrl: 90. The mouse wheel over this window turns it too." },
+        { "Turn right", TurnButton(-1), "Turn right", "15 degrees. Shift: 5. Ctrl: 90." },
         { "Face me", Command("face"), "Face me", "Turns it to face you." },
         { "Here", Command("here"), "Move here", "Moves it to where you're standing." },
         { "Move", Command("move"), "Move with the targeting circle",
@@ -745,22 +767,41 @@ local function CreateWindow()
         { "Down", Command("down"), "Lower", "A tenth of a yard." },
     })
 
-    pickUpAllButton = MakeButton(selectedPanel, "Pick up with contents", 150, function() PickUp(true) end,
+    Row(selectedPanel, -66, {
+        { "Bigger", function() PlayerHousing_Command(IsShiftKeyDown() and "size normal" or "size bigger") end,
+          "Bigger", "A tenth bigger, up to the server's limit. What stands on it keeps its place. Shift: normal size." },
+        { "Smaller", function() PlayerHousing_Command(IsShiftKeyDown() and "size normal" or "size smaller") end,
+          "Smaller", "A tenth smaller. Shift: normal size." },
+        { "Tilt fwd", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt forward") end,
+          "Tilt forward", "5 degrees, its front down. Shift: stand it straight." },
+        { "Tilt back", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt back") end,
+          "Tilt back", "5 degrees. Shift: stand it straight." },
+        { "Tilt L", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt left") end,
+          "Tilt to its left", "5 degrees, toward its own left. Shift: stand it straight." },
+        { "Tilt R", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt right") end,
+          "Tilt to its right", "5 degrees. Shift: stand it straight." },
+    })
+
+    local anotherButton = MakeButton(selectedPanel, "Another", 70, Command("another"),
+        "Place another like this", "A button appears next to this one: click it, then click the spot. The new one gets this one's turn, size and tilt.")
+    anotherButton:SetPoint("TOPLEFT", 12, -90)
+
+    pickUpAllButton = MakeButton(selectedPanel, "Pick up all", 90, function() PickUp(true) end,
         "Pick up with contents", "The building and everything inside it go back to your bags. Undo puts it all back.")
-    pickUpAllButton:SetPoint("TOPRIGHT", -12, -66)
+    pickUpAllButton:SetPoint("TOPRIGHT", -12, -90)
     pickUpAllButton:Hide()
 
-    selectedHelp = selectedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    selectedHelp:SetPoint("TOPLEFT", 14, -68)
-    selectedHelp:SetPoint("TOPRIGHT", -170, -68)
-    selectedHelp:SetJustifyH("LEFT")
-    selectedHelp:SetText("Mouse wheel: turn. Shift: finer. Ctrl: up and down.")
+    local help = selectedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    help:SetPoint("TOPLEFT", 14, -118)
+    help:SetPoint("TOPRIGHT", -14, -118)
+    help:SetJustifyH("LEFT")
+    help:SetText("Mouse wheel: turn. Shift: finer. Ctrl: up and down.")
 
     spotButton = CreateFrame("Button", "PlayerHousingSpotButton", selectedPanel, "SecureActionButtonTemplate,UIPanelButtonTemplate")
-    spotButton:SetWidth(170)
+    spotButton:SetWidth(150)
     spotButton:SetHeight(22)
-    spotButton:SetPoint("TOPLEFT", 12, -66)
-    spotButton:SetText("Click, then pick the spot")
+    spotButton:SetPoint("TOPLEFT", 86, -90)
+    spotButton:SetText("Now pick the spot")
     spotButton:RegisterForClicks("AnyUp")
     spotButton.tooltipTitle = "Pick the new spot"
     spotButton.tooltipText = "The targeting circle is as big as the piece. Right-click or Escape cancels the circle; the menu can start over."

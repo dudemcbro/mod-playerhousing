@@ -584,6 +584,12 @@ With your client, once the patch works:
 - [ ] the targeting circles look right for small, medium and large pieces (clear the
   `WDB` folder first so the client forgets the old circle)
 - [ ] look at the doubtful models listed in the content list
+- [ ] moving with the targeting circle: the Move button in the addon, the lantern going
+  along with its table
+- [ ] tilting: "Tilt forward" tips the front of a chair down (if it tips back, the sign of
+  the rotation needs flipping in `SpawnPlacement`), and tilted pieces look right from
+  every side; bigger and smaller pieces, and a lantern staying on a bigger table
+- [ ] the grid: a row of fence posts placed with the grid on and "Another" lines up
 
 ### Content list
 

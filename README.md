@@ -43,6 +43,20 @@ Swim too far out and you're brought back to the beach.
 - **Start decorating** (Home menu, or `.house decorate`). Now click any piece to open its
   menu: turn it, face it toward you, move it to where you stand, nudge it, raise or lower
   it, or pick it up.
+- **Move with the targeting circle** hands you a Move a Piece item with a circle the size
+  of the piece: click the new spot. Whatever stands on it (a lantern on a table, all the
+  furniture in a building) goes along, and one undo puts it all back.
+- **More turns, tilt and size...** turns by 90, 15 or 5 degrees, tilts it 5 degrees at a
+  time (forward, back, or to its left or right), and makes it bigger or smaller a tenth
+  at a time. What stands on it keeps its place on the bigger or smaller top. The server
+  sets how far sizes and tilts go (half to double size and 45 degrees by default), and
+  mannequins always stand upright.
+- **Place another like this** puts one more of the same piece in your bags (from your
+  bags, House Storage, or a new copy from the Collection). The next one you place gets
+  the first one's turn, size and tilt: handy for rows of fence posts or matching chairs.
+- **Grid** (Island settings, or `.house grid 1`): new pieces land on a grid and face
+  straight or diagonal, moves land on it too, and nudges go one square at a time. Pieces
+  put on a table top aren't squared up, so they stay on the table.
 - Tables, crates and shelves grow a blue rune while decorating. Click the rune to put a
   small piece (a lantern, a candle, a book) right on top.
 - **Done decorating** puts everything back to normal: chairs can be sat on, mailboxes and
@@ -115,6 +129,11 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house face [id]`, `here [id]` | Face you, move to where you stand |
 | `.house nudge <forward\|back\|left\|right\|up\|down> [yards] [id]` | Nudge a piece, relative to where you're facing |
 | `.house up`, `down` | Raise or lower a tenth of a yard |
+| `.house move [id]` | Move a piece with a targeting circle (what's on it comes along) |
+| `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
+| `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
+| `.house another [id]` | One more of this piece, placed with its turn, size and tilt |
+| `.house grid <off\|yards>` | Snap to a grid of 0.25 to 4 yards |
 | `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
 | `.house packup` | Pick up everything (undoable) |
 | `.house collection`, `storage`, `visit [name]` | Open those menus, or visit someone by name |
@@ -141,10 +160,13 @@ menus. It's optional: the House Key menus do everything without it.
   server's collision data (`vmaps/GameObjectModels.dtree`).
 - Go home or leave, Decorate, Undo and Redo (the tooltip says what they'd undo),
   Collection, Storage, Visit and the full menu, one click each.
-- For the selected piece: turn left or right (or use the mouse wheel over the window:
-  Shift for small steps, Ctrl to raise or lower), face me, move here, nudge, and pick up.
-  Move gives a button that brings up a targeting circle the size of the piece: click the
-  new spot, and whatever stands on it (or is inside a building) comes along.
+- For the selected piece: turn left or right (Shift-click for 5 degrees, Ctrl-click for
+  90, or the mouse wheel over the window: Shift for small steps, Ctrl to raise or lower),
+  face me, move here, nudge, bigger and smaller, tilt, and pick up. Shift-click on a size
+  or tilt button goes back to normal size or straight.
+- Move and Another bring up a button that uses the right item for you: click it, then
+  click the spot. Move takes whatever stands on the piece (or is inside a building)
+  along; Another places one more with the same turn, size and tilt.
 - Opens by itself when you arrive home (`/housing auto` turns that off). `/housing`
   shows or hides it, and `/housing <command>` runs any `.house` command.
 - Key bindings for the window, undo, redo, decorate, turning and selecting the nearest
@@ -191,6 +213,8 @@ client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHous
 | `PlayerHousing.GmBypassPrivate` | 0 | GMs in GM mode can visit any island |
 | `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |
 | `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
+| `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
+| `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
 | `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
 | `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |

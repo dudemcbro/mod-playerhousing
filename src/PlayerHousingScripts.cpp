@@ -320,6 +320,8 @@ public:
         handler->SendSysMessage(".house decorate [on|off] | undo | redo | packup");
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
+        handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
+        handler->SendSysMessage(".house another [id] | grid <off|yards>");
         handler->SendSysMessage(".house collection | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
         if (gm)
@@ -439,6 +441,54 @@ public:
 
             if (reason.empty())
                 mgr->Nudge(player, id, forward, left, up, reason);
+        }
+        else if (sub == "size" || sub == "resize")
+        {
+            std::string how = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            uint32 id = number(2);
+            if (how == "bigger" || how == "up")
+                mgr->Resize(player, id, 10.0f, true, reason);
+            else if (how == "smaller" || how == "down")
+                mgr->Resize(player, id, -10.0f, true, reason);
+            else if (how == "normal" || how == "reset")
+                mgr->Resize(player, id, 100.0f, false, reason);
+            else if (float percent = decimal(1, 0.0f); percent > 0.0f)
+                mgr->Resize(player, id, percent, false, reason);
+            else
+                reason = Acore::StringFormat("Usage: .house size <bigger|smaller|normal|percent> [id]. Sizes go from {:.0f}% to {:.0f}%.",
+                    mgr->GetMinSize() * 100.0f, mgr->GetMaxSize() * 100.0f);
+        }
+        else if (sub == "tilt")
+        {
+            std::string direction = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            float degrees = decimal(2, 5.0f);
+            uint32 id = number(3);
+            if (direction == "forward")
+                mgr->Tilt(player, id, degrees, 0.0f, false, reason);
+            else if (direction == "back")
+                mgr->Tilt(player, id, -degrees, 0.0f, false, reason);
+            else if (direction == "right")
+                mgr->Tilt(player, id, 0.0f, degrees, false, reason);
+            else if (direction == "left")
+                mgr->Tilt(player, id, 0.0f, -degrees, false, reason);
+            else if (direction == "straight" || direction == "level")
+                mgr->Tilt(player, number(2), 0.0f, 0.0f, true, reason);
+            else
+                reason = "Usage: .house tilt <forward|back|left|right|straight> [degrees] [id]. Forward tips its front down; left and right are its own.";
+        }
+        else if (sub == "another" || sub == "copy")
+            mgr->PlaceAnother(player, number(1), reason);
+        else if (sub == "grid")
+        {
+            std::string size = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (size == "off" || size == "0")
+                mgr->SetGridSize(player, 0.0f, reason);
+            else if (float yards = decimal(1, 0.0f); yards > 0.0f)
+                mgr->SetGridSize(player, yards, reason);
+            else if (float current = mgr->GetGridSize(player->GetGUID().GetCounter()); current > 0.0f)
+                reason = Acore::StringFormat("The grid is {} yards. Usage: .house grid <off|yards> (0.25 to 4).", PlayerHousingMgr::FormatYards(current));
+            else
+                reason = "The grid is off. Usage: .house grid <off|yards> (0.25 to 4).";
         }
         else if (sub == "select")
         {

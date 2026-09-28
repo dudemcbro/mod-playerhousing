@@ -114,6 +114,17 @@ def placements(owner_guid):
     return [dict(id=int(r[0]), item=int(r[1]), x=float(r[2]), y=float(r[3]), z=float(r[4]), o=float(r[5])) for r in rows]
 
 
+def shape_of(owner_guid, placement_id):
+    """A placement's size and tilt (radians)."""
+    row = db("SELECT scale, pitch, roll FROM mod_playerhousing_placement WHERE owner_guid=%d AND placement_id=%d"
+             % (owner_guid, placement_id))[0]
+    return dict(scale=float(row[0]), pitch=float(row[1]), roll=float(row[2]))
+
+
+def template_size(entry):
+    return float(db("SELECT size FROM gameobject_template WHERE entry=%d" % entry, "acore_world")[0][0])
+
+
 def placement_of(owner_guid, item):
     return next((p for p in placements(owner_guid) if p["item"] == item), None)
 
@@ -428,6 +439,129 @@ def main():
               joined(msgs))
     else:
         check("the lantern moves with its table", False, "no table and lantern to move")
+
+    # ------------------------------------------------------------- size, tilt, grid, copies
+    log("== size, tilt, grid and copies")
+    table = placement_of(owner_guid, TABLE)
+    lantern = placement_of(owner_guid, LANTERN)
+    if table and lantern:
+        normal = shape_of(owner_guid, table["id"])["scale"]
+        msgs = owner.command(".house size bigger %d" % table["id"])
+        raised = placement_of(owner_guid, LANTERN)
+        check("bigger: the table grows by a tenth", abs(shape_of(owner_guid, table["id"])["scale"] / normal - 1.1) < 0.001
+              and has(msgs, "made Tiny Table bigger (110%) with the Lantern"), joined(msgs))
+        check("the lantern stays on the bigger table top", math.dist((raised["x"], raised["y"]), (lantern["x"], lantern["y"])) < 0.01
+              and abs((raised["z"] - table["z"]) - (lantern["z"] - table["z"]) * 1.1) < 0.01, "%s -> %s" % (lantern, raised))
+        # The table has no clickable copy: it's changed through its rune.
+        wait_for(lambda: nearest_go(owner, live(TABLE)) is not None and abs(nearest_go(owner, live(TABLE)).scale() - template_size(live(TABLE)) * 1.1) < 0.01,
+                 3, owner)
+        go = nearest_go(owner, live(TABLE))
+        check("the client sees it bigger", go is not None and abs(go.scale() - template_size(live(TABLE)) * 1.1) < 0.01,
+              "scale %s" % (go.scale() if go else None))
+        owner.command(".house size 500 %d" % table["id"])
+        check("sizes stop at the server's limit (200%)", abs(shape_of(owner_guid, table["id"])["scale"] / normal - 2.0) < 0.001)
+        msgs = owner.command(".house size bigger %d" % table["id"])
+        check("and say so", has(msgs, "as big as it gets (200%)"), joined(msgs))
+        msgs = owner.command(".house size normal %d" % table["id"])
+        back = placement_of(owner_guid, LANTERN)
+        check("normal size, and the lantern comes back down with the top", abs(shape_of(owner_guid, table["id"])["scale"] - normal) < 0.001
+              and abs(back["z"] - lantern["z"]) < 0.01 and has(msgs, "brought Tiny Table back to normal size"), joined(msgs))
+
+    chair = placement_of(owner_guid, CHAIR)
+    msgs = owner.command(".house tilt forward 10 %d" % chair["id"])
+    shape = shape_of(owner_guid, chair["id"])
+    check("tilt forward 10°", abs(math.degrees(shape["pitch"]) - 10) < 0.05 and shape["roll"] == 0
+          and has(msgs, "tilted Westfall Chair 10° forward"), joined(msgs) + " " + str(shape))
+
+    def tilted_go():
+        go = nearest_go(owner, edit(CHAIR))
+        return go if go and go.rotation and abs(math.degrees(go.yaw_pitch_roll()[1]) - 10) < 0.5 else None
+    wait_for(lambda: tilted_go() is not None, 3, owner)
+    go = nearest_go(owner, edit(CHAIR))
+    angles = go.yaw_pitch_roll() if go and go.rotation else None
+    check("the client gets the tilted rotation, still facing the same way", angles is not None and abs(math.degrees(angles[1]) - 10) < 0.5
+          and angle_diff(angles[0], chair["o"]) < 0.02, "rotation %s angles %s o %.3f" % (go.rotation if go else None, angles, chair["o"]))
+    owner.command(".house tilt right 90 %d" % chair["id"])
+    check("tilting stops at the server's limit (45°)", abs(math.degrees(shape_of(owner_guid, chair["id"])["roll"]) - 45) < 0.05)
+    msgs = owner.command(".house tilt straight %d" % chair["id"])
+    shape = shape_of(owner_guid, chair["id"])
+    check("stand it straight", shape["pitch"] == 0 and shape["roll"] == 0 and has(msgs, "stood Westfall Chair straight"), joined(msgs))
+
+    chair_go = nearest_go(owner, edit(CHAIR))
+    if chair_go:
+        stand_next_to(owner, chair_go)
+        owner.use_gameobject(chair_go.guid)
+        owner.gossip_select("More turns, tilt and size...")
+        menu = owner.last_gossip
+        check("more turns, tilt and size: 90° and 5° turns, tilts, sizes",
+              all(o in options(menu) for o in ("Turn left 90°", "Turn right 5°", "Tilt forward 5° (its front down)", "Bigger (up to 200%)"))
+              and "Normal size" not in options(menu), str(options(menu)))
+        before = placement_of(owner_guid, CHAIR)
+        owner.gossip_select("Turn right 90°")
+        after = placement_of(owner_guid, CHAIR)
+        check("turn right 90°, and the menu stays for the next step", abs(angle_diff(after["o"], before["o"]) - math.pi / 2) < 0.02
+              and "Turn left 90°" in options(owner.last_gossip), str(options(owner.last_gossip)))
+        owner.gossip_select("Bigger")
+        owner.gossip_select("Tilt back 5°")
+        check("once it's bigger and tilted, the menu offers normal size and straight",
+              "Normal size" in options(owner.last_gossip) and "Stand it straight" in options(owner.last_gossip)
+              and options(owner.last_gossip)[0].startswith("Westfall Chair: Size 110%, tilted 5° back"), str(options(owner.last_gossip)))
+        owner.gossip_select("Back to the piece")
+        check("the piece menu offers another like this", "Place another like this" in options(owner.last_gossip), str(options(owner.last_gossip)))
+    else:
+        check("more turns, tilt and size: 90° and 5° turns, tilts, sizes", False, "no clickable chair in sight")
+
+    # Another like this: FreeMode hands over a new chair, which lands turned, sized and
+    # tilted like the first.
+    source = placement_of(owner_guid, CHAIR)
+    source_shape = shape_of(owner_guid, source["id"])
+    owner.addon_messages.clear()
+    _, msgs = owner.gossip_select("Place another like this") if owner.last_gossip else (None, [])
+    wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+    state = addon_state(owner)
+    check("another like this: a chair in the bags, and the addon knows which", owner.count_item(CHAIR) == 1 and state is not None
+          and len(state) > 15 and state[15] == str(CHAIR) and has(msgs, "this one's turn, size and tilt"), joined(msgs) + " " + str(state))
+    move(owner, *L["landing"])
+    copy_spot = (L["chair"][0] - 2.0, L["chair"][1] - 2.0, L["ground"])
+    msgs = owner.use_item(CHAIR, spell_of(CHAIR), copy_spot)
+    copy = next((p for p in placements(owner_guid) if p["item"] == CHAIR and p["id"] != source["id"]), None)
+    copy_shape = shape_of(owner_guid, copy["id"]) if copy else None
+    check("the copy lands where clicked, turned, sized and tilted like the first", copy is not None
+          and math.dist((copy["x"], copy["y"]), copy_spot[:2]) < 0.01 and angle_diff(copy["o"], source["o"]) < 0.01
+          and abs(copy_shape["scale"] - source_shape["scale"]) < 0.001 and abs(copy_shape["pitch"] - source_shape["pitch"]) < 0.001,
+          joined(msgs) + " %s %s / %s %s" % (source, source_shape, copy, copy_shape))
+    state = addon_state(owner)
+    check("the next chair places normally again", state is not None and state[15] == "0", str(state))
+    if copy:
+        owner.command(".house pickup %d" % copy["id"])
+        wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+        owner.destroy_item(CHAIR)
+        wait_for(lambda: owner.count_item(CHAIR) == 0, 3, owner)
+    owner.command(".house size normal %d" % source["id"])
+    owner.command(".house tilt straight %d" % source["id"])
+
+    # The grid: pieces land on it, new ones face straight or diagonal, nudges go one square.
+    msgs = owner.command(".house grid 1")
+    check("grid on", has(msgs, "Grid on") and db("SELECT grid FROM mod_playerhousing_character WHERE guid=%d" % owner_guid) == [["4"]],
+          joined(msgs))
+    owner.command(".house pickup %d" % source["id"])
+    wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+    move(owner, L["landing"][0] + 0.3, L["landing"][1] + 0.7, L["landing"][2])
+    odd_spot = (L["chair"][0] + 0.37, L["chair"][1] - 0.41, L["ground"])
+    msgs = owner.use_item(CHAIR, spell_of(CHAIR), odd_spot)
+    chair = placement_of(owner_guid, CHAIR)
+    on_grid = chair is not None and abs(chair["x"] - round(chair["x"])) < 0.001 and abs(chair["y"] - round(chair["y"])) < 0.001
+    squared = chair is not None and min(angle_diff(chair["o"], k * math.pi / 4) for k in range(8)) < 0.001
+    check("with the grid on, a piece lands on it, facing straight or diagonal", on_grid and squared
+          and math.dist((chair["x"], chair["y"]), odd_spot[:2]) < 0.75, joined(msgs) + " " + str(chair))
+    if chair:
+        msgs = owner.command(".house nudge forward 0.25 %d" % chair["id"])
+        nudged = placement_of(owner_guid, CHAIR)
+        step = (round(nudged["x"] - chair["x"], 3), round(nudged["y"] - chair["y"], 3))
+        check("nudges move one square along the grid", step in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)), joined(msgs) + " " + str(step))
+    msgs = owner.command(".house grid off")
+    check("grid off", has(msgs, "Grid off") and db("SELECT grid FROM mod_playerhousing_character WHERE guid=%d" % owner_guid) == [["0"]],
+          joined(msgs))
 
     # ------------------------------------------------------------- pick up, storage
     log("== pick up and storage")

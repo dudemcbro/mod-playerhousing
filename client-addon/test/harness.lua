@@ -125,7 +125,7 @@ PlayerHousingSlot3.scripts.OnLeave(PlayerHousingSlot3)
 PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)
 assert(not PlayerHousingPreviewPlan:IsShown() and PlayerHousingPreviewModel:IsShown(), "model shown, no floor plan")
 PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
-assert(PlayerHousingFrame.height == 480)
+assert(PlayerHousingFrame.height == 500)
 
 -- Filters and search.
 PlayerHousingButton11.scripts.OnClick()  -- Buildings
@@ -171,14 +171,28 @@ IsControlKeyDown = function() return true end
 PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
 OnUpdate(driver, 0.5)
 assert(last() == ".house nudge up 0.10", last())
+PlayerHousingButton14.scripts.OnClick()  -- Ctrl: Turn left 90
+OnUpdate(driver, 0.5)
+assert(last() == ".house rotate 90", last())
 IsControlKeyDown = function() return false end
+IsShiftKeyDown = function() return true end
+PlayerHousingButton15.scripts.OnClick()  -- Shift: Turn right 5
+OnUpdate(driver, 0.5)
+assert(last() == ".house rotate -5", last())
+PlayerHousingButton26.scripts.OnClick(); assert(last() == ".house size normal", last())
+PlayerHousingButton30.scripts.OnClick(); assert(last() == ".house tilt straight", last())
+IsShiftKeyDown = function() return false end
+PlayerHousingButton26.scripts.OnClick(); assert(last() == ".house size bigger", last())
+PlayerHousingButton27.scripts.OnClick(); assert(last() == ".house size smaller", last())
+PlayerHousingButton28.scripts.OnClick(); assert(last() == ".house tilt forward", last())
+PlayerHousingButton31.scripts.OnClick(); assert(last() == ".house tilt right", last())
 PlayerHousingButton20.scripts.OnClick(); assert(last() == ".house nudge forward")
 
 -- Buildings ask before being picked up.
 PlayerHousingButton19.scripts.OnClick()
 assert(popups[1][1] == "PLAYERHOUSING_PICKUP_BUILDING" and popups[1][2] == "Broken Cart")
 StaticPopupDialogs.PLAYERHOUSING_PICKUP_BUILDING.OnAccept({}, 12); assert(last() == ".house pickup 12")
-PlayerHousingButton26.scripts.OnClick()
+PlayerHousingButton33.scripts.OnClick()
 StaticPopupDialogs.PLAYERHOUSING_PICKUP_BUILDING_ALL.OnAccept({}, 12); assert(last() == ".house pickup 12 inside")
 
 -- A furnishing picks up straight away.
@@ -211,6 +225,14 @@ assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item 
 bags[1][9] = nil
 fire("BAG_UPDATE")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+
+-- Another like this: the server puts one in the bags, and the same button places it.
+PlayerHousingButton32.scripts.OnClick(); assert(last() == ".house another", last())
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t902101", "WHISPER", "Krookowner")
+assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "1 4", "spot button uses the barrel")
+assert(PlayerHousingSpotButton.text == "Now place the copy", PlayerHousingSpotButton.text)
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t14\tBarrel\t6\t200\t1\t10\tplaced Barrel\tKrookowner\t\t0\t0\t0", "WHISPER", "Krookowner")
+assert(not PlayerHousingSpotButton:IsShown(), "spot button gone once the copy is placed")
 
 -- Combat: the grid waits, the window can't toggle.
 combat = true

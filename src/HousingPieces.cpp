@@ -12,8 +12,10 @@
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
+#include <functional>
 
 using namespace Housing;
 
@@ -304,10 +306,10 @@ void PlayerHousingMgr::SavePlacement(ObjectGuid::LowType ownerGuid, Placement co
     // The gear on a stand is saved as it moves (see HousingStands.cpp), never from here.
     CharacterDatabase.DirectExecute(
         "REPLACE INTO mod_playerhousing_placement "
-        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look, parent_id) "
-        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+        "(owner_guid, placement_id, source_item_entry, map_id, scale, pos_x, pos_y, pos_z, orientation, look, parent_id, pitch, roll) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
         ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o, placement.look,
-        placement.parent);
+        placement.parent, placement.pitch, placement.roll);
 }
 
 void PlayerHousingMgr::DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const
@@ -342,6 +344,8 @@ bool PlayerHousingMgr::SpawnPlacement(Session& session, Map* map, Placement cons
     object->SetRespawnTime(0);
     object->SetSpawnedByDefault(false);
     object->SetObjectScale(goInfo->size * (placement.scale / piece.scale));
+    if (placement.pitch != 0.0f || placement.roll != 0.0f)
+        object->SetLocalRotationAngles(placement.o, placement.pitch, placement.roll);
     // Buildings are seen from across the island instead of popping in at the normal range.
     if (piece.IsBuilding())
         object->SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
@@ -551,6 +555,25 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     if (!piece->IsBuilding())
         placement.parent = FindSurfaceUnder(*session, placement.x, placement.y, placement.z);
 
+    // A copy of a piece takes after it; otherwise the grid (when on) squares it up.
+    float grid = GetGridSize(player->GetGUID().GetCounter());
+    auto copyItr = _pendingCopies.find(player->GetGUID());
+    bool copying = copyItr != _pendingCopies.end() && copyItr->second.itemEntry == piece->itemEntry;
+    if (copying)
+    {
+        placement.o = copyItr->second.o;
+        placement.scale = copyItr->second.scale;
+        placement.pitch = copyItr->second.pitch;
+        placement.roll = copyItr->second.roll;
+    }
+    else if (grid > 0.0f)
+    {
+        float step = PI_F / 4.0f;
+        placement.o = NormalizeAngle(std::round(placement.o / step) * step);
+    }
+    if (!placement.parent)
+        SnapToGrid(player->GetGUID().GetCounter(), placement.x, placement.y);
+
     Map* map = player->GetMap();
     if (!SpawnPlacement(*session, map, placement))
     {
@@ -567,6 +590,8 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     SavePlacement(session->ownerGuid, placement, session->mapId);
     if (session->decorating)
         SpawnMarkers(*session, map);
+    if (copying)
+        _pendingCopies.erase(player->GetGUID());
 
     Record(player, "placed " + piece->name, { Change{ placement.id, std::nullopt, placement } });
     reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session->ownerGuid));
@@ -1048,9 +1073,14 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
         changes.push_back(Change{ carriedId, carried, moved });
     }
 
+    return Commit(player, *session, label, std::move(changes), reason);
+}
+
+bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string const& label, std::vector<Change> changes, std::string& reason)
+{
     for (Change const& change : changes)
     {
-        if (!IsSpotOnIsland(change.after->x, change.after->y, change.after->z))
+        if (change.after && !IsSpotOnIsland(change.after->x, change.after->y, change.after->z))
         {
             reason = "That would take it off your island.";
             return false;
@@ -1059,13 +1089,14 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
 
     _report = {};
     std::string failure;
-    if (!ApplyChanges(player, *session, changes, true, failure))
+    if (!ApplyChanges(player, session, changes, true, failure))
     {
         reason = failure;
         return false;
     }
 
     // "turned 45° left" becomes "turned Westfall Chair 45° left".
+    Placement const& before = *changes.front().before;
     std::string name = PieceName(before.itemEntry);
     size_t space = label.find(' ');
     std::string verb = label.substr(0, space);
@@ -1208,7 +1239,19 @@ bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position c
         return false;
     }
 
-    if (!Transform(player, placementId, "moved", target.GetPositionX() - placement->x, target.GetPositionY() - placement->y,
+    float tx = target.GetPositionX();
+    float ty = target.GetPositionY();
+    if (Session const* session = FindSessionOf(player))
+    {
+        // On the grid, unless it's going onto a table top (the grid could put it off the edge).
+        std::vector<uint32> carried = CarriedBy(*session, placementId, true);
+        std::set<uint32> exclude(carried.begin(), carried.end());
+        exclude.insert(placementId);
+        if (!FindSurfaceUnder(*session, tx, ty, target.GetPositionZ(), exclude))
+            SnapToGrid(player->GetGUID().GetCounter(), tx, ty);
+    }
+
+    if (!Transform(player, placementId, "moved", tx - placement->x, ty - placement->y,
             target.GetPositionZ() - placement->z, 0.0f, false, 0.0f, reason))
         return false;
 
@@ -1224,6 +1267,7 @@ void PlayerHousingMgr::CancelMove(Player* player)
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _pendingMoves.erase(player->GetGUID());
+        _pendingCopies.erase(player->GetGUID());
     }
     for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
         if (uint32 count = player->GetItemCount(entry))
@@ -1269,6 +1313,22 @@ bool PlayerHousingMgr::Nudge(Player* player, uint32 placementId, float forward, 
     float dx = std::cos(po) * forward - std::sin(po) * left;
     float dy = std::sin(po) * forward + std::cos(po) * left;
 
+    // On the grid: one square along the grid line closest to that direction, onto the grid.
+    float grid = GetGridSize(player->GetGUID().GetCounter());
+    std::optional<Placement> placement = GetPlacement(player, ResolvePlacementArgument(player, placementId));
+    if (grid > 0.0f && placement && (dx != 0.0f || dy != 0.0f))
+    {
+        float x = placement->x;
+        float y = placement->y;
+        if (std::fabs(dx) >= std::fabs(dy))
+            x += dx > 0.0f ? grid : -grid;
+        else
+            y += dy > 0.0f ? grid : -grid;
+        SnapToGrid(player->GetGUID().GetCounter(), x, y);
+        dx = x - placement->x;
+        dy = y - placement->y;
+    }
+
     std::string label = "nudged";
     if (up > 0.0f)
         label = "raised";
@@ -1299,9 +1359,231 @@ bool PlayerHousingMgr::MoveHere(Player* player, uint32 placementId, std::string&
         return false;
     }
 
-    return Transform(player, placement->id, "moved",
-        player->GetPositionX() - placement->x, player->GetPositionY() - placement->y, player->GetPositionZ() - placement->z,
+    float x = player->GetPositionX();
+    float y = player->GetPositionY();
+    SnapToGrid(player->GetGUID().GetCounter(), x, y);
+    return Transform(player, placement->id, "moved", x - placement->x, y - placement->y, player->GetPositionZ() - placement->z,
         0.0f, false, 0.0f, reason);
+}
+
+bool PlayerHousingMgr::Resize(Player* player, uint32 placementId, float percent, bool relative, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+
+    placementId = ResolvePlacementArgument(player, placementId);
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece)
+    {
+        reason = "Choose a piece first: click it while decorating, or stand next to it.";
+        return false;
+    }
+
+    int32 lowest = int32(std::lround(_sizeMin * 100.0f));
+    int32 highest = int32(std::lround(_sizeMax * 100.0f));
+    if (lowest >= 100 && highest <= 100)
+    {
+        reason = "Pieces keep their size on this server.";
+        return false;
+    }
+
+    // Sizes are whole percents of the piece's normal size, so steps land on round numbers.
+    Placement const before = itr->second;
+    float normal = piece->scale > 0.0f ? piece->scale : 1.0f;
+    int32 current = int32(std::lround(before.scale / normal * 100.0f));
+    int32 wanted = std::clamp(relative ? current + int32(std::lround(percent)) : int32(std::lround(percent)), lowest, highest);
+    if (wanted == current)
+    {
+        if (!relative && wanted == 100)
+            reason = "It's already its normal size.";
+        else if (wanted == highest && (relative ? percent > 0.0f : percent >= highest))
+            reason = Acore::StringFormat("That's as big as it gets ({}%).", highest);
+        else if (wanted == lowest)
+            reason = Acore::StringFormat("That's as small as it gets ({}%).", lowest);
+        else
+            reason = Acore::StringFormat("It's already {}%.", wanted);
+        return false;
+    }
+
+    Placement after = before;
+    after.scale = normal * float(wanted) / 100.0f;
+    float k = after.scale / before.scale;
+
+    // What stands on it keeps its place on the bigger or smaller top; what's inside a
+    // building keeps its place in the rooms. Pieces on those move with what they stand on.
+    std::vector<uint32> carriedIds = CarriedBy(*session, placementId, true);
+    std::set<uint32> carriedSet(carriedIds.begin(), carriedIds.end());
+    std::map<uint32, std::array<float, 3>> shifts;
+    std::function<std::array<float, 3>(uint32, uint32)> shiftOf = [&](uint32 id, uint32 depth) -> std::array<float, 3>
+    {
+        auto known = shifts.find(id);
+        if (known != shifts.end())
+            return known->second;
+        Placement const& carried = session->placements[id];
+        std::array<float, 3> shift;
+        if (depth < 16 && carried.parent != placementId && carriedSet.count(carried.parent))
+            shift = shiftOf(carried.parent, depth + 1);
+        else
+            shift = { (carried.x - before.x) * (k - 1.0f), (carried.y - before.y) * (k - 1.0f), (carried.z - before.z) * (k - 1.0f) };
+        shifts[id] = shift;
+        return shift;
+    };
+
+    std::vector<Change> changes{ Change{ placementId, before, after } };
+    for (uint32 carriedId : carriedIds)
+    {
+        Placement const& carried = session->placements[carriedId];
+        std::array<float, 3> shift = shiftOf(carriedId, 0);
+        Placement moved = carried;
+        moved.x += shift[0];
+        moved.y += shift[1];
+        moved.z += shift[2];
+        changes.push_back(Change{ carriedId, carried, moved });
+    }
+
+    std::string label;
+    if (wanted == 100)
+        label = "brought back to normal size";
+    else
+        label = Acore::StringFormat("made {} ({}%)", wanted > current ? "bigger" : "smaller", wanted);
+    return Commit(player, *session, label, std::move(changes), reason);
+}
+
+bool PlayerHousingMgr::Tilt(Player* player, uint32 placementId, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+
+    placementId = ResolvePlacementArgument(player, placementId);
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece)
+    {
+        reason = "Choose a piece first: click it while decorating, or stand next to it.";
+        return false;
+    }
+
+    if (piece->HasFlag(PIECE_FLAG_STAND))
+    {
+        reason = "Mannequins always stand upright.";
+        return false;
+    }
+
+    if (_tiltMax <= 0.0f && !straighten)
+    {
+        reason = "Pieces stand upright on this server.";
+        return false;
+    }
+
+    // Tenths of a degree, so steps back and forth land back on level.
+    auto toTenths = [](float radians) { return int32(std::lround(radians * 1800.0f / PI_F)); };
+    auto toRadians = [](int32 tenths) { return float(tenths) * PI_F / 1800.0f; };
+    int32 limit = int32(std::lround(_tiltMax * 10.0f));
+
+    Placement const before = itr->second;
+    int32 pitch = straighten ? 0 : std::clamp(toTenths(before.pitch) + int32(std::lround(forwardDegrees * 10.0f)), -limit, limit);
+    int32 roll = straighten ? 0 : std::clamp(toTenths(before.roll) + int32(std::lround(rightDegrees * 10.0f)), -limit, limit);
+    if (pitch == toTenths(before.pitch) && roll == toTenths(before.roll))
+    {
+        reason = straighten ? "It's already standing straight." : Acore::StringFormat("That's as far as it tilts ({:.0f}°).", _tiltMax);
+        return false;
+    }
+
+    Placement after = before;
+    after.pitch = toRadians(pitch);
+    after.roll = toRadians(roll);
+
+    // Only the piece tilts: what stands on it stays where it is.
+    std::string label;
+    if (straighten)
+        label = "stood straight";
+    else if (forwardDegrees != 0.0f)
+        label = Acore::StringFormat("tilted {:.0f}° {}", std::fabs(forwardDegrees), forwardDegrees > 0.0f ? "forward" : "back");
+    else
+        label = Acore::StringFormat("tilted {:.0f}° to its {}", std::fabs(rightDegrees), rightDegrees > 0.0f ? "right" : "left");
+    return Commit(player, *session, label, { Change{ placementId, before, after } }, reason);
+}
+
+bool PlayerHousingMgr::PlaceAnother(Player* player, uint32 placementId, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+
+    placementId = ResolvePlacementArgument(player, placementId);
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece)
+    {
+        reason = "Choose a piece first: click it while decorating, or stand next to it.";
+        return false;
+    }
+
+    if (!CheckLimit(*session, *piece, reason))
+        return false;
+
+    // One from the bags, else from House Storage, else a new copy from the Collection.
+    std::string got;
+    uint32 reserved = 0;
+    auto consumes = _pendingConsumes.find(player->GetGUID());
+    if (consumes != _pendingConsumes.end())
+    {
+        auto entry = consumes->second.find(piece->itemEntry);
+        if (entry != consumes->second.end())
+            reserved = entry->second;
+    }
+    if (player->GetItemCount(piece->itemEntry) <= reserved)
+    {
+        std::map<uint32, uint32> storage = GetStorage(session->ownerGuid);
+        auto stored = storage.find(piece->itemEntry);
+        if (stored != storage.end() && stored->second > 0)
+        {
+            if (!player->AddItem(piece->itemEntry, 1))
+            {
+                reason = "Your bags are full.";
+                return false;
+            }
+            AddToStorage(session->ownerGuid, piece->itemEntry, -1);
+            got = "Took one out of House Storage. ";
+        }
+        else
+        {
+            uint32 cost = _freeMode ? 0 : piece->copyCost;
+            if (!GetCopy(player, piece->itemEntry, reason))
+                return false;
+            got = cost ? Acore::StringFormat("Here's a new one, for {}. ", FormatMoney(cost)) : "Here's a new one from your Collection. ";
+        }
+    }
+
+    CancelMove(player);
+    Placement const& source = itr->second;
+    _pendingCopies[player->GetGUID()] = PendingCopy{ piece->itemEntry, source.o, source.scale, source.pitch, source.roll };
+    reason = Acore::StringFormat("{}Right-click the {} in your bags, then click where it goes: it gets this one's turn, size and tilt.",
+        got, piece->name);
+    SendAddonState(player);
+    return true;
+}
+
+uint32 PlayerHousingMgr::GetPendingCopy(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _pendingCopies.find(player->GetGUID());
+    return itr != _pendingCopies.end() ? itr->second.itemEntry : 0;
+}
+
+void PlayerHousingMgr::SnapToGrid(ObjectGuid::LowType guid, float& x, float& y) const
+{
+    float grid = GetGridSize(guid);
+    if (grid <= 0.0f)
+        return;
+    x = std::round(x / grid) * grid;
+    y = std::round(y / grid) * grid;
 }
 
 bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, uint32 itemEntry, std::string& reason)

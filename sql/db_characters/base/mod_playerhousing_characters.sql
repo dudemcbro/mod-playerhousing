@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `orientation` float NOT NULL,
   `look` int unsigned NOT NULL DEFAULT 0,
   `parent_id` int unsigned NOT NULL DEFAULT 0,  -- the surface it stands on
+  `pitch` float NOT NULL DEFAULT 0,             -- tilt, radians
+  `roll` float NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_guid`,`placement_id`),
   KEY `idx_mod_playerhousing_placement_catalog` (`catalog_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -89,6 +91,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_character` (
   `guid` int unsigned NOT NULL,
   `flags` int unsigned NOT NULL DEFAULT 0,
   `tips` int unsigned NOT NULL DEFAULT 0,
+  `grid` tinyint unsigned NOT NULL DEFAULT 0,   -- grid snapping, in quarter yards (0: off)
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

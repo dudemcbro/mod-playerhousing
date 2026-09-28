@@ -63,6 +63,24 @@ PlayerHousing.MaxFurnishings = 200
 PlayerHousing.MaxBuildings = 10
 
 ###############################################################################
+# PlayerHousing.Size.Min
+# PlayerHousing.Size.Max
+#    How small and how big players may make a piece, as a multiple of its
+#    normal size. 1 and 1 turn resizing off.
+#    Default: 0.5, 2
+###############################################################################
+PlayerHousing.Size.Min = 0.5
+PlayerHousing.Size.Max = 2
+
+###############################################################################
+# PlayerHousing.Tilt.Max
+#    How far players may tilt a piece, in degrees each way (forward and back,
+#    left and right). 0 turns tilting off. Mannequins always stand upright.
+#    Default: 45
+###############################################################################
+PlayerHousing.Tilt.Max = 45
+
+###############################################################################
 # PlayerHousing.HouseKey.DelaySeconds
 #    How long "Go home" takes (moving or combat cancels). 0 = instant.
 #    FreeMode always goes instantly.

@@ -8,6 +8,8 @@
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 
@@ -62,6 +64,8 @@ namespace
         CMD_STAND_TAKE_OFF,   // action: placement id | slot << 24 (0xFF: everything)
         CMD_STAND_FIGURE,     // action: placement id
         CMD_ADJUST_MODE,
+        CMD_SHAPE_MENU,       // action: placement id
+        CMD_GRID,
         CMD_CLOSE
     };
 
@@ -94,13 +98,35 @@ namespace
         OP_NUDGE_UP,
         OP_NUDGE_DOWN,
         OP_UNDO,
-        OP_MOVE_CIRCLE
+        OP_MOVE_CIRCLE,
+        OP_TURN_LEFT_90,
+        OP_TURN_RIGHT_90,
+        OP_TURN_LEFT_5,
+        OP_TURN_RIGHT_5,
+        OP_TILT_FORWARD,
+        OP_TILT_BACK,
+        OP_TILT_LEFT,
+        OP_TILT_RIGHT,
+        OP_STRAIGHTEN,
+        OP_BIGGER,
+        OP_SMALLER,
+        OP_NORMAL_SIZE,
+        OP_ANOTHER
     };
+
+    // Ops of the "More turns, tilt and size" menu, which comes back after each.
+    bool IsShapeOp(uint32 op)
+    {
+        return op == OP_TURN_LEFT_15 || op == OP_TURN_RIGHT_15 || (op >= OP_TURN_LEFT_90 && op <= OP_NORMAL_SIZE);
+    }
 
     constexpr uint32 PAGE_SIZE = 18;
     constexpr uint32 ITEM_BASE = 900000;
     constexpr float NUDGE_STEP = 0.25f;
     constexpr float RAISE_STEP = 0.1f;
+    constexpr float TILT_STEP = 5.0f;
+    constexpr float SIZE_STEP = 10.0f;
+    constexpr float GRID_STEPS[] = { 0.0f, 0.5f, 1.0f, 2.0f };  // what the settings menu cycles through
 
     void Send(Player* player, MenuSource const& source, uint32 textId)
     {
@@ -203,6 +229,10 @@ namespace
             Add(player, GOSSIP_ICON_CHAT, "Clear the greeting", CMD_GREETING_CLEAR);
         Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Adjust menu opens: {} (click to change)",
             PlayerHousingMgr::AdjustModeName(sPlayerHousingMgr->GetAdjustMode(self))), CMD_ADJUST_MODE);
+        float grid = sPlayerHousingMgr->GetGridSize(self);
+        Add(player, GOSSIP_ICON_INTERACT_1, grid > 0.0f
+            ? Acore::StringFormat("Grid: {} yd (click to change)", PlayerHousingMgr::FormatYards(grid))
+            : std::string("Grid: off (click to change)"), CMD_GRID);
         Add(player, GOSSIP_ICON_CHAT, "Back", CMD_HOME);
         Send(player, source, TEXT_SETTINGS);
     }
@@ -275,6 +305,63 @@ namespace
         Add(player, GOSSIP_ICON_INTERACT_1, "Right", CMD_PIECE_OP, placementId | (OP_NUDGE_RIGHT << 24));
         Add(player, GOSSIP_ICON_INTERACT_1, "Up", CMD_PIECE_OP, placementId | (OP_NUDGE_UP << 24));
         Add(player, GOSSIP_ICON_INTERACT_1, "Down", CMD_PIECE_OP, placementId | (OP_NUDGE_DOWN << 24));
+        Add(player, GOSSIP_ICON_CHAT, "Back to the piece", CMD_PIECE, placementId);
+        Send(player, source, TEXT_PIECE);
+    }
+
+    std::string DescribeShape(Placement const& placement, PieceDefinition const& piece)
+    {
+        float normal = piece.scale > 0.0f ? piece.scale : 1.0f;
+        std::string text = Acore::StringFormat("Size {}%", int32(std::lround(placement.scale / normal * 100.0f)));
+        int32 forward = int32(std::lround(placement.pitch * 180.0f / 3.14159265f));
+        int32 right = int32(std::lround(placement.roll * 180.0f / 3.14159265f));
+        if (forward)
+            text += Acore::StringFormat(", tilted {}° {}", std::abs(forward), forward > 0 ? "forward" : "back");
+        if (right)
+            text += Acore::StringFormat("{} {}° to its {}", forward ? " and" : ", tilted", std::abs(right), right > 0 ? "right" : "left");
+        return text;
+    }
+
+    void ShowShape(Player* player, MenuSource const& source, uint32 placementId)
+    {
+        std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
+        PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
+        if (!piece || !sPlayerHousingMgr->IsOnOwnIsland(player))
+        {
+            CloseGossipMenuFor(player);
+            return;
+        }
+
+        auto op = [&](uint32 which) { return placementId | (which << 24); };
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {}", piece->name, DescribeShape(*placement, *piece)), CMD_SHAPE_MENU, placementId);
+        Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 90°", CMD_PIECE_OP, op(OP_TURN_LEFT_90));
+        Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 90°", CMD_PIECE_OP, op(OP_TURN_RIGHT_90));
+        Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 15°", CMD_PIECE_OP, op(OP_TURN_LEFT_15));
+        Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 15°", CMD_PIECE_OP, op(OP_TURN_RIGHT_15));
+        Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 5°", CMD_PIECE_OP, op(OP_TURN_LEFT_5));
+        Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 5°", CMD_PIECE_OP, op(OP_TURN_RIGHT_5));
+        if (!piece->HasFlag(PIECE_FLAG_STAND) && sPlayerHousingMgr->GetMaxTilt() > 0.0f)
+        {
+            Add(player, GOSSIP_ICON_INTERACT_1, "Tilt forward 5° (its front down)", CMD_PIECE_OP, op(OP_TILT_FORWARD));
+            Add(player, GOSSIP_ICON_INTERACT_1, "Tilt back 5°", CMD_PIECE_OP, op(OP_TILT_BACK));
+            Add(player, GOSSIP_ICON_INTERACT_1, "Tilt to its left 5°", CMD_PIECE_OP, op(OP_TILT_LEFT));
+            Add(player, GOSSIP_ICON_INTERACT_1, "Tilt to its right 5°", CMD_PIECE_OP, op(OP_TILT_RIGHT));
+        }
+        if (placement->pitch != 0.0f || placement->roll != 0.0f)
+            Add(player, GOSSIP_ICON_INTERACT_1, "Stand it straight", CMD_PIECE_OP, op(OP_STRAIGHTEN));
+        if (sPlayerHousingMgr->GetMinSize() < 1.0f || sPlayerHousingMgr->GetMaxSize() > 1.0f)
+        {
+            Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Bigger (up to {:.0f}%)", sPlayerHousingMgr->GetMaxSize() * 100.0f),
+                CMD_PIECE_OP, op(OP_BIGGER));
+            Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Smaller (down to {:.0f}%)", sPlayerHousingMgr->GetMinSize() * 100.0f),
+                CMD_PIECE_OP, op(OP_SMALLER));
+        }
+        float normal = piece->scale > 0.0f ? piece->scale : 1.0f;
+        if (std::lround(placement->scale / normal * 100.0f) != 100)
+            Add(player, GOSSIP_ICON_INTERACT_1, "Normal size", CMD_PIECE_OP, op(OP_NORMAL_SIZE));
+        if (!sPlayerHousingMgr->UndoLabel(player).empty())
+            Add(player, GOSSIP_ICON_INTERACT_2, "Undo: " + sPlayerHousingMgr->UndoLabel(player), CMD_PIECE_OP, op(OP_UNDO));
         Add(player, GOSSIP_ICON_CHAT, "Back to the piece", CMD_PIECE, placementId);
         Send(player, source, TEXT_PIECE);
     }
@@ -395,6 +482,23 @@ namespace
             case OP_TURN_RIGHT_45: sPlayerHousingMgr->Rotate(player, placementId, -45.0f, reason); break;
             case OP_TURN_LEFT_15: sPlayerHousingMgr->Rotate(player, placementId, 15.0f, reason); break;
             case OP_TURN_RIGHT_15: sPlayerHousingMgr->Rotate(player, placementId, -15.0f, reason); break;
+            case OP_TURN_LEFT_90: sPlayerHousingMgr->Rotate(player, placementId, 90.0f, reason); break;
+            case OP_TURN_RIGHT_90: sPlayerHousingMgr->Rotate(player, placementId, -90.0f, reason); break;
+            case OP_TURN_LEFT_5: sPlayerHousingMgr->Rotate(player, placementId, 5.0f, reason); break;
+            case OP_TURN_RIGHT_5: sPlayerHousingMgr->Rotate(player, placementId, -5.0f, reason); break;
+            case OP_TILT_FORWARD: sPlayerHousingMgr->Tilt(player, placementId, TILT_STEP, 0.0f, false, reason); break;
+            case OP_TILT_BACK: sPlayerHousingMgr->Tilt(player, placementId, -TILT_STEP, 0.0f, false, reason); break;
+            case OP_TILT_LEFT: sPlayerHousingMgr->Tilt(player, placementId, 0.0f, -TILT_STEP, false, reason); break;
+            case OP_TILT_RIGHT: sPlayerHousingMgr->Tilt(player, placementId, 0.0f, TILT_STEP, false, reason); break;
+            case OP_STRAIGHTEN: sPlayerHousingMgr->Tilt(player, placementId, 0.0f, 0.0f, true, reason); break;
+            case OP_BIGGER: sPlayerHousingMgr->Resize(player, placementId, SIZE_STEP, true, reason); break;
+            case OP_SMALLER: sPlayerHousingMgr->Resize(player, placementId, -SIZE_STEP, true, reason); break;
+            case OP_NORMAL_SIZE: sPlayerHousingMgr->Resize(player, placementId, 100.0f, false, reason); break;
+            case OP_ANOTHER:
+                // The menu closes so the copy can be placed.
+                sPlayerHousingMgr->PlaceAnother(player, placementId, reason);
+                keepMenu = false;
+                break;
             case OP_FACE_ME: sPlayerHousingMgr->FaceMe(player, placementId, reason); break;
             case OP_MOVE_HERE: sPlayerHousingMgr->MoveHere(player, placementId, reason); break;
             case OP_NUDGE_FORWARD: sPlayerHousingMgr->Nudge(player, placementId, NUDGE_STEP, 0.0f, 0.0f, reason); break;
@@ -427,6 +531,8 @@ namespace
         bool nudging = op >= OP_NUDGE_FORWARD && op <= OP_NUDGE_DOWN;
         if (nudging)
             ShowNudge(player, followed, placementId);
+        else if (IsShapeOp(op))
+            ShowShape(player, followed, placementId);
         else
             HousingMenus::ShowPiece(player, followed, placementId);
     }
@@ -605,14 +711,14 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
         Add(player, GOSSIP_ICON_INTERACT_1, "Pick up (back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 45°", CMD_PIECE_OP, placementId | (OP_TURN_LEFT_45 << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 45°", CMD_PIECE_OP, placementId | (OP_TURN_RIGHT_45 << 24));
-    Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 15°", CMD_PIECE_OP, placementId | (OP_TURN_LEFT_15 << 24));
-    Add(player, GOSSIP_ICON_INTERACT_2, "Turn right 15°", CMD_PIECE_OP, placementId | (OP_TURN_RIGHT_15 << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn toward me", CMD_PIECE_OP, placementId | (OP_FACE_ME << 24));
+    Add(player, GOSSIP_ICON_INTERACT_2, "More turns, tilt and size...", CMD_SHAPE_MENU, placementId);
     Add(player, GOSSIP_ICON_INTERACT_1, "Nudge...", CMD_NUDGE_MENU, placementId);
     Add(player, GOSSIP_ICON_INTERACT_1, "Move with the targeting circle", CMD_PIECE_OP, placementId | (OP_MOVE_CIRCLE << 24));
     Add(player, GOSSIP_ICON_INTERACT_1, "Move to where I'm standing", CMD_PIECE_OP, placementId | (OP_MOVE_HERE << 24));
     if (piece->HasFlag(PIECE_FLAG_SURFACE))
         Add(player, GOSSIP_ICON_VENDOR, "Put something on top", CMD_HOOK_MENU, placementId);
+    Add(player, GOSSIP_ICON_VENDOR, "Place another like this", CMD_PIECE_OP, placementId | (OP_ANOTHER << 24));
     if (!justPlaced && !sPlayerHousingMgr->UndoLabel(player).empty())
         Add(player, GOSSIP_ICON_INTERACT_2, "Undo: " + sPlayerHousingMgr->UndoLabel(player), CMD_PIECE_OP, placementId | (OP_UNDO << 24));
     Add(player, GOSSIP_ICON_CHAT, "Done", CMD_CLOSE);
@@ -822,6 +928,22 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
         case CMD_NUDGE_MENU:
             ShowNudge(player, source, action);
             return;
+        case CMD_SHAPE_MENU:
+            ShowShape(player, source, action);
+            return;
+        case CMD_GRID:
+        {
+            // Off, then each size in turn, then off again.
+            float grid = sPlayerHousingMgr->GetGridSize(player->GetGUID().GetCounter());
+            float next = GRID_STEPS[0];
+            for (size_t i = 0; i + 1 < std::size(GRID_STEPS); ++i)
+                if (grid >= GRID_STEPS[i] - 0.01f && grid < GRID_STEPS[i + 1] - 0.01f)
+                    next = GRID_STEPS[i + 1];
+            sPlayerHousingMgr->SetGridSize(player, next, reason);
+            Say(player, reason);
+            ShowSettings(player, source);
+            return;
+        }
         case CMD_PICKUP_MENU:
             ShowPickupChoice(player, source, action);
             return;

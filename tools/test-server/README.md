@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (104 checks):
+checking the database and what the client sees after each step (133 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -130,7 +130,13 @@ checking the database and what the client sees after each step (104 checks):
   item, redo places it again; no spacing rules; placing far out on the island; refusing
   spots off the island; swimmers brought back to the beach
 - decorate mode: clickable copies, the snap rune on tables, the piece menu (turn, nudge,
-  undo), putting a lantern on a table, picking up
+  undo), putting a lantern on a table, the lantern moving and turning with its table in
+  one undoable step, picking up
+- size, tilt, grid and copies: a table made bigger with the lantern kept on its top (and
+  the client seeing the new size), the size and tilt limits, a tilt reaching the client
+  as the object's rotation, the "More turns, tilt and size" menu, "Place another like
+  this" handing over a chair that lands with the first one's turn, size and tilt, and
+  the grid squaring up a new piece and nudging it one square
 - full bags: pieces go to House Storage, undo takes them back out, "Take everything"
 - the Collection: categories, hints with progress, free copies, a level up unlocking a
   shelter on the spot, a GM unlocking the mailbox for the owner
@@ -140,14 +146,16 @@ checking the database and what the client sees after each step (104 checks):
 - a mannequin: it takes after its owner, its menu, dressing it from the bags (the item
   leaves the bags but stays the same item), the figure holding the sword and wearing the
   pants (read the way the client reads them), undo and redo giving back the very same
-  item, taking gear off, picking it up with its gear and undoing that, gear mailed when
-  the bags are full, and the gear still there after a relog
+  item, taking gear off, picking it up with its gear and undoing that, moving it with the
+  targeting circle (the Move a Piece item used up, undo), gear mailed when the bags are
+  full, and the gear still there after a relog
 - visitors: greeting, private islands refusing strangers, invites, the visit menu, a
   guest arriving with one click, sitting on a chair, opening the owner's mailbox and
   seeing what the mannequin wears but not changing anything, private copies, privacy
   presets
 - the addon messages: at login, on request, the selected piece and the undo label
-- pack up everything and undo, unstuck, logging out on the island and back in
+- pack up everything and undo, unstuck, logging out on the island and back in (an
+  unfinished move's item is gone)
 
 Add `--verbose` to see every chat line, and `--layout guildhouse` when the server keeps
 the guild hall. The exit code is 0 only if every check passes.

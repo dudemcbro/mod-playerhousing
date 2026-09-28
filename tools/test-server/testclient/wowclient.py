@@ -8,6 +8,7 @@ object GUIDs, entries and positions.
 
 import hashlib
 import hmac
+import math
 import os
 import queue
 import socket
@@ -20,6 +21,7 @@ BUILD = 12340
 
 # Opcodes (from src/server/game/Server/Protocol/Opcodes.h)
 CMSG_CHAR_CREATE = 0x036
+CMSG_DESTROYITEM = 0x111
 CMSG_CHAR_ENUM = 0x037
 SMSG_CHAR_CREATE = 0x03A
 SMSG_CHAR_ENUM = 0x03B
@@ -295,7 +297,7 @@ def recv_exact(s, n):
 
 
 class WorldObject:
-    __slots__ = ("guid", "type_id", "entry", "x", "y", "z", "o", "fields")
+    __slots__ = ("guid", "type_id", "entry", "x", "y", "z", "o", "fields", "rotation")
 
     def __init__(self, guid, type_id):
         self.guid = guid
@@ -303,6 +305,19 @@ class WorldObject:
         self.entry = 0
         self.x = self.y = self.z = self.o = 0.0
         self.fields = {}
+        self.rotation = None  # game objects: (x, y, z, w) from the packed rotation
+
+    def scale(self):
+        """OBJECT_FIELD_SCALE_X."""
+        return struct.unpack("<f", struct.pack("<I", self.fields.get(4, 0)))[0]
+
+    def yaw_pitch_roll(self):
+        """A game object's rotation as the angles the server builds it from (Z, then Y, then X)."""
+        x, y, z, w = self.rotation
+        yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+        pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - x * z))))
+        roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+        return yaw, pitch, roll
 
     def __repr__(self):
         return "<obj guid=0x%x type=%d entry=%d pos=(%.2f, %.2f, %.2f)>" % (
@@ -318,6 +333,7 @@ class WorldClient:
         self.realm_id = realm_id
         self.log = log or (lambda msg: None)
         self.sock = None
+        self._rotation = None
         self.enc = None
         self.dec = None
         self.send_lock = threading.Lock()
@@ -560,10 +576,12 @@ class WorldClient:
             elif utype in (2, 3):  # CREATE_OBJECT / CREATE_OBJECT2
                 guid = r.packed_guid()
                 type_id = r.u8()
+                self._rotation = None
                 pos, flags = self._read_movement(r, want_flags=True)
                 fields = self._read_values(r)
                 obj = WorldObject(guid, type_id)
                 obj.fields = fields
+                obj.rotation = self._rotation
                 obj.entry = fields.get(3, 0)
                 if pos:
                     obj.x, obj.y, obj.z, obj.o = pos
@@ -652,8 +670,14 @@ class WorldClient:
         if flags & 0x80:
             r.u32()
             r.f32()
-        if flags & 0x200:
-            r.u64()
+        if flags & 0x200:  # ROTATION: packed quaternion (x 22 bits, y and z 21 bits, w positive)
+            packed = r.u64()
+            def signed(value, bits):
+                return value - (1 << bits) if value & (1 << (bits - 1)) else value
+            qx = signed(packed >> 42, 22) / float(1 << 21)
+            qy = signed((packed >> 21) & 0x1FFFFF, 21) / float(1 << 20)
+            qz = signed(packed & 0x1FFFFF, 21) / float(1 << 20)
+            self._rotation = (qx, qy, qz, math.sqrt(max(0.0, 1.0 - qx * qx - qy * qy - qz * qz)))
         if want_flags:
             return pos, flags
         return pos
@@ -874,6 +898,15 @@ class WorldClient:
         self.send(CMSG_USE_ITEM, struct.pack("<BBBIQIB", INVENTORY_SLOT_BAG_0, slot, 1, spell_id, guid, 0, 0) + targets)
         self.pump(wait)
         return self.messages_since(mark)
+
+    def destroy_item(self, entry, wait=1.0):
+        """Destroys the first backpack item with this entry, like dragging it out of the bags."""
+        slot, guid = self.find_item(entry)
+        if guid is None:
+            return False
+        self.send(CMSG_DESTROYITEM, struct.pack("<BBBBBB", INVENTORY_SLOT_BAG_0, slot, 1, 0, 0, 0))
+        self.pump(wait)
+        return True
 
     def open_mailbox(self, guid, wait=1.5):
         """What the client does on right-clicking a mailbox; the server answers only if the

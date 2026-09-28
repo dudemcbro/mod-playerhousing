@@ -213,6 +213,8 @@ namespace Housing
         float z{0.0f};
         float o{0.0f};
         float scale{1.0f};
+        float pitch{0.0f};                // tilt, radians: + tips its front down
+        float roll{0.0f};                 // tilt, radians: + leans it to its right
         uint32 look{0};                   // stands: race | gender << 8
         uint32 parent{0};                 // the surface it stands on: it moves with it
         std::map<uint8, GearItem> gear;   // stands: equipment slot -> item
@@ -293,6 +295,18 @@ public:
     bool Nudge(Player* player, uint32 placementId, float forward, float left, float up, std::string& reason);
     bool FaceMe(Player* player, uint32 placementId, std::string& reason);
     bool MoveHere(Player* player, uint32 placementId, std::string& reason);
+    // Percent of the piece's normal size, or (relative) percentage points more or less.
+    bool Resize(Player* player, uint32 placementId, float percent, bool relative, std::string& reason);
+    // Degrees; straighten sets both back to level.
+    bool Tilt(Player* player, uint32 placementId, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason);
+    bool PlaceAnother(Player* player, uint32 placementId, std::string& reason);
+    uint32 GetPendingCopy(Player const* player) const;
+    // Grid snapping, in yards (0: off).
+    float GetGridSize(ObjectGuid::LowType guid) const;
+    void SetGridSize(Player* player, float yards, std::string& reason) const;
+    float GetMinSize() const { return _sizeMin; }
+    float GetMaxSize() const { return _sizeMax; }
+    float GetMaxTilt() const { return _tiltMax; }
     bool PlaceOnHook(Player* player, uint32 surfacePlacementId, uint32 itemEntry, std::string& reason);
     bool StartMove(Player* player, uint32 placementId, std::string& reason);
     bool HandleMoveCast(Player* player, Item* castItem, Position const& target, std::string& reason);
@@ -372,6 +386,7 @@ public:
     bool ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const;
     std::string NameOf(ObjectGuid::LowType guid) const;
     static std::string FormatMoney(uint64 copper);
+    static std::string FormatYards(float yards);
     static char const* CategoryName(uint8 category);
 
 private:
@@ -478,6 +493,10 @@ private:
     bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
     void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes);
     bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason);
+    // Checks the island, applies the changes and records them as one step; the first change
+    // is the piece the label names.
+    bool Commit(Player* player, Session& session, std::string const& label, std::vector<Housing::Change> changes, std::string& reason);
+    void SnapToGrid(ObjectGuid::LowType guid, float& x, float& y) const;
     // Pieces that go wherever this one goes: what stands on it, and for a building (when
     // includeInside) what's inside it; each with what stands on them in turn.
     std::vector<uint32> CarriedBy(Session const& session, uint32 placementId, bool includeInside) const;
@@ -514,6 +533,9 @@ private:
     uint32 _maxFurnishings{200};
     uint32 _maxBuildings{10};
     uint32 _keyDelaySeconds{5};
+    float _sizeMin{0.5f};   // times the piece's normal size
+    float _sizeMax{2.0f};
+    float _tiltMax{45.0f};  // degrees either way
     std::string _layoutCode{"cleared"};
 
     Housing::LayoutDefinition _layout;
@@ -538,6 +560,17 @@ private:
     };
     std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
     std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
+
+    // "Place another like this": the next one placed takes the original's turn, size and tilt.
+    struct PendingCopy
+    {
+        uint32 itemEntry{0};
+        float o{0.0f};
+        float scale{1.0f};
+        float pitch{0.0f};
+        float roll{0.0f};
+    };
+    std::unordered_map<ObjectGuid, PendingCopy> _pendingCopies;
     ApplyReport _report;
 };
 

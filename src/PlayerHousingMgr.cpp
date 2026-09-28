@@ -104,6 +104,10 @@ void PlayerHousingMgr::LoadConfig()
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
     _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 5), 60);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
+
+    _sizeMin = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Min", 0.5f), 0.1f, 1.0f);
+    _sizeMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Max", 2.0f), 1.0f, 10.0f);
+    _tiltMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Tilt.Max", 45.0f), 0.0f, 180.0f);
 }
 
 bool PlayerHousingMgr::LoadDefinitions()
@@ -439,6 +443,38 @@ char const* PlayerHousingMgr::AdjustModeName(uint8 mode)
     }
 }
 
+std::string PlayerHousingMgr::FormatYards(float yards)
+{
+    // 0.25, 0.5, 1, 2
+    std::string text = Acore::StringFormat("{:.2f}", yards);
+    while (text.back() == '0')
+        text.pop_back();
+    if (text.back() == '.')
+        text.pop_back();
+    return text;
+}
+
+float PlayerHousingMgr::GetGridSize(ObjectGuid::LowType guid) const
+{
+    if (QueryResult result = CharacterDatabase.Query("SELECT grid FROM mod_playerhousing_character WHERE guid={}", guid))
+        return float(result->Fetch()[0].Get<uint8>()) / 4.0f;
+    return 0.0f;
+}
+
+void PlayerHousingMgr::SetGridSize(Player* player, float yards, std::string& reason) const
+{
+    // Quarter yards, up to 4 yards.
+    uint32 quarters = yards <= 0.0f ? 0 : std::clamp<uint32>(uint32(std::lround(yards * 4.0f)), 1, 16);
+    CharacterDatabase.DirectExecute(
+        "INSERT INTO mod_playerhousing_character (guid, flags, tips, grid) VALUES ({}, 0, 0, {}) ON DUPLICATE KEY UPDATE grid = {}",
+        player->GetGUID().GetCounter(), quarters, quarters);
+    if (!quarters)
+        reason = "Grid off: pieces go exactly where you click.";
+    else
+        reason = Acore::StringFormat("Grid on: pieces land on a {} yard grid, new ones face straight or diagonal, and nudges move one square.",
+            FormatYards(float(quarters) / 4.0f));
+}
+
 void PlayerHousingMgr::Say(Player* player, std::string const& text) const
 {
     if (player && player->GetSession())
@@ -629,8 +665,9 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 /*diffMs*/)
         return;
 
     ProcessPendingConsumes(player);
-    // A move not finished before leaving the island is dropped, with its item.
-    if (GetPendingMover(player) && !player->IsBeingTeleported() && !IsOnOwnIsland(player))
+    // A move not finished before leaving the island is dropped, with its item (and a copy
+    // not placed yet no longer takes after the original).
+    if ((GetPendingMover(player) || GetPendingCopy(player)) && !player->IsBeingTeleported() && !IsOnOwnIsland(player))
         CancelMove(player);
     UpdatePendingTrip(player);
 
@@ -863,7 +900,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     session.nextPlacementId = 1;
 
     if (QueryResult result = CharacterDatabase.Query(
-            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id FROM mod_playerhousing_placement "
+            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id, pitch, roll FROM mod_playerhousing_placement "
             "WHERE owner_guid={} AND map_id={} ORDER BY placement_id", ownerGuid, session.mapId))
     {
         do
@@ -879,6 +916,8 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
             placement.scale = std::max(0.05f, fields[6].Get<float>());
             placement.look = fields[7].Get<uint32>();
             placement.parent = fields[8].Get<uint32>();
+            placement.pitch = fields[9].Get<float>();
+            placement.roll = fields[10].Get<float>();
             session.nextPlacementId = std::max(session.nextPlacementId, placement.id + 1);
             if (!_pieces.count(placement.itemEntry))
                 continue;
@@ -1269,10 +1308,11 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         CountPlaced(owner, furnishings, buildings);
 
     // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
-    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
-        owner ? NameOf(owner) : "", own ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player));
+        owner ? NameOf(owner) : "", own ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
+        GetPendingCopy(player));
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
