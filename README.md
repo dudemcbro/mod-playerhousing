@@ -51,6 +51,23 @@ Swim too far out and you're brought back to the beach.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone
   too.
 
+### Mannequins: show off your gear
+
+The Mannequin (in everyone's starter set) is a stand for armor and weapons. Place it like
+any piece, then click it:
+
+- **Put gear on...** lists the armor, weapons, shields, shirts and tabards in your bags.
+  Pick one and the mannequin wears it; the item leaves your bags while it's on display,
+  enchants and gems included. Putting something on an occupied slot swaps them.
+- **Take off** puts an item back in your bags (Krook mails it to you if your bags are
+  full). Picking up the mannequin returns it with everything it wears.
+- **Figure** changes the body: every playable race, man or woman. A new mannequin takes
+  after you.
+- Every change can be undone, and undo gives back the very same item.
+- Visitors can click it to see what it's wearing, but can't change anything.
+
+Rings, necklaces, trinkets and relics don't show on a body, so they aren't offered.
+
 ### The Collection
 
 House Key, Collection. It lists every piece by category with your progress, for example
@@ -209,6 +226,13 @@ fits, since players already see and track those.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. The list lives in
   memory and is cleared when the owner leaves the island.
+- **Mannequins** are creatures (entry 900201) with the mirror image flag, the way the
+  Mirror Image spell works: the client asks what the figure wears and the module answers
+  (a `ServerScript` catching `CMSG_GET_MIRRORIMAGE_DATA`), while weapons are virtual items.
+  Gear on a stand leaves the inventory but stays in `item_instance`, the way mail keeps
+  items, with a row in `mod_playerhousing_placement_gear`; so enchants, gems and the item's
+  guid survive, and undo returns the same item. Deleting a character deletes its stand
+  gear; the characters rollback mails any gear still on stands back to its owners.
 
 ### Upgrading from the house levels version
 
@@ -223,8 +247,8 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (79 checks: placing, undo, decorating, storage, the Collection,
-buildings, visitors, working furniture, addon messages, relogging).
+headless clients (96 checks: placing, undo, decorating, storage, the Collection,
+buildings, mannequins, visitors, working furniture, addon messages, relogging).
 
 ## Rollback
 

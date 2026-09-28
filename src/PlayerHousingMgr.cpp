@@ -169,7 +169,9 @@ bool PlayerHousingMgr::LoadDefinitions()
         piece.hint = fields[12].Get<std::string>();
         piece.legacyCatalogId = fields[13].Get<uint32>();
 
-        if (!sObjectMgr->GetItemTemplate(piece.itemEntry) || !sObjectMgr->GetGameObjectTemplate(piece.goEntry) ||
+        // Stands are figures, not objects: they have no gameobject.
+        bool needsObject = !(piece.flags & PIECE_FLAG_STAND);
+        if (!sObjectMgr->GetItemTemplate(piece.itemEntry) || (needsObject && !sObjectMgr->GetGameObjectTemplate(piece.goEntry)) ||
             (piece.editGoEntry && !sObjectMgr->GetGameObjectTemplate(piece.editGoEntry)))
         {
             LOG_WARN("module", "mod-playerhousing: Piece {} ({}) is missing its item or object template; skipped.", piece.itemEntry, piece.name);
@@ -729,6 +731,12 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
 
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} OR guest_guid={}", guidLow, guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_placement WHERE owner_guid={}", guidLow);
+    // Gear on stands is out of the inventory, so the core's character deletion misses it. One
+    // transaction, so the items go before the rows that point at them.
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    trans->Append("DELETE ii FROM item_instance ii JOIN mod_playerhousing_placement_gear g ON g.item_guid = ii.guid WHERE g.owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={}", guidLow);
+    CharacterDatabase.CommitTransaction(trans);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_storage WHERE owner_guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
     CharacterDatabase.Execute("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);
@@ -798,7 +806,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     session.nextPlacementId = 1;
 
     if (QueryResult result = CharacterDatabase.Query(
-            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale FROM mod_playerhousing_placement "
+            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look FROM mod_playerhousing_placement "
             "WHERE owner_guid={} AND map_id={} ORDER BY placement_id", ownerGuid, session.mapId))
     {
         do
@@ -812,14 +820,18 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
             placement.z = fields[4].Get<float>();
             placement.o = fields[5].Get<float>();
             placement.scale = std::max(0.05f, fields[6].Get<float>());
+            placement.look = fields[7].Get<uint32>();
             session.nextPlacementId = std::max(session.nextPlacementId, placement.id + 1);
             if (!_pieces.count(placement.itemEntry))
                 continue;
 
             session.placements[placement.id] = placement;
-            SpawnPlacement(session, map, placement);
         } while (result->NextRow());
     }
+
+    LoadGear(ownerGuid, session.placements);
+    for (auto const& [id, placement] : session.placements)
+        SpawnPlacement(session, map, placement);
 
     // Placement ids are also used by rows of pieces no longer defined; never reuse those.
     if (QueryResult maxResult = CharacterDatabase.Query("SELECT IFNULL(MAX(placement_id), 0) FROM mod_playerhousing_placement WHERE owner_guid={}", ownerGuid))
@@ -847,8 +859,7 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
         return;
 
     for (auto const& [placementId, spawned] : session.spawned)
-        if (GameObject* object = map->GetGameObject(spawned.guid))
-            object->AddObjectToRemoveList();
+        RemoveSpawned(map, spawned.guid);
 
     DespawnMarkers(session, map);
 

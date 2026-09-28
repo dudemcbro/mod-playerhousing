@@ -14,6 +14,8 @@ Fields:
             chair     can be sat on (chair_height 0 low, 1 medium, 2 high; slots)
             keep      works like the original: mailbox, anvil, forge, cooking fire...
             building  a building: its own limit, seen from farther away
+            stand     a mannequin that wears real gear from the owner's bags (no go or
+                      display: the figure takes after its owner)
   rules     list of groups; each group is a list of rules that must all be met. Any
             complete group unlocks the piece. No rules: everyone has it.
   flags     surface (things go on top), small (fits on a surface), gift (first login),
@@ -76,6 +78,7 @@ PIECES = [
     dict(item=901101, name="Campfire", cat="Starter", go=1798, style="keep"),
     dict(item=901102, name="Bedroll", cat="Starter", go=193684),
     dict(item=901103, name="Supply Crate", cat="Starter", go=181302, flags=["surface"]),
+    dict(item=901107, name="Mannequin", cat="Starter", style="stand"),
     dict(item=902101, name="Barrel", cat="Starter", go=180779, flags=["surface"], legacy=1003),
     dict(item=902102, name="Candle", cat="Starter", go=180338, flags=["small"], legacy=1004),
     dict(item=902103, name="Wooden Bench", cat="Starter", go=24538, style="keep"),

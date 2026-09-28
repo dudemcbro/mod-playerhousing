@@ -301,11 +301,12 @@ void PlayerHousingMgr::ProcessPendingConsumes(Player* player)
 
 void PlayerHousingMgr::SavePlacement(ObjectGuid::LowType ownerGuid, Placement const& placement, uint32 mapId) const
 {
+    // The gear on a stand is saved as it moves (see HousingStands.cpp), never from here.
     CharacterDatabase.DirectExecute(
         "REPLACE INTO mod_playerhousing_placement "
-        "(owner_guid, placement_id, catalog_id, source_item_entry, map_id, spawn_type, spawn_entry, display_id, scale, collision_radius, min_distance, pos_x, pos_y, pos_z, orientation) "
-        "VALUES ({}, {}, 0, {}, {}, 0, 0, 0, {}, 1, 0, {}, {}, {}, {})",
-        ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o);
+        "(owner_guid, placement_id, catalog_id, source_item_entry, map_id, spawn_type, spawn_entry, display_id, scale, collision_radius, min_distance, pos_x, pos_y, pos_z, orientation, look) "
+        "VALUES ({}, {}, 0, {}, {}, 0, 0, 0, {}, 1, 0, {}, {}, {}, {}, {})",
+        ownerGuid, placement.id, placement.itemEntry, mapId, placement.scale, placement.x, placement.y, placement.z, placement.o, placement.look);
 }
 
 void PlayerHousingMgr::DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const
@@ -320,6 +321,9 @@ bool PlayerHousingMgr::SpawnPlacement(Session& session, Map* map, Placement cons
         return false;
 
     PieceDefinition const& piece = pieceItr->second;
+    if (piece.HasFlag(PIECE_FLAG_STAND))
+        return SpawnStand(session, map, placement);
+
     bool editCopy = session.decorating && piece.editGoEntry != 0;
     uint32 entry = editCopy ? piece.editGoEntry : piece.goEntry;
     GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(entry);
@@ -363,9 +367,7 @@ void PlayerHousingMgr::DespawnPlacement(Session& session, Map* map, uint32 place
     auto itr = session.spawned.find(placementId);
     if (itr != session.spawned.end())
     {
-        if (map)
-            if (GameObject* object = map->GetGameObject(itr->second.guid))
-                object->AddObjectToRemoveList();
+        RemoveSpawned(map, itr->second.guid);
         session.spawned.erase(itr);
     }
 
@@ -541,6 +543,9 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     placement.z = target.GetPositionZ();
     placement.o = NormalizeAngle(std::atan2(player->GetPositionY() - placement.y, player->GetPositionX() - placement.x));
     placement.scale = piece->scale;
+    // A new mannequin takes after its owner.
+    if (piece->HasFlag(PIECE_FLAG_STAND))
+        placement.look = uint32(player->getRace()) | (uint32(player->getGender()) << 8);
 
     Map* map = player->GetMap();
     if (!SpawnPlacement(*session, map, placement))
@@ -573,6 +578,8 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
     if (exists && !target)
     {
         Placement current = currentItr->second;
+        for (auto const& [slot, gear] : current.gear)
+            ReturnGear(player, session.ownerGuid, placementId, slot, gear);
         DespawnPlacement(session, map, placementId);
         session.placements.erase(currentItr);
         DeletePlacement(session.ownerGuid, placementId);
@@ -606,10 +613,22 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
             return false;
         }
 
-        session.placements[placementId] = *target;
+        // A stand comes back with the gear it had, as far as that gear is still in the bags.
+        Placement placed = *target;
+        placed.gear.clear();
+        SavePlacement(session.ownerGuid, placed, session.mapId);
+        for (auto const& [slot, gear] : target->gear)
+        {
+            std::string ignored;
+            if (MoveGearToStand(player, session.ownerGuid, placementId, slot, gear.itemGuid, ignored))
+                placed.gear[slot] = gear;
+            else
+                _report.gearMissing.push_back(StandItemName(gear.itemEntry));
+        }
+
+        session.placements[placementId] = placed;
         session.nextPlacementId = std::max(session.nextPlacementId, placementId + 1);
-        SavePlacement(session.ownerGuid, *target, session.mapId);
-        SpawnPlacement(session, map, *target);
+        SpawnPlacement(session, map, placed);
         session.selected = placementId;
         ++_report.placed;
         return true;
@@ -617,8 +636,32 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
 
     if (exists && target)
     {
-        currentItr->second = *target;
-        SavePlacement(session.ownerGuid, *target, session.mapId);
+        Placement current = currentItr->second;
+        Placement applied = *target;
+        auto sameItem = [](std::map<uint8, GearItem> const& gear, uint8 slot, uint32 itemGuid)
+        {
+            auto itr = gear.find(slot);
+            return itr != gear.end() && itr->second.itemGuid == itemGuid;
+        };
+
+        // Gear comes off first, so a swap frees the slot, then the new gear goes on.
+        for (auto const& [slot, gear] : current.gear)
+            if (!sameItem(target->gear, slot, gear.itemGuid))
+                ReturnGear(player, session.ownerGuid, placementId, slot, gear);
+        for (auto const& [slot, gear] : target->gear)
+        {
+            if (sameItem(current.gear, slot, gear.itemGuid))
+                continue;
+            std::string ignored;
+            if (!MoveGearToStand(player, session.ownerGuid, placementId, slot, gear.itemGuid, ignored))
+            {
+                applied.gear.erase(slot);
+                _report.gearMissing.push_back(StandItemName(gear.itemEntry));
+            }
+        }
+
+        currentItr->second = applied;
+        SavePlacement(session.ownerGuid, applied, session.mapId);
         RespawnPlacement(session, map, placementId);
         session.selected = placementId;
         return true;
@@ -678,6 +721,29 @@ std::string PlayerHousingMgr::RedoLabel(Player const* player) const
 }
 
 std::string PlayerHousingMgr::DescribeReturns() const
+{
+    std::string gear;
+    // Gear taken off a stand is the subject of the sentence before; gear coming back with
+    // a picked-up stand is extra news.
+    bool piecesReturned = _report.toBags || _report.toStorage;
+    if (_report.gearToBags && !piecesReturned)
+        gear += _report.gearToBags == 1 ? " It's back in your bags." : " They're back in your bags.";
+    else if (_report.gearToBags)
+        gear += _report.gearToBags == 1 ? " A piece of gear went back to your bags too." : Acore::StringFormat(" {} pieces of gear went back to your bags too.", _report.gearToBags);
+    if (_report.gearMailed)
+        gear += Acore::StringFormat(" Your bags were full, so Krook mailed you {} (check your mailbox).",
+            _report.gearMailed == 1 ? "a piece of gear" : Acore::StringFormat("{} pieces of gear", _report.gearMailed));
+    if (!_report.gearMissing.empty())
+    {
+        std::string names;
+        for (std::string const& name : _report.gearMissing)
+            names += (names.empty() ? "" : ", ") + name;
+        gear += " Not in your bags any more, so not put back: " + names + ".";
+    }
+    return DescribeItemReturns() + gear;
+}
+
+std::string PlayerHousingMgr::DescribeItemReturns() const
 {
     if (_report.toStorage && _report.toBags)
         return Acore::StringFormat(" {} went back to your bags and {} to House Storage (bags full).", _report.toBags, _report.toStorage);

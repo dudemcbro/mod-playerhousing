@@ -25,6 +25,10 @@ RAZORFEN_LEANTO, CANVAS_TENT = 902204, 901100           # shelters: level 10, le
 FARMHOUSE = 902220                                      # Exalted with Stormwind
 LAMP_POST = 902300                                      # Explore Elwynn Forest
 MAILBOX = 902900                                        # level 80: a working mailbox
+MANNEQUIN, MANNEQUIN_NPC = 901107, 900201               # a stand, and the figure it shows
+SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
+UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
+SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
 ELWYNN_ACHIEVEMENT, STORMWIND = 776, 72
 WORN_DAGGER = 2092                                      # fills bags (does not stack)
 
@@ -46,6 +50,7 @@ LAYOUTS = {
         farmhouse_stand=(16250.0, 16326.0), farmhouse=(16258.0, 16338.0, 12.96),
         inside=(16259.0, 16340.0, 12.99),
         mailbox_stand=(16237.0, 16294.0), mailbox=(16234.0, 16290.0, 12.92),
+        stand_stand=(16233.0, 16300.0), stand=(16230.0, 16300.0, 12.92),
         sea_stand=(16250.0, 16120.0, 0.0), sea_target=(16250.0, 16098.0, 0.0),
         past_edge=(16250.0, 16108.0, 0.0)),
 }
@@ -157,6 +162,18 @@ def addon_state(wc):
     return states[-1].split("\t") if states else None
 
 
+def gear_of(owner_guid, placement_id):
+    """What a stand wears: slot -> (item guid, item entry)."""
+    rows = db("SELECT slot, item_guid, item_entry FROM mod_playerhousing_placement_gear WHERE owner_guid=%d AND placement_id=%d"
+              % (owner_guid, placement_id))
+    return {int(r[0]): (int(r[1]), int(r[2])) for r in rows}
+
+
+def item_guid_in_bags(wc, entry):
+    slot, guid = wc.find_item(entry)
+    return (guid & 0xFFFFFFFF) if guid else None
+
+
 def storage(owner_guid):
     return {int(r[0]): int(r[1]) for r in db("SELECT item_entry, count FROM mod_playerhousing_storage WHERE owner_guid=%d" % owner_guid)}
 
@@ -213,9 +230,13 @@ def main():
                           ("mod_playerhousing_collection", "guid")):
         db("DELETE FROM %s WHERE %s IN (%s)" % (table, column, ids))
     db("DELETE FROM mod_playerhousing_collection WHERE account_id IN (SELECT account FROM characters WHERE guid IN (%s))" % ids)
-    db("DELETE FROM character_inventory WHERE guid IN (%s) AND item IN (SELECT guid FROM item_instance WHERE itemEntry BETWEEN 901100 AND 902999 OR itemEntry=%d)"
-       % (ids, WORN_DAGGER))
-    db("DELETE FROM item_instance WHERE owner_guid IN (%s) AND (itemEntry BETWEEN 901100 AND 902999 OR itemEntry=%d)" % (ids, WORN_DAGGER))
+    # Gear on stands and gear Krook mailed back.
+    db("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid IN (%s)" % ids)
+    db("DELETE FROM mail_items WHERE receiver IN (%s) AND mail_id IN (SELECT id FROM mail WHERE sender=%d AND messageType=3)" % (ids, STEWARD))
+    db("DELETE FROM mail WHERE receiver IN (%s) AND sender=%d AND messageType=3" % (ids, STEWARD))
+    test_items = "itemEntry BETWEEN 901100 AND 902999 OR itemEntry IN (%d, %d, %d)" % (WORN_DAGGER, SWORD, PANTS)
+    db("DELETE FROM character_inventory WHERE guid IN (%s) AND item IN (SELECT guid FROM item_instance WHERE %s)" % (ids, test_items))
+    db("DELETE FROM item_instance WHERE owner_guid IN (%s) AND (%s)" % (ids, test_items))
     db("UPDATE characters SET level=15, money=1000000 WHERE guid=%d" % owner_guid)
     # Everyone starts in Northshire, so no login teleport gets in the way.
     db("UPDATE characters SET map=0, position_x=-8949.95, position_y=-132.49, position_z=83.53, orientation=0 "
@@ -467,6 +488,111 @@ def main():
     check("undo puts the building and the chair back", placement_of(owner_guid, FARMHOUSE) is not None and placement_of(owner_guid, CHAIR) is not None,
           joined(msgs))
 
+    # ------------------------------------------------------------- stands
+    log("== mannequin")
+    owner.command(".house collection")
+    owner.gossip_select("Starter (")
+    owner.gossip_select("Mannequin")
+    wait_for(lambda: owner.count_item(MANNEQUIN) == 1, 3, owner)
+    move(owner, L["stand_stand"][0], L["stand_stand"][1], L["ground"])
+    msgs = owner.use_item(MANNEQUIN, FLARE, L["stand"])
+    stand = placement_of(owner_guid, MANNEQUIN)
+    stand_id = stand["id"] if stand else 0
+    check("a mannequin places like any piece", stand is not None, joined(msgs))
+    race, gender = [int(v) for v in db("SELECT race, gender FROM characters WHERE guid=%d" % owner_guid)[0]]
+    look = db("SELECT look FROM mod_playerhousing_placement WHERE owner_guid=%d AND placement_id=%d" % (owner_guid, stand_id))
+    check("a new mannequin takes after its owner", look == [[str(race | (gender << 8))]], str(look))
+
+    def figure():
+        wait_for(lambda: owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT) is not None, 3, owner)
+        return owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT)
+
+    fig = figure()
+    looks = owner.mirror_image(fig.guid) if fig else None
+    check("the figure is dressed by mirror image, as its owner's race", looks is not None and looks["race"] == race
+          and looks["gender"] == gender and not any(looks["items"]), str(looks))
+
+    admin.select(owner_char["guid"])
+    admin.command(".additem %s %d 1" % (args.owner_char, SWORD), wait=1.5)
+    admin.command(".additem %s %d 1" % (args.owner_char, PANTS), wait=1.5)
+    wait_for(lambda: owner.count_item(SWORD) == 1 and owner.count_item(PANTS) == 1, 3, owner)
+    sword_guid = item_guid_in_bags(owner, SWORD)
+    pants_guid = item_guid_in_bags(owner, PANTS)
+
+    fig = figure()
+    menu, _ = owner.gossip_hello(fig.guid) if fig else (None, [])
+    check("clicking the mannequin opens its menu", "Put gear on..." in options(menu)
+          and any(o.startswith("Figure: Human") for o in options(menu)), str(options(menu)))
+    owner.gossip_select("Put gear on...")
+    menu = owner.last_gossip
+    check("the dress menu lists the gear in the bags", any(o.startswith("Worn Shortsword (main hand") for o in options(menu))
+          and any(o.startswith("Recruit's Pants (legs") for o in options(menu)), str(options(menu)))
+    _, msgs = owner.gossip_select("Worn Shortsword")
+    wait_for(lambda: owner.count_item(SWORD) == 0, 3, owner)
+    gear = gear_of(owner_guid, stand_id)
+    check("the sword leaves the bags for the mannequin, still the same item",
+          owner.count_item(SWORD) == 0 and gear.get(SLOT_MAIN_HAND) == (sword_guid, SWORD)
+          and db("SELECT COUNT(*) FROM item_instance WHERE guid=%d" % (sword_guid or 0)) == [["1"]], joined(msgs) + " " + str(gear))
+    owner.pump(1.0)
+    fig = figure()
+    check("the figure holds the sword", fig is not None and fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) == SWORD,
+          str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
+    check("the menu follows the figure", any(o.startswith("Take off Worn Shortsword") for o in options(owner.last_gossip)),
+          str(options(owner.last_gossip)))
+
+    owner.gossip_select("Put gear on...")
+    _, msgs = owner.gossip_select("Recruit's Pants")
+    wait_for(lambda: owner.count_item(PANTS) == 0, 3, owner)
+    owner.pump(1.0)
+    fig = figure()
+    looks = owner.mirror_image(fig.guid) if fig else None
+    check("the figure wears the pants", looks is not None and looks["items"][5] == PANTS_DISPLAY, str(looks))
+
+    msgs = owner.command(".house undo")
+    wait_for(lambda: owner.count_item(PANTS) == 1, 3, owner)
+    check("undo gives the pants back, the very same item", item_guid_in_bags(owner, PANTS) == pants_guid
+          and SLOT_LEGS not in gear_of(owner_guid, stand_id), joined(msgs))
+    msgs = owner.command(".house redo")
+    wait_for(lambda: owner.count_item(PANTS) == 0, 3, owner)
+    check("redo puts them back on", gear_of(owner_guid, stand_id).get(SLOT_LEGS) == (pants_guid, PANTS), joined(msgs))
+
+    fig = figure()
+    owner.gossip_hello(fig.guid)
+    _, msgs = owner.gossip_select("Take off Worn Shortsword")
+    wait_for(lambda: owner.count_item(SWORD) == 1, 3, owner)
+    check("taking the sword off puts it back in the bags", owner.count_item(SWORD) == 1
+          and SLOT_MAIN_HAND not in gear_of(owner_guid, stand_id), joined(msgs))
+
+    msgs = owner.command(".house pickup %d" % stand_id)
+    wait_for(lambda: owner.count_item(PANTS) == 1 and owner.count_item(MANNEQUIN) == 1, 3, owner)
+    check("picking the mannequin up returns it and its gear", placement_of(owner_guid, MANNEQUIN) is None
+          and owner.count_item(MANNEQUIN) == 1 and item_guid_in_bags(owner, PANTS) == pants_guid, joined(msgs))
+    msgs = owner.command(".house undo")
+    wait_for(lambda: owner.count_item(PANTS) == 0, 3, owner)
+    check("undo puts the mannequin back, dressed", placement_of(owner_guid, MANNEQUIN) is not None
+          and gear_of(owner_guid, stand_id).get(SLOT_LEGS) == (pants_guid, PANTS), joined(msgs))
+
+    # Bags full: what comes off is mailed, never lost.
+    admin.select(owner_char["guid"])
+    admin.command(".additem %s %d 20" % (args.owner_char, WORN_DAGGER), wait=2.0)
+    owner.pump(1.5)
+    fig = figure()
+    owner.gossip_hello(fig.guid)
+    _, msgs = owner.gossip_select("Take off Recruit's Pants")
+    owner.pump(1.0)
+    check("with full bags, gear taken off is mailed to the owner", has(msgs, "mailed")
+          and db("SELECT COUNT(*) FROM mail_items WHERE item_guid=%d AND receiver=%d" % (pants_guid or 0, owner_guid)) == [["1"]], joined(msgs))
+    admin.select(owner_char["guid"])
+    admin.command(".additem %s %d -%d" % (args.owner_char, WORN_DAGGER, owner.count_item(WORN_DAGGER)), wait=2.0)
+    wait_for(lambda: owner.count_item(WORN_DAGGER) == 0, 4, owner)
+
+    # The sword goes back on for the visitors.
+    fig = figure()
+    owner.gossip_hello(fig.guid)
+    owner.gossip_select("Put gear on...")
+    owner.gossip_select("Worn Shortsword")
+    wait_for(lambda: owner.count_item(SWORD) == 0, 3, owner)
+
     # ------------------------------------------------------------- people
     log("== visitors")
     owner.command(".house")
@@ -516,6 +642,14 @@ def main():
               "stand state %d, pos %s, chair (%.1f, %.1f) %s" % (stand_state, guest.pos, chair_go.x, chair_go.y, joined(msgs)))
     else:
         check("a guest clicking a chair sits in it, no menu", False, "no chair in sight: %s" % sorted(go_entries(guest)))
+    figure_npc = guest.nearest(MANNEQUIN_NPC, TYPEID_UNIT)
+    if figure_npc:
+        stand_next_to(guest, figure_npc, 2.0)
+        menu, _ = guest.gossip_hello(figure_npc.guid)
+        check("a guest sees what the mannequin wears, and can't change it", "main hand: Worn Shortsword" in options(menu)
+              and "Put gear on..." not in options(menu), str(options(menu)))
+    else:
+        check("a guest sees what the mannequin wears, and can't change it", False, "no mannequin in sight")
     mailbox_go = nearest_go(guest, live(MAILBOX))
     if mailbox_go:
         stand_next_to(guest, mailbox_go, 2.0)
@@ -568,6 +702,13 @@ def main():
     check("logging back in after logging out on the island returns you to where you came from",
           owner.map_id != HOUSING_MAP or math.dist(owner.pos[:2], L["landing"][:2]) > 300, "map=%s pos=%s" % (owner.map_id, owner.pos))
     check("placements survive the relog", len(placements(owner_guid)) == count)
+
+    owner.command(".house home", wait=1.0)
+    wait_for_map(owner, HOUSING_MAP)
+    wait_for(lambda: owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT) is not None, 6, owner)
+    fig = owner.nearest(MANNEQUIN_NPC, TYPEID_UNIT)
+    check("back home, the mannequin still holds the sword", fig is not None and fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) == SWORD,
+          str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
 
     return finish()
 

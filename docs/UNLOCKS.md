@@ -7,7 +7,7 @@ Unlocked pieces are in the Collection (House Key, Collection), which hands out c
 no condition are everyone's from the start. Faction buildings need Exalted with their faction and
 belong to the character that earned it; everything else is shared across the account.
 
-## Starter (23)
+## Starter (24)
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
@@ -17,6 +17,7 @@ belong to the character that earned it; everything else is shared across the acc
 | Campfire | furnishing | Everyone has it | object 1798 | works like the real thing |
 | Bedroll | furnishing | Everyone has it | object 193684 |  |
 | Supply Crate | furnishing | Everyone has it | object 181302 | things go on top |
+| Mannequin | furnishing | Everyone has it | a figure in your gear | wears real gear from your bags: armor, weapons, shields |
 | Barrel | furnishing | Everyone has it | object 180779 | things go on top |
 | Candle | furnishing | Everyone has it | object 180338 | fits on tables |
 | Wooden Bench | furnishing | Everyone has it | object 24538 | works like the real thing |

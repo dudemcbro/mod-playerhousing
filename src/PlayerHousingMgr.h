@@ -5,6 +5,7 @@
 #include "ObjectGuid.h"
 #include "Position.h"
 
+#include <array>
 #include <ctime>
 #include <deque>
 #include <map>
@@ -22,6 +23,8 @@ class Item;
 class Map;
 class Player;
 class WorldObject;
+class WorldSession;
+struct ItemTemplate;
 
 namespace Housing
 {
@@ -30,6 +33,7 @@ namespace Housing
     constexpr uint32 PLACEMENT_SPELL = 1543;   // Flare: its targeting circle picks the spot
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 HOOK_MARKER_GO = 903990;
+    constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 PLAYER_MENU_ID = 900300;  // gossip menu id for menus opened by .house
 
     constexpr uint32 TEXT_HOME = 900300;
@@ -42,6 +46,7 @@ namespace Housing
     constexpr uint32 TEXT_HOOK = 900307;
     constexpr uint32 TEXT_GUESTS = 900308;
     constexpr uint32 TEXT_NEARBY = 900309;
+    constexpr uint32 TEXT_STAND = 900310;
 
     enum PieceKind : uint8
     {
@@ -55,7 +60,8 @@ namespace Housing
         PIECE_FLAG_SMALL = 0x02,          // fits on a surface
         PIECE_FLAG_PER_CHARACTER = 0x04,  // unlock belongs to the character, not the account
         PIECE_FLAG_GIFT = 0x08,           // given on first login
-        PIECE_FLAG_WRECKAGE = 0x10        // standing on the island at the first visit
+        PIECE_FLAG_WRECKAGE = 0x10,       // standing on the island at the first visit
+        PIECE_FLAG_STAND = 0x20           // a mannequin that wears real gear from the bags
     };
 
     enum Category : uint8
@@ -171,6 +177,14 @@ namespace Housing
         float radius{250.0f};
     };
 
+    // An item on a stand. It keeps its own guid (and so its enchants and gems) while it's
+    // there: it leaves the owner's inventory but stays in item_instance, like mail.
+    struct GearItem
+    {
+        uint32 itemGuid{0};
+        uint32 itemEntry{0};
+    };
+
     struct Placement
     {
         uint32 id{0};
@@ -180,6 +194,8 @@ namespace Housing
         float z{0.0f};
         float o{0.0f};
         float scale{1.0f};
+        uint32 look{0};                   // stands: race | gender << 8
+        std::map<uint8, GearItem> gear;   // stands: equipment slot -> item
     };
 
     // One undoable step: every placement it touched, as it was before and after.
@@ -280,6 +296,17 @@ public:
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
     void ProcessPendingConsumes(Player* player);
 
+    // ---- stands (HousingStands.cpp)
+    static int8 StandSlotFor(ItemTemplate const* proto, std::map<uint8, Housing::GearItem> const& worn);
+    static char const* StandSlotName(uint8 slot);
+    static std::string StandItemName(uint32 itemEntry);
+    static std::string LookName(uint32 look);
+    std::vector<Item*> GetWearableItems(Player* player) const;
+    bool PutOnStand(Player* player, uint32 placementId, uint32 itemGuid, std::string& reason);
+    bool TakeOffStand(Player* player, uint32 placementId, int32 slot, std::string& reason);
+    bool ChangeStandFigure(Player* player, uint32 placementId, std::string& reason);
+    bool SendMannequinLook(WorldSession* session, ObjectGuid const& guid) const;
+
     // ---- collection (HousingCollection.cpp)
     bool IsUnlocked(Player const* player, Housing::PieceDefinition const& piece, std::set<uint32> const* known = nullptr) const;
     std::set<uint32> LoadUnlocks(Player const* player) const;
@@ -355,6 +382,18 @@ private:
         uint32 toBags{0};
         uint32 toStorage{0};
         uint32 placed{0};
+        uint32 gearToBags{0};
+        uint32 gearMailed{0};
+        std::vector<std::string> gearMissing;  // couldn't go back on a stand: no longer in the bags
+    };
+
+    // What a mannequin wears, for the mirror image data its viewers ask for.
+    struct MannequinLook
+    {
+        uint32 displayId{0};
+        uint8 race{1};
+        uint8 gender{0};
+        std::array<uint32, 11> displays{};
     };
 
     struct PendingTrip
@@ -393,6 +432,8 @@ private:
     Session* GetOwnerSession(Player* player, std::string& reason);
     Session const* FindSessionOf(Player const* player) const;
     bool SpawnPlacement(Session& session, Map* map, Housing::Placement const& placement);
+    bool SpawnStand(Session& session, Map* map, Housing::Placement const& placement);
+    void RemoveSpawned(Map* map, ObjectGuid const& guid);
     void DespawnPlacement(Session& session, Map* map, uint32 placementId);
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);
     void SpawnMarkers(Session& session, Map* map);
@@ -408,10 +449,16 @@ private:
     bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
     void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes);
     bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason);
+    bool ChangeStand(Player* player, uint32 placementId, Housing::Placement const& after, std::string const& label, std::string& reason);
+    bool MoveGearToStand(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, uint32 itemGuid, std::string& reason);
+    void ReturnGear(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, Housing::GearItem const& gear);
+    void LoadGear(ObjectGuid::LowType ownerGuid, std::map<uint32, Housing::Placement>& placements) const;
     void SavePlacement(ObjectGuid::LowType ownerGuid, Housing::Placement const& placement, uint32 mapId) const;
     void DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const;
     std::string PieceName(uint32 itemEntry) const;
     std::string DescribeReturns() const;
+    std::string DescribeItemReturns() const;
+
 
     // HousingCollection.cpp
     bool RuleMet(Player const* player, Housing::PieceRule const& rule) const;
@@ -449,6 +496,7 @@ private:
     // Items used to place pieces; removed on the player's next update because the cast that
     // placed them still holds the item.
     std::unordered_map<ObjectGuid, std::map<uint32, uint32>> _pendingConsumes;
+    std::unordered_map<ObjectGuid, MannequinLook> _mannequins;
     ApplyReport _report;
 };
 

@@ -23,7 +23,7 @@ sys.path.insert(0, HERE)
 import pieces as content  # noqa: E402
 
 CATEGORIES = ["Starter", "Buildings", "Exploration", "Dungeons", "Raids", "Reputation", "Professions", "Holidays", "Capstones"]
-FLAG_BITS = {"surface": 0x01, "small": 0x02, "per_char": 0x04, "gift": 0x08, "wreckage": 0x10}
+FLAG_BITS = {"surface": 0x01, "small": 0x02, "per_char": 0x04, "gift": 0x08, "wreckage": 0x10, "stand": 0x20}
 RANKS = ["Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted"]
 SKILLS = {164: "Blacksmithing", 186: "Mining", 171: "Alchemy", 185: "Cooking", 202: "Engineering", 773: "Inscription",
           129: "First Aid", 197: "Tailoring", 165: "Leatherworking", 333: "Enchanting", 755: "Jewelcrafting",
@@ -172,9 +172,13 @@ def build(args):
         category = piece["cat"]
         style = piece.get("style", "decor")
         building = style == "building"
+        stand = style == "stand"
         name = piece["name"]
 
-        if "go" in piece:
+        if stand:
+            # A stand is a figure the module dresses in the owner's gear: no object at all.
+            source = {"type": GO_TYPE_GENERIC, "display": 0, "size": 1.0, "data": [0] * 24}
+        elif "go" in piece:
             source = world.gameobject(piece["go"])
         else:
             source = {"type": GO_TYPE_GENERIC, "display": piece["display"], "size": 1.0, "data": [0] * 24}
@@ -190,15 +194,16 @@ def build(args):
         else:
             go_type, data = GO_TYPE_GOOBER, [0] * 24
 
-        live = live_entry(item)
+        live = 0 if stand else live_entry(item)
         # Pieces that work like the real thing get a clickable copy for decorate mode.
-        edit = edit_entry(item) if go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC) else 0
+        edit = edit_entry(item) if go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC) and not stand else 0
 
         def go_row(entry, gtype, gdata):
             return "(%d, %d, %d, %s, '', '', '', %s, %s, '', %s, 0)" % (
                 entry, gtype, display, sql_text(name), repr(round(size, 4)), ", ".join(str(v) for v in gdata), sql_text(GO_SCRIPT))
 
-        gameobjects.append(go_row(live, go_type, data))
+        if live:
+            gameobjects.append(go_row(live, go_type, data))
         if edit:
             gameobjects.append(go_row(edit, GO_TYPE_GOOBER, [0] * 24))
 
@@ -207,8 +212,10 @@ def build(args):
         height = box[5] * size
         footprint = piece.get("footprint", footprint) or (8.0 if building else 0.8)
         height = piece.get("height", height) or (8.0 if building else 1.0)
+        if stand:
+            footprint, height = 0.5, 2.0
 
-        flags = 0
+        flags = FLAG_BITS["stand"] if stand else 0
         for flag in piece.get("flags", []):
             flags |= FLAG_BITS[flag]
         groups = piece.get("rules") or []
@@ -237,6 +244,8 @@ def build(args):
             PLACEMENT_SPELL, sql_text(description), sql_text(ITEM_SCRIPT)))
 
         notes = []
+        if stand:
+            notes.append("wears real gear from your bags: armor, weapons, shields")
         if style in ("keep", "chair"):
             notes.append({"keep": "works like the real thing", "chair": "can be sat on"}[style])
         if flags & FLAG_BITS["surface"]:
@@ -250,6 +259,7 @@ def build(args):
         if flags & FLAG_BITS["per_char"]:
             notes.append("per character")
         docs[category].append((name, "building" if building else "furnishing", hint or "Everyone has it",
+                               "a figure in your gear" if stand else
                                "%s %d" % ("object" if "go" in piece else "model", piece.get("go", piece.get("display"))),
                                ", ".join(notes)))
 

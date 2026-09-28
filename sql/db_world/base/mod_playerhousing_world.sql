@@ -5,6 +5,7 @@
 -- Apply this file first, then the content file. Both can be re-applied at any time.
 
 SET @STEWARD := 900200;
+SET @MANNEQUIN := 900201;
 SET @HOUSE_KEY := 902000;
 SET @MARKER := 903990;
 
@@ -99,6 +100,17 @@ INSERT INTO `creature_template_model`
 (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (@STEWARD, 0, 25384, 1.0, 1.0, 0);
 
+-- The mannequin: the figure a stand shows. The module gives it a player body and dresses
+-- it in the gear on the stand; the model here is only a placeholder.
+DELETE FROM `creature_template_model` WHERE `CreatureID` = @MANNEQUIN;
+DELETE FROM `creature_template` WHERE `entry` = @MANNEQUIN;
+INSERT INTO `creature_template`
+(`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `unit_class`, `unit_flags`, `type`, `AIName`, `MovementType`, `RegenHealth`, `ScriptName`, `VerifiedBuild`) VALUES
+(@MANNEQUIN, 'Mannequin', '', 0, 1, 1, 35, 1, 1, 770, 7, '', 0, 1, 'npc_playerhousing_mannequin', 0);
+INSERT INTO `creature_template_model`
+(`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(@MANNEQUIN, 0, 49, 1.0, 1.0, 0);
+
 -- Krook in the capital cities, beside each innkeeper.
 SET @GUID := (SELECT COALESCE(MAX(`guid`), 0) FROM `creature`);
 INSERT INTO `creature` (`guid`, `id1`, `map`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `MovementType`, `Comment`) VALUES
@@ -132,7 +144,7 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 (@MARKER, 10, 7658, 'Put something here', '', '', '', 0.35, 'go_playerhousing_piece', 0);
 
 -- Texts heading the menus.
-DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900309;
+DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;
 INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
 (900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone.', '', 1),
 (900301, 'Everything you can own. Unlocked pieces give you a copy when clicked; the rest tell you how to earn them.', '', 1),
@@ -140,7 +152,8 @@ INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
 (900303, 'Whose island would you like to visit?', '', 1),
 (900304, 'Who can visit, and what they see when they arrive.', '', 1),
 (900305, 'Pieces that came back while your bags were full wait here.', '', 1),
-(900306, 'How housing works:$B$B1. Right-click a furnishing in your bags, then click where it should go. It turns to face you.$B$B2. House Key, Start decorating. Click any piece to turn it, nudge it, move it or pick it up. Blue runes on tables take small pieces.$B$B3. Made a mistake? House Key, Undo. Picked-up pieces go back to your bags (or House Storage when your bags are full). Nothing is ever lost.$B$B4. Your Collection grows as you explore, run dungeons and raids, earn reputation and level professions. Faction buildings need Exalted with their faction.$B$B5. Island settings: who can visit, your guest list and a greeting for visitors.', '', 1),
+(900306, 'How housing works:$B$B1. Right-click a furnishing in your bags, then click where it should go. It turns to face you.$B$B2. House Key, Start decorating. Click any piece to turn it, nudge it, move it or pick it up. Blue runes on tables take small pieces.$B$B3. Made a mistake? House Key, Undo. Picked-up pieces go back to your bags (or House Storage when your bags are full). Nothing is ever lost.$B$B4. Your Collection grows as you explore, run dungeons and raids, earn reputation and level professions. Faction buildings need Exalted with their faction.$B$B5. Island settings: who can visit, your guest list and a greeting for visitors.$B$B6. A Mannequin (starter set) shows off armor and weapons: click it to dress it from your bags.', '', 1),
 (900307, 'What should go on top?', '', 1),
 (900308, 'Guests can always visit, whatever your privacy setting.', '', 1),
-(900309, 'Pieces near you, closest first.', '', 1);
+(900309, 'Pieces near you, closest first.', '', 1),
+(900310, 'A mannequin, showing off its owner''s gear.', '', 1);

@@ -2,11 +2,14 @@
 
 #include "Chat.h"
 #include "GossipDef.h"
+#include "Item.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "StringFormat.h"
 
 #include <algorithm>
+#include <mutex>
+#include <unordered_map>
 
 using namespace Housing;
 
@@ -54,8 +57,24 @@ namespace
         CMD_HOOK_PLACE,       // action: surface id << 12 | (item entry - ITEM_BASE)
         CMD_PACKUP,
         CMD_KEY,
+        CMD_STAND_DRESS_MENU, // action: placement id | page << 24
+        CMD_STAND_PUT,        // action: index into the list the dress menu showed
+        CMD_STAND_TAKE_OFF,   // action: placement id | slot << 24 (0xFF: everything)
+        CMD_STAND_FIGURE,     // action: placement id
         CMD_CLOSE
     };
+
+    constexpr uint32 SLOT_EVERYTHING = 0xFF;
+
+    // Item guids don't fit in a gossip action next to the stand, so the dress menu remembers
+    // what it listed and each option carries its index.
+    struct DressChoice
+    {
+        uint32 placementId{0};
+        std::vector<uint32> itemGuids;
+    };
+    std::mutex dressChoicesLock;
+    std::unordered_map<ObjectGuid, DressChoice> dressChoices;
 
     enum PieceOp : uint32
     {
@@ -282,22 +301,82 @@ namespace
     }
 
     // After a change the piece is a new object; a menu opened from the old one would point
-    // at nothing, so it follows the piece.
-    MenuSource FollowPiece(Player* player, MenuSource const& source, uint32 placementId)
+    // at nothing, so it follows the piece. `pieceObject` is the piece's object before the change.
+    MenuSource FollowPiece(Player* player, MenuSource const& source, uint32 placementId, ObjectGuid const& pieceObject)
     {
-        if (source.type != SOURCE_GAMEOBJECT)
+        if (source.type == SOURCE_PLAYER || source.type == SOURCE_ITEM || source.guid != pieceObject)
             return source;
 
         ObjectGuid guid = sPlayerHousingMgr->GetObjectForPlacement(player, placementId);
         if (guid.IsEmpty())
             return MenuSource{ SOURCE_PLAYER, player->GetGUID() };
-        return MenuSource{ SOURCE_GAMEOBJECT, guid };
+        return MenuSource{ guid.IsGameObject() ? SOURCE_GAMEOBJECT : SOURCE_CREATURE, guid };
+    }
+
+    void ShowDress(Player* player, MenuSource const& source, uint32 placementId, uint32 page)
+    {
+        std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
+        PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
+        if (!piece || !piece->HasFlag(PIECE_FLAG_STAND))
+        {
+            CloseGossipMenuFor(player);
+            return;
+        }
+
+        std::vector<Item*> items = sPlayerHousingMgr->GetWearableItems(player);
+        DressChoice choice;
+        choice.placementId = placementId;
+        for (Item* item : items)
+            choice.itemGuids.push_back(item->GetGUID().GetCounter());
+        {
+            std::lock_guard<std::mutex> guard(dressChoicesLock);
+            dressChoices[player->GetGUID()] = choice;
+        }
+
+        ClearGossipMenuFor(player);
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("What should the {} wear?", piece->name), CMD_STAND_DRESS_MENU, placementId);
+        if (items.empty())
+            Add(player, GOSSIP_ICON_CHAT, "Nothing in your bags shows on a mannequin: armor you can see, weapons, shields, shirts and tabards do.",
+                CMD_PIECE, placementId);
+
+        uint32 first = page * PAGE_SIZE;
+        for (uint32 i = first; i < items.size() && i < first + PAGE_SIZE; ++i)
+        {
+            ItemTemplate const* proto = items[i]->GetTemplate();
+            int8 slot = PlayerHousingMgr::StandSlotFor(proto, placement->gear);
+            std::string swap;
+            auto worn = placement->gear.find(uint8(slot));
+            if (worn != placement->gear.end())
+                swap = ", instead of " + PlayerHousingMgr::StandItemName(worn->second.itemEntry);
+            Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("{} ({}{})", proto->Name1, PlayerHousingMgr::StandSlotName(uint8(slot)), swap),
+                CMD_STAND_PUT, i);
+        }
+
+        if (page > 0)
+            Add(player, GOSSIP_ICON_DOT, "Previous page", CMD_STAND_DRESS_MENU, placementId | ((page - 1) << 24));
+        if ((page + 1) * PAGE_SIZE < items.size())
+            Add(player, GOSSIP_ICON_DOT, "Next page", CMD_STAND_DRESS_MENU, placementId | ((page + 1) << 24));
+        Add(player, GOSSIP_ICON_CHAT, "Back", CMD_PIECE, placementId);
+        Send(player, source, TEXT_PIECE);
+    }
+
+    // Stand changes respawn the figure, so the menu follows it, like DoPieceOp.
+    void AfterStandChange(Player* player, MenuSource const& source, uint32 placementId, ObjectGuid const& pieceObject, std::string const& reason)
+    {
+        Say(player, reason);
+        if (!sPlayerHousingMgr->GetPlacement(player, placementId))
+        {
+            CloseGossipMenuFor(player);
+            return;
+        }
+        HousingMenus::ShowPiece(player, FollowPiece(player, source, placementId, pieceObject), placementId);
     }
 
     void DoPieceOp(Player* player, MenuSource const& source, uint32 placementId, uint32 op)
     {
         std::string reason;
         bool keepMenu = true;
+        ObjectGuid pieceObject = sPlayerHousingMgr->GetObjectForPlacement(player, placementId);
         switch (op)
         {
             case OP_PICKUP:
@@ -335,7 +414,7 @@ namespace
             return;
         }
 
-        MenuSource followed = FollowPiece(player, source, placementId);
+        MenuSource followed = FollowPiece(player, source, placementId, pieceObject);
         bool nudging = op >= OP_NUDGE_FORWARD && op <= OP_NUDGE_DOWN;
         if (nudging)
             ShowNudge(player, followed, placementId);
@@ -494,8 +573,20 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     ClearGossipMenuFor(player);
     Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{} ({})", piece->name, sPlayerHousingMgr->CountsText(player->GetGUID().GetCounter())),
         CMD_PIECE, placementId);
+    if (piece->HasFlag(PIECE_FLAG_STAND))
+    {
+        Add(player, GOSSIP_ICON_VENDOR, "Put gear on...", CMD_STAND_DRESS_MENU, placementId);
+        for (auto const& [slot, gear] : placement->gear)
+            Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Take off {} ({})", PlayerHousingMgr::StandItemName(gear.itemEntry),
+                PlayerHousingMgr::StandSlotName(slot)), CMD_STAND_TAKE_OFF, placementId | (uint32(slot) << 24));
+        if (placement->gear.size() > 1)
+            Add(player, GOSSIP_ICON_INTERACT_1, "Take everything off", CMD_STAND_TAKE_OFF, placementId | (SLOT_EVERYTHING << 24));
+        Add(player, GOSSIP_ICON_TABARD, "Figure: " + PlayerHousingMgr::LookName(placement->look) + " (change)", CMD_STAND_FIGURE, placementId);
+    }
     if (piece->IsBuilding())
         Add(player, GOSSIP_ICON_INTERACT_1, "Pick up...", CMD_PICKUP_MENU, placementId);
+    else if (!placement->gear.empty())
+        Add(player, GOSSIP_ICON_INTERACT_1, "Pick up (it and its gear go back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
     else
         Add(player, GOSSIP_ICON_INTERACT_1, "Pick up (back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn left 45°", CMD_PIECE_OP, placementId | (OP_TURN_LEFT_45 << 24));
@@ -737,9 +828,65 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             Say(player, reason);
             ShowHome(player, source);
             return;
+        case CMD_STAND_DRESS_MENU:
+            ShowDress(player, source, action & 0xFFFFFF, action >> 24);
+            return;
+        case CMD_STAND_PUT:
+        {
+            DressChoice choice;
+            {
+                std::lock_guard<std::mutex> guard(dressChoicesLock);
+                auto itr = dressChoices.find(player->GetGUID());
+                if (itr != dressChoices.end())
+                    choice = itr->second;
+            }
+            if (action >= choice.itemGuids.size())
+            {
+                CloseGossipMenuFor(player);
+                return;
+            }
+            ObjectGuid pieceObject = sPlayerHousingMgr->GetObjectForPlacement(player, choice.placementId);
+            sPlayerHousingMgr->PutOnStand(player, choice.placementId, choice.itemGuids[action], reason);
+            AfterStandChange(player, source, choice.placementId, pieceObject, reason);
+            return;
+        }
+        case CMD_STAND_TAKE_OFF:
+        {
+            uint32 placementId = action & 0xFFFFFF;
+            uint32 slot = action >> 24;
+            ObjectGuid pieceObject = sPlayerHousingMgr->GetObjectForPlacement(player, placementId);
+            sPlayerHousingMgr->TakeOffStand(player, placementId, slot == SLOT_EVERYTHING ? -1 : int32(slot), reason);
+            AfterStandChange(player, source, placementId, pieceObject, reason);
+            return;
+        }
+        case CMD_STAND_FIGURE:
+        {
+            ObjectGuid pieceObject = sPlayerHousingMgr->GetObjectForPlacement(player, action);
+            sPlayerHousingMgr->ChangeStandFigure(player, action, reason);
+            AfterStandChange(player, source, action, pieceObject, reason);
+            return;
+        }
         case CMD_CLOSE:
         default:
             CloseGossipMenuFor(player);
             return;
     }
+}
+
+void HousingMenus::ShowStandToGuest(Player* player, MenuSource const& source, uint32 placementId)
+{
+    std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
+    PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
+    if (!piece)
+    {
+        CloseGossipMenuFor(player);
+        return;
+    }
+
+    ClearGossipMenuFor(player);
+    if (placement->gear.empty())
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("The {} isn't wearing anything yet.", piece->name), CMD_CLOSE);
+    for (auto const& [slot, gear] : placement->gear)
+        Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {}", PlayerHousingMgr::StandSlotName(slot), PlayerHousingMgr::StandItemName(gear.itemEntry)), CMD_CLOSE);
+    Send(player, source, TEXT_STAND);
 }

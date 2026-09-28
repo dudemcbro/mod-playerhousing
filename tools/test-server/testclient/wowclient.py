@@ -41,6 +41,8 @@ MSG_MOVE_WORLDPORT_ACK = 0x0DC
 MSG_MOVE_HEARTBEAT = 0x0EE
 SMSG_STANDSTATE_UPDATE = 0x29D
 CMSG_GET_MAIL_LIST = 0x23A
+CMSG_GET_MIRRORIMAGE_DATA = 0x401
+SMSG_MIRRORIMAGE_DATA = 0x402
 SMSG_MAIL_LIST_RESULT = 0x23B
 CMSG_CAST_SPELL = 0x12E
 SMSG_CAST_FAILED = 0x130
@@ -326,6 +328,7 @@ class WorldClient:
         self.addon_messages = []
         self.stand_state = 0
         self.mailbox_opened = 0
+        self.mirror_images = {}
         self.msg_lock = threading.Lock()
         self.player_guid = 0
         self.map_id = None
@@ -415,6 +418,14 @@ class WorldClient:
             self.stand_state = data[0]
         elif opcode == SMSG_MAIL_LIST_RESULT:
             self.mailbox_opened += 1
+        elif opcode == SMSG_MIRRORIMAGE_DATA:
+            r = Reader(data)
+            guid = r.u64()
+            look = dict(display=r.u32(), race=r.u8(), gender=r.u8(), cls=r.u8())
+            r.take(5)
+            r.u32()
+            look["items"] = [r.u32() for _ in range(11)]  # head, shoulders, shirt, chest, waist, legs, feet, wrists, hands, back, tabard
+            self.mirror_images[guid] = look
         elif opcode == SMSG_NOTIFICATION:
             text = Reader(data).cstr()
             self._add_message("[notify] " + text)
@@ -869,6 +880,13 @@ class WorldClient:
         mailbox is really there and in reach."""
         self.send(CMSG_GET_MAIL_LIST, struct.pack("<Q", guid))
         self.pump(wait)
+
+    def mirror_image(self, guid, wait=1.5):
+        """What the client asks for when a mirror image comes into view: how it's dressed."""
+        self.mirror_images.pop(guid, None)
+        self.send(CMSG_GET_MIRRORIMAGE_DATA, struct.pack("<Q", guid))
+        self.pump(wait)
+        return self.mirror_images.get(guid)
 
     def use_gameobject(self, guid, wait=2.0):
         mark = self.message_mark()

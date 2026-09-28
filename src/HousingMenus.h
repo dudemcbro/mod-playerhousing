@@ -12,6 +12,7 @@ namespace HousingMenus
     void ShowHome(Player* player, Housing::MenuSource const& source);
     void ShowPiece(Player* player, Housing::MenuSource const& source, uint32 placementId);
     void ShowHook(Player* player, Housing::MenuSource const& source, uint32 surfacePlacementId);
+    void ShowStandToGuest(Player* player, Housing::MenuSource const& source, uint32 placementId);
     void ShowCollection(Player* player, Housing::MenuSource const& source);
     void ShowStorage(Player* player, Housing::MenuSource const& source);
     void ShowVisit(Player* player, Housing::MenuSource const& source);

@@ -326,7 +326,7 @@ to match, or the server and the players' games disagree about where walls are:
 | Part | What changes | Status |
 | --- | --- | --- |
 | Players' game client | A patch file (`patch-H.MPQ`) moves the hall out of sight. Every player puts it in their WoW `Data` folder once. | Built by `make_client_patch.sh` from a 3.3.5a client. Checked against a test file only; **never yet tried with a real client**, so that's the first to-do. |
-| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 79/79. |
+| Server data | The hall and its 68 built-in props leave the collision data, and the island's pathing is rebuilt (so party bots walk the open ground correctly). | `server_data.sh`; tested, the end-to-end test passes 96/96. |
 | Database | The arrival spot moves to the old hall's plateau. | The `cleared` row of `mod_playerhousing_layout`, now the default (`PlayerHousing.Layout`); tested. |
 
 A player without the patch would still see the hall and bump into walls that aren't
@@ -534,7 +534,7 @@ command `.house unlock all <character>`. Live servers leave both off.
 Tick items off here as they land. Each phase ships on its own, keeps the end-to-end test
 green, and adds to it.
 
-**Where it stands:** all six phases are built and pass the end-to-end test (79 checks, on
+**Where it stands:** all six phases are built and pass the end-to-end test (96 checks, on
 the cleared island, in the development container). What hasn't met a real 3.3.5a client
 yet: the cleared island patch, how pieces look (on tabletops, building models and their
 walls), the targeting circle, and the client addon's window. Those need your client, so
@@ -571,6 +571,9 @@ With your client, once the patch works:
 - [ ] buildings: the shelters and a faction building look right, can be walked into, and
   are seen from a distance
 - [ ] sit on a chair, use a placed mailbox and an anvil
+- [ ] a mannequin: it looks like a person of the chosen race, wears the armor you give
+  it and holds the weapons; changing the figure; whether it should stand frozen like a
+  statue instead of breathing (a small change if so)
 - [ ] the client addon (`client-addon/PlayerHousing`): the window, icons, mouse wheel
   turning, key bindings
 - [ ] look at the doubtful models listed in the content list
@@ -727,3 +730,19 @@ standing, and reaching Exalted unlocks it with a message.
 | Faction buildings per character or per account? | Per character, because reputation is per character. Other unlocks stay per account. |
 | Add LOTRO-style hooks? | Later and optional. They help beginners, but aren't needed now that pieces can go anywhere. |
 | Undo list across logouts? | No. It lasts until you leave the house; pick up covers anything older. |
+
+## 12. Displaying gear
+
+Asked for after the six phases: weapons, armor and other equipment on stands, walls and
+plaques.
+
+- [x] **Mannequins** (stands): a figure that wears real gear from the bags, every
+  equippable item that shows on a body. The item leaves the bags while on display and
+  comes back the same item (take off, pick up, undo; mailed when the bags are full). No
+  client patch needed. Details in the README.
+- [ ] **Wall plaques and weapon racks** for weapons and shields: later, as an addition to
+  the client patch. Placed objects can only use models the game lists for objects, and
+  only 24 of about 31,000 weapons and armor pieces have one; the patch would add an object
+  version of each weapon and shield model (built from your client, like the island
+  patch), and pieces would tilt flat against a wall. Helms and shoulders are made for a
+  body, so they stay on mannequins.

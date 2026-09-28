@@ -52,10 +52,23 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `pos_y` float NOT NULL,
   `pos_z` float NOT NULL,
   `orientation` float NOT NULL,
+  `look` int unsigned NOT NULL DEFAULT 0,
   `placed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`,`placement_id`),
   KEY `idx_mod_playerhousing_placement_catalog` (`catalog_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Gear on stands (mannequins). The items stay in item_instance, out of the owner's
+-- inventory, the way mail keeps its items; taking them off puts them back in the bags.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement_gear` (
+  `owner_guid` int unsigned NOT NULL,
+  `placement_id` int unsigned NOT NULL,
+  `slot` tinyint unsigned NOT NULL,
+  `item_guid` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  PRIMARY KEY (`owner_guid`, `placement_id`, `slot`),
+  UNIQUE KEY `idx_mod_playerhousing_gear_item` (`item_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- House Storage: pieces that came back while the owner's bags were full.

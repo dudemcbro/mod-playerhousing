@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (79 checks):
+checking the database and what the client sees after each step (96 checks):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -133,9 +133,15 @@ checking the database and what the client sees after each step (79 checks):
   shelter on the spot, a GM unlocking the mailbox for the owner
 - buildings: placing a faction building, the pick up choice, the building and what's
   inside coming back, undo
+- a mannequin: it takes after its owner, its menu, dressing it from the bags (the item
+  leaves the bags but stays the same item), the figure holding the sword and wearing the
+  pants (read the way the client reads them), undo and redo giving back the very same
+  item, taking gear off, picking it up with its gear and undoing that, gear mailed when
+  the bags are full, and the gear still there after a relog
 - visitors: greeting, private islands refusing strangers, invites, the visit menu, a
-  guest arriving with one click, sitting on a chair and opening the owner's mailbox but
-  not editing anything, private copies, privacy presets
+  guest arriving with one click, sitting on a chair, opening the owner's mailbox and
+  seeing what the mannequin wears but not changing anything, private copies, privacy
+  presets
 - the addon messages: at login, on request, the selected piece and the undo label
 - pack up everything and undo, unstuck, logging out on the island and back in
 
@@ -147,7 +153,7 @@ the guild hall. The exit code is 0 only if every check passes.
 These need a real client:
 
 - how things look: pieces on tabletops, building models and their collision, the
-  targeting circle
+  targeting circle, mannequins wearing their gear
 - the cleared island client patch (`tools/gm-island-cleared/make_client_patch.sh`)
 - the client addon's window (its logic is tested with
   `client-addon/test/harness.lua`)

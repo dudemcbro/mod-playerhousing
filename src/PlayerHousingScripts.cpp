@@ -11,12 +11,14 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
+#include "ServerScript.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "StringConvert.h"
 #include "StringFormat.h"
 #include "Tokenize.h"
+#include "WorldPacket.h"
 
 #include <algorithm>
 #include <cmath>
@@ -77,6 +79,51 @@ public:
     {
         HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, code);
         return true;
+    }
+};
+
+// A stand's figure. The owner gets the stand's menu (dress it, turn it, pick it up); guests
+// see what it's wearing.
+class npc_playerhousing_mannequin : public CreatureScript
+{
+public:
+    npc_playerhousing_mannequin() : CreatureScript("npc_playerhousing_mannequin") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        MenuSource source{ SOURCE_CREATURE, creature->GetGUID() };
+        uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, creature->GetGUID());
+        if (!placementId)
+            return true;
+
+        if (sPlayerHousingMgr->IsOnOwnIsland(player))
+            HousingMenus::ShowPiece(player, source, placementId);
+        else
+            HousingMenus::ShowStandToGuest(player, source, placementId);
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
+    {
+        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+        return true;
+    }
+};
+
+// A mannequin's armor reaches the client as mirror image data, which the client asks for
+// when the figure comes into view. The core only answers for real mirror images (spells), so
+// the module answers for mannequins.
+class mod_playerhousing_serverscript : public ServerScript
+{
+public:
+    mod_playerhousing_serverscript() : ServerScript("mod_playerhousing_serverscript", { SERVERHOOK_CAN_PACKET_RECEIVE }) { }
+
+    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    {
+        if (packet.GetOpcode() != CMSG_GET_MIRRORIMAGE_DATA || packet.size() < sizeof(uint64))
+            return true;
+
+        return !sPlayerHousingMgr->SendMannequinLook(session, ObjectGuid(packet.read<uint64>(0)));
     }
 };
 
@@ -575,6 +622,8 @@ public:
 void Addmod_playerhousingScripts()
 {
     new npc_playerhousing_steward();
+    new npc_playerhousing_mannequin();
+    new mod_playerhousing_serverscript();
     new item_playerhousing_key();
     new item_playerhousing_piece();
     RegisterSpellScript(spell_playerhousing_place);
