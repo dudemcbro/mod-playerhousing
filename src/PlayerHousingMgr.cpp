@@ -519,6 +519,9 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     if (!_enabled || !player)
         return;
 
+    // A piece placed in the player's last moments still owes its item.
+    ProcessPendingConsumes(player);
+
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _pendingTrips.erase(player->GetGUID());
