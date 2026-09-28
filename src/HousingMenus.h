@@ -10,7 +10,8 @@ class Player;
 namespace HousingMenus
 {
     void ShowHome(Player* player, Housing::MenuSource const& source);
-    void ShowPiece(Player* player, Housing::MenuSource const& source, uint32 placementId);
+    // justPlaced: opened by itself right after placing, with "Keep it here" and "Take it back" first.
+    void ShowPiece(Player* player, Housing::MenuSource const& source, uint32 placementId, bool justPlaced = false);
     void ShowHook(Player* player, Housing::MenuSource const& source, uint32 surfacePlacementId);
     void ShowStandToGuest(Player* player, Housing::MenuSource const& source, uint32 placementId);
     void ShowCollection(Player* player, Housing::MenuSource const& source);

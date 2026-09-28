@@ -30,7 +30,6 @@ namespace Housing
 {
     // Items, objects and texts owned by the module (see sql/db_world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
-    constexpr uint32 PLACEMENT_SPELL = 1543;   // Flare: its targeting circle picks the spot
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 HOOK_MARKER_GO = 903990;
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
@@ -107,7 +106,17 @@ namespace Housing
     {
         CHAR_FLAG_KEY_GIVEN = 0x01,
         CHAR_FLAG_VETERAN_DONE = 0x02,
-        CHAR_FLAG_GREETED = 0x04
+        CHAR_FLAG_GREETED = 0x04,
+        CHAR_FLAG_ADJUST_ALL = 0x08,     // adjust menu after placing anything
+        CHAR_FLAG_ADJUST_NEVER = 0x10    // never; neither flag: after placing buildings
+    };
+
+    // When the piece menu opens by itself right after placing.
+    enum AdjustMode : uint8
+    {
+        ADJUST_BUILDINGS = 0,
+        ADJUST_ALL = 1,
+        ADJUST_NEVER = 2
     };
 
     enum Tip : uint32
@@ -340,6 +349,10 @@ public:
     void Say(Player* player, std::string const& text) const;
     void Tip(Player* player, uint32 tip, std::string const& text);
     void SendAddonState(Player* player) const;
+    uint8 GetAdjustMode(ObjectGuid::LowType guid) const;
+    void SetAdjustMode(Player* player, uint8 mode, std::string& reason) const;
+    bool ShouldAdjustAfterPlacing(Player const* player, uint32 itemEntry) const;
+    static char const* AdjustModeName(uint8 mode);
     bool ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const;
     std::string NameOf(ObjectGuid::LowType guid) const;
     static std::string FormatMoney(uint64 copper);

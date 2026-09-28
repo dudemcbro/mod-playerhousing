@@ -132,10 +132,10 @@ INSERT INTO `item_template`
 (@HOUSE_KEY, 15, 0, -1, 'House Key', 22071, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 18282, 0, 0, 0, -1,
  'Right-click: go home, visit an island, decorate, your Collection.', 'item_playerhousing_key', 0);
 
--- The key's spell and the targeting circle of every furnishing are caught before they cast.
-DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_place', 'spell_playerhousing_key');
+-- The key's spell is caught before it casts, like the targeting circles of the pieces (whose
+-- spells, one per circle size, are listed in the content file).
+DELETE FROM `spell_script_names` WHERE `ScriptName` = 'spell_playerhousing_key';
 INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
-(1543, 'spell_playerhousing_place'),
 (18282, 'spell_playerhousing_key');
 
 -- The blue rune on tables and shelves while decorating: click it to put something on top.

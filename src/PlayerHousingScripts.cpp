@@ -181,8 +181,14 @@ class spell_playerhousing_place : public SpellScript
         {
             Position target;
             target.Relocate(destination->GetPositionX(), destination->GetPositionY(), destination->GetPositionZ());
-            sPlayerHousingMgr->HandlePlacementCast(player, item, target, reason);
+            uint32 itemEntry = item->GetEntry();
+            bool placed = sPlayerHousingMgr->HandlePlacementCast(player, item, target, reason);
             sPlayerHousingMgr->SendAddonState(player);
+            // The preview: the piece stands where it'll be, and its menu offers to keep it,
+            // adjust it or take it back.
+            if (placed && sPlayerHousingMgr->ShouldAdjustAfterPlacing(player, itemEntry))
+                if (uint32 placementId = sPlayerHousingMgr->GetSelectedPlacement(player))
+                    HousingMenus::ShowPiece(player, FromPlayer(player), placementId, true);
         }
         else
             reason = "Click a spot with the targeting circle to place it.";
@@ -308,7 +314,7 @@ public:
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house collection | storage | visit [name] | invite <name|target|party> | uninvite <name>");
-        handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear>");
+        handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
         if (gm)
             handler->SendSysMessage("GM: .house unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
     }
@@ -489,6 +495,19 @@ public:
                 mgr->SetPrivacy(player, PRIVACY_PUBLIC, reason);
             else
                 mgr->CyclePrivacy(player, reason);
+        }
+        else if (sub == "adjust")
+        {
+            std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (mode == "all" || mode == "everything")
+                mgr->SetAdjustMode(player, ADJUST_ALL, reason);
+            else if (mode == "buildings")
+                mgr->SetAdjustMode(player, ADJUST_BUILDINGS, reason);
+            else if (mode == "off" || mode == "never")
+                mgr->SetAdjustMode(player, ADJUST_NEVER, reason);
+            else
+                reason = Acore::StringFormat("The adjust menu opens {}. Usage: .house adjust <all|buildings|off>",
+                    PlayerHousingMgr::AdjustModeName(mgr->GetAdjustMode(player->GetGUID().GetCounter())));
         }
         else if (sub == "greeting")
         {

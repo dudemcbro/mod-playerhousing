@@ -16,7 +16,7 @@ from wowclient import TYPEID_GAMEOBJECT, TYPEID_UNIT, WorldClient, auth_login
 
 HOUSING_MAP = 1
 STEWARD = 900200
-HOUSE_KEY, KEY_SPELL, FLARE = 902000, 18282, 1543
+HOUSE_KEY, KEY_SPELL = 902000, 18282
 MARKER_GO = 903990
 
 CHAIR, TABLE, LANTERN = 901105, 901106, 901104          # first-login gifts
@@ -162,6 +162,15 @@ def addon_state(wc):
     return states[-1].split("\t") if states else None
 
 
+# Targeting circle radius (yards) of each placement spell (tools/content/build_content.py).
+CIRCLE_RADIUS = {61736: 1, 47004: 2, 42340: 3, 69680: 4, 43440: 5, 61985: 6, 34435: 8, 1543: 10, 26540: 15, 29882: 20}
+
+
+def spell_of(item):
+    """The item's spell, whose targeting circle the client shows (sized to the piece)."""
+    return int(db("SELECT spellid_1 FROM item_template WHERE entry=%d" % item, "acore_world")[0][0])
+
+
 def gear_of(owner_guid, placement_id):
     """What a stand wears: slot -> (item guid, item entry)."""
     rows = db("SELECT slot, item_guid, item_entry FROM mod_playerhousing_placement_gear WHERE owner_guid=%d AND placement_id=%d"
@@ -296,11 +305,16 @@ def main():
     log("== placing")
     move(owner, *L["landing"])
     chair_spot = (L["chair"][0], L["chair"][1], L["ground"])
-    msgs = owner.use_item(CHAIR, FLARE, chair_spot)
+    msgs = owner.use_item(CHAIR, spell_of(CHAIR), chair_spot)
+    check("placing furniture doesn't open a menu (by default only buildings do)", owner.last_gossip is None,
+          str(options(owner.last_gossip)))
     chair = placement_of(owner_guid, CHAIR)
     check("chair placed where the circle was clicked",
           chair is not None and math.dist((chair["x"], chair["y"]), chair_spot[:2]) < 0.01 and abs(chair["z"] - chair_spot[2]) < 0.01,
           joined(msgs) + " " + str(chair))
+    check("the targeting circle fits the piece: small for a chair, large for a farmhouse",
+          CIRCLE_RADIUS.get(spell_of(CHAIR), 99) <= 2 and CIRCLE_RADIUS.get(spell_of(FARMHOUSE), 0) >= 8,
+          "chair %d, farmhouse %d" % (spell_of(CHAIR), spell_of(FARMHOUSE)))
     check("placement message has the counts", has(msgs, "Placed Westfall Chair") and has(msgs, "furnishings"), joined(msgs))
     check("placed piece faces the player", chair is not None and angle_diff(chair["o"], math.atan2(L["landing"][1] - chair_spot[1], L["landing"][0] - chair_spot[0])) < 0.05,
           str(chair))
@@ -317,11 +331,11 @@ def main():
     check("redo places it again and uses the item", placement_of(owner_guid, CHAIR) is not None and owner.count_item(CHAIR) == 0, joined(msgs))
 
     table_spot = (L["table"][0], L["table"][1], L["ground"])
-    msgs = owner.use_item(TABLE, FLARE, table_spot)
+    msgs = owner.use_item(TABLE, spell_of(TABLE), table_spot)
     check("no spacing rule: a table fits right next to the chair", placement_of(owner_guid, TABLE) is not None, joined(msgs))
 
     move(owner, *L["far_stand"])
-    msgs = owner.use_item(LANTERN, FLARE, L["far_target"])
+    msgs = owner.use_item(LANTERN, spell_of(LANTERN), L["far_target"])
     lantern = placement_of(owner_guid, LANTERN)
     check("placing works far from the old house area", lantern is not None, joined(msgs))
     if lantern:
@@ -330,7 +344,7 @@ def main():
 
     move(owner, *L["sea_stand"])
     before = len(placements(owner_guid))
-    msgs = owner.use_item(LANTERN, FLARE, L["sea_target"])
+    msgs = owner.use_item(LANTERN, spell_of(LANTERN), L["sea_target"])
     check("a spot past the edge of the island is refused", len(placements(owner_guid)) == before and has(msgs, "off your island"), joined(msgs))
     move(owner, *L["past_edge"])
     wait_for(lambda: math.dist(owner.pos[:2], L["landing"][:2]) < 5, 5, owner)
@@ -453,8 +467,20 @@ def main():
     owner.gossip_select("Mailbox")
     wait_for(lambda: owner.count_item(MAILBOX) == 1, 3, owner)
     move(owner, L["mailbox_stand"][0], L["mailbox_stand"][1], L["ground"])
-    msgs = owner.use_item(MAILBOX, FLARE, L["mailbox"])
+    msgs = owner.command(".house adjust all")
+    check("the adjust menu can open after placing anything", has(msgs, "After placing anything"), joined(msgs))
+    msgs = owner.use_item(MAILBOX, spell_of(MAILBOX), L["mailbox"])
     check("a working mailbox places like any piece", placement_of(owner_guid, MAILBOX) is not None, joined(msgs))
+    menu = owner.last_gossip
+    check("right after placing, the menu offers to keep it or take it back",
+          "Keep it here" in options(menu) and "Take it back (back to your bags)" in options(menu), str(options(menu)))
+    _, msgs = owner.gossip_select("Take it back")
+    wait_for(lambda: owner.count_item(MAILBOX) == 1, 3, owner)
+    check("take it back returns it to the bags", placement_of(owner_guid, MAILBOX) is None and owner.count_item(MAILBOX) == 1, joined(msgs))
+    owner.use_item(MAILBOX, spell_of(MAILBOX), L["mailbox"])
+    owner.gossip_select("Keep it here")
+    check("keep it here leaves it standing", placement_of(owner_guid, MAILBOX) is not None)
+    owner.command(".house adjust buildings")
 
     # ------------------------------------------------------------- buildings
     log("== buildings")
@@ -463,14 +489,16 @@ def main():
     _, msgs = owner.gossip_select("Westfall Farmhouse")
     wait_for(lambda: owner.count_item(FARMHOUSE) == 1, 3, owner)
     move(owner, L["farmhouse_stand"][0], L["farmhouse_stand"][1], L["ground"])
-    msgs = owner.use_item(FARMHOUSE, FLARE, L["farmhouse"])
+    msgs = owner.use_item(FARMHOUSE, spell_of(FARMHOUSE), L["farmhouse"])
     farmhouse = placement_of(owner_guid, FARMHOUSE)
     check("a faction building places like furniture", farmhouse is not None and has(msgs, "buildings"), joined(msgs))
+    check("placing a building opens its menu right away", "Keep it here" in options(owner.last_gossip), str(options(owner.last_gossip)))
+    owner.gossip_select("Keep it here")
     wait_for(lambda: owner.count_item(CHAIR) == 0, 1, owner)
     owner.command(".house pickup %d" % placement_of(owner_guid, CHAIR)["id"])
     wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
     move(owner, L["inside"][0] - 2, L["inside"][1], L["inside"][2])
-    owner.use_item(CHAIR, FLARE, L["inside"])
+    owner.use_item(CHAIR, spell_of(CHAIR), L["inside"])
     owner.command(".house")
     owner.gossip_select("Change a piece near me")
     _, _ = owner.gossip_select("Westfall Farmhouse")
@@ -495,7 +523,7 @@ def main():
     owner.gossip_select("Mannequin")
     wait_for(lambda: owner.count_item(MANNEQUIN) == 1, 3, owner)
     move(owner, L["stand_stand"][0], L["stand_stand"][1], L["ground"])
-    msgs = owner.use_item(MANNEQUIN, FLARE, L["stand"])
+    msgs = owner.use_item(MANNEQUIN, spell_of(MANNEQUIN), L["stand"])
     stand = placement_of(owner_guid, MANNEQUIN)
     stand_id = stand["id"] if stand else 0
     check("a mannequin places like any piece", stand is not None, joined(msgs))

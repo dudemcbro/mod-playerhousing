@@ -32,7 +32,20 @@ SKILLS = {164: "Blacksmithing", 186: "Mining", 171: "Alchemy", 185: "Cooking", 2
 GO_TYPE_CHAIR, GO_TYPE_GENERIC, GO_TYPE_GOOBER = 7, 5, 10
 GO_SCRIPT = "go_playerhousing_piece"
 ITEM_SCRIPT = "item_playerhousing_piece"
-PLACEMENT_SPELL = 1543
+# The targeting circle of each piece comes from its item's spell. These ground-target spells
+# have circles from 1 to 20 yards, so the circle shows how much room a piece takes. None of
+# them ever casts: spell_playerhousing_place stops the cast as soon as the circle is clicked.
+CIRCLE_SPELLS = [(1.0, 61736), (2.0, 47004), (3.0, 42340), (4.0, 69680), (5.0, 43440),
+                 (6.0, 61985), (8.0, 34435), (10.0, 1543), (15.0, 26540), (20.0, 29882)]
+PLACE_SCRIPT = "spell_playerhousing_place"
+
+
+def circle_spell(footprint):
+    """The spell whose circle best matches a piece of this radius (yards)."""
+    for radius, spell in CIRCLE_SPELLS:
+        if footprint <= radius * 1.1:
+            return spell
+    return CIRCLE_SPELLS[-1][1]
 
 # Copy cost in copper on live servers (FreeMode makes everything free).
 COST = {"Starter": 0, "Exploration": 5000, "Dungeons": 10000, "Raids": 50000, "Reputation": 10000,
@@ -241,7 +254,7 @@ def build(args):
                        else "Right-click on your island, then click where it should go.")
         items.append("(%d, 15, 0, -1, %s, %d, %d, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, %d, 0, 0, 0, -1, %s, %s, 0)" % (
             item, sql_text(prefix + name), ICON_BUILDING if building else ICON_FURNISHING, QUALITY.get(category, 1),
-            PLACEMENT_SPELL, sql_text(description), sql_text(ITEM_SCRIPT)))
+            circle_spell(footprint), sql_text(description), sql_text(ITEM_SCRIPT)))
 
         notes = []
         if stand:
@@ -278,6 +291,11 @@ def build(args):
         "DELETE FROM `mod_playerhousing_piece`;",
         "DELETE FROM `item_template` WHERE `entry` BETWEEN 901100 AND 901199 OR `entry` BETWEEN 902001 AND 902999;",
         "DELETE FROM `gameobject_template` WHERE `entry` BETWEEN 911100 AND 922999;",
+        "",
+        "-- The spells behind the targeting circles, one per circle size.",
+        "DELETE FROM `spell_script_names` WHERE `ScriptName` = '%s';" % PLACE_SCRIPT,
+        "INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES",
+        ",\n".join("(%d, '%s')" % (spell, PLACE_SCRIPT) for _, spell in CIRCLE_SPELLS) + ";",
         "",
         "INSERT INTO `gameobject_template` (%s) VALUES" % go_columns,
         ",\n".join(gameobjects) + ";",

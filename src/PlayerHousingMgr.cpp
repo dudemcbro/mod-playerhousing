@@ -388,6 +388,49 @@ void PlayerHousingMgr::SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, b
             "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) ON DUPLICATE KEY UPDATE flags = flags | {}", guid, flag, flag);
 }
 
+uint8 PlayerHousingMgr::GetAdjustMode(ObjectGuid::LowType guid) const
+{
+    uint32 flags = GetCharacterFlags(guid);
+    if (flags & CHAR_FLAG_ADJUST_NEVER)
+        return ADJUST_NEVER;
+    return (flags & CHAR_FLAG_ADJUST_ALL) ? ADJUST_ALL : ADJUST_BUILDINGS;
+}
+
+void PlayerHousingMgr::SetAdjustMode(Player* player, uint8 mode, std::string& reason) const
+{
+    uint32 set = mode == ADJUST_ALL ? CHAR_FLAG_ADJUST_ALL : (mode == ADJUST_NEVER ? CHAR_FLAG_ADJUST_NEVER : 0);
+    uint32 both = CHAR_FLAG_ADJUST_ALL | CHAR_FLAG_ADJUST_NEVER;
+    CharacterDatabase.DirectExecute(
+        "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) "
+        "ON DUPLICATE KEY UPDATE flags = (flags & ~{}) | {}", player->GetGUID().GetCounter(), set, both, set);
+    switch (mode)
+    {
+        case ADJUST_ALL: reason = "After placing anything, its menu opens so you can turn, nudge or take it back."; break;
+        case ADJUST_NEVER: reason = "Placing no longer opens a menu. Click a piece while decorating to change it."; break;
+        default: reason = "After placing a building, its menu opens so you can turn, nudge or take it back."; break;
+    }
+}
+
+bool PlayerHousingMgr::ShouldAdjustAfterPlacing(Player const* player, uint32 itemEntry) const
+{
+    PieceDefinition const* piece = GetPiece(itemEntry);
+    if (!piece)
+        return false;
+
+    uint8 mode = GetAdjustMode(player->GetGUID().GetCounter());
+    return mode == ADJUST_ALL || (mode == ADJUST_BUILDINGS && piece->IsBuilding());
+}
+
+char const* PlayerHousingMgr::AdjustModeName(uint8 mode)
+{
+    switch (mode)
+    {
+        case ADJUST_ALL: return "after everything";
+        case ADJUST_NEVER: return "never";
+        default: return "after buildings";
+    }
+}
+
 void PlayerHousingMgr::Say(Player* player, std::string const& text) const
 {
     if (player && player->GetSession())

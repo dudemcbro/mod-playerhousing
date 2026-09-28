@@ -61,6 +61,7 @@ namespace
         CMD_STAND_PUT,        // action: index into the list the dress menu showed
         CMD_STAND_TAKE_OFF,   // action: placement id | slot << 24 (0xFF: everything)
         CMD_STAND_FIGURE,     // action: placement id
+        CMD_ADJUST_MODE,
         CMD_CLOSE
     };
 
@@ -199,6 +200,8 @@ namespace
         Ask(player, GOSSIP_ICON_CHAT, "Greeting for visitors: " + greeting, CMD_GREETING);
         if (!house.greeting.empty())
             Add(player, GOSSIP_ICON_CHAT, "Clear the greeting", CMD_GREETING_CLEAR);
+        Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Adjust menu opens: {} (click to change)",
+            PlayerHousingMgr::AdjustModeName(sPlayerHousingMgr->GetAdjustMode(self))), CMD_ADJUST_MODE);
         Add(player, GOSSIP_ICON_CHAT, "Back", CMD_HOME);
         Send(player, source, TEXT_SETTINGS);
     }
@@ -557,7 +560,7 @@ void HousingMenus::ShowVisit(Player* player, MenuSource const& source)
     Send(player, source, TEXT_VISIT);
 }
 
-void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 placementId)
+void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 placementId, bool justPlaced)
 {
     std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
     PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
@@ -573,6 +576,11 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     ClearGossipMenuFor(player);
     Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{} ({})", piece->name, sPlayerHousingMgr->CountsText(player->GetGUID().GetCounter())),
         CMD_PIECE, placementId);
+    if (justPlaced)
+    {
+        Add(player, GOSSIP_ICON_CHAT, "Keep it here", CMD_CLOSE);
+        Add(player, GOSSIP_ICON_INTERACT_2, "Take it back (back to your bags)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
+    }
     if (piece->HasFlag(PIECE_FLAG_STAND))
     {
         Add(player, GOSSIP_ICON_VENDOR, "Put gear on...", CMD_STAND_DRESS_MENU, placementId);
@@ -598,7 +606,7 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     Add(player, GOSSIP_ICON_INTERACT_1, "Move to where I'm standing", CMD_PIECE_OP, placementId | (OP_MOVE_HERE << 24));
     if (piece->HasFlag(PIECE_FLAG_SURFACE))
         Add(player, GOSSIP_ICON_VENDOR, "Put something on top", CMD_HOOK_MENU, placementId);
-    if (!sPlayerHousingMgr->UndoLabel(player).empty())
+    if (!justPlaced && !sPlayerHousingMgr->UndoLabel(player).empty())
         Add(player, GOSSIP_ICON_INTERACT_2, "Undo: " + sPlayerHousingMgr->UndoLabel(player), CMD_PIECE_OP, placementId | (OP_UNDO << 24));
     Add(player, GOSSIP_ICON_CHAT, "Done", CMD_CLOSE);
     Send(player, source, TEXT_PIECE);
@@ -828,6 +836,15 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             Say(player, reason);
             ShowHome(player, source);
             return;
+        case CMD_ADJUST_MODE:
+        {
+            uint8 mode = sPlayerHousingMgr->GetAdjustMode(player->GetGUID().GetCounter());
+            uint8 next = mode == ADJUST_BUILDINGS ? ADJUST_ALL : (mode == ADJUST_ALL ? ADJUST_NEVER : ADJUST_BUILDINGS);
+            sPlayerHousingMgr->SetAdjustMode(player, next, reason);
+            Say(player, reason);
+            ShowSettings(player, source);
+            return;
+        }
         case CMD_STAND_DRESS_MENU:
             ShowDress(player, source, action & 0xFFFFFF, action >> 24);
             return;
