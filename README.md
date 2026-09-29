@@ -671,6 +671,46 @@ players came in the first run after a restart. The worldserver used about 1.8 GB
 
 No island showed another island's pieces, and no action failed.
 
+Then with everyone at home and their pieces out (`--hold 60`; `--walk` has them run in
+circles, as players moving about do):
+
+| Islands open | Pieces out | Players | Server update: mean, p99 |
+| --- | --- | --- | --- |
+| none | 0 | | 8 ms, 39 ms |
+| 100 | 2000 | standing | 8 ms, 53 ms |
+| 100 | 2000 | running about | 9 ms, 56 ms |
+| 50 | 3000 | running about | 9 ms, 51 ms |
+| 100 | 6000 | standing | 8 ms, 51 ms |
+| 100 | 6000 | running about | 19 ms, 195 ms |
+
+Placing those 6000 pieces (100 players at once, as fast as the test can click) ran at
+29 ms mean, 424 ms p99.
+
+### Thousands of players
+
+Every island is at the same spot on the same map (GM Island, on Kalimdor), told apart
+only by phase. That is cheap at the sizes above, and what limits it past them:
+
+- All open islands share one map thread, the one that also runs the rest of Kalimdor.
+  `MapUpdate.Threads` can't spread them.
+- Pieces left out cost next to nothing while their owners stand still. But whenever a
+  player moves, the server looks again at everything within sight to decide what to show,
+  and that includes every other island's pieces: hidden by phase, but still looked at. In a
+  profile of the 100 island, 6000 piece run, about half the map thread was there
+  (`PlayerRelocationNotifier`). The cost grows with the players moving about at home
+  times the pieces out on all islands.
+- Housing commands run on the world thread, one after another, and most do a few
+  database reads and writes while they wait.
+
+A rough extrapolation from the one cost that grows: 300 islands of 60 pieces each (a few
+thousand players online, 10% of them at home) is about 9 times the 6000 piece run, around
+100 ms more a tick for everyone on Kalimdor; 1000 islands open is past what one map
+thread can do. The fix is islands as instances: a map of their own (a Map.dbc row and a
+WDT listing GM Island's tiles, added to the client patch, with the server's maps, vmaps
+and mmaps extracted for it), so each island only looks at its own pieces and islands
+update in parallel. Until then, a lower `PlayerHousing.MaxFurnishings` keeps the cost
+down on busy servers.
+
 ### Upgrading from the house levels version
 
 Older versions had house styles, stages, a vendor catalog and furniture unlocks. Applying

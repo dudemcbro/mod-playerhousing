@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Load test for mod-playerhousing: many players on their islands at once.
 
-Each player logs in, goes home, opens the island to everyone, places pieces (the first-login
-chair, then more with "another"), turns, nudges, undoes and redoes, and visits another
+Each player logs in, goes home, opens the island to everyone, places pieces the way the addon
+does with the mouse (a ghost, where the mouse points ten times a second over AzerothCore's
+addon command channel, then a click), turns, nudges, undoes and redoes, and visits another
 player's island. The GM account watches the server's update times meanwhile. At the end:
 how long each kind of action took to answer, the server's update times, and whether every
 island shows only its own pieces.
@@ -75,6 +76,10 @@ class Stats:
         self.latency = {}      # action -> [seconds]
         self.errors = []
         self.placed = 0
+        self.holding = 0       # players done and standing at home (--hold)
+        self.failed_logins = []
+        self.hold_start = None
+        self.hold_end = None
 
     def add(self, action, seconds):
         with self.lock:
@@ -100,6 +105,24 @@ def timed(stats, wc, action, send, expect, timeout=10.0):
     return False
 
 
+def timed_state(stats, wc, action, send, done=None, timeout=10.0):
+    """Sends something and waits for the island state the server whispers the addon after it
+    (placing and changing pieces say nothing in chat): the time it took. done: a test of the
+    state's fields (as split, "HOUSING" first), for a state that shows the change."""
+    mark = len(wc.addon_messages)
+    start = time.time()
+    send()
+    deadline = start + timeout
+    while time.time() < deadline:
+        for message in wc.addon_messages[mark:]:
+            if message.startswith("HOUSING\tstate\t") and (done is None or done(message.split("\t"))):
+                stats.add(action, time.time() - start)
+                return True
+        wc.pump(0.02)
+    stats.error("%s: %s got no island state" % (wc.account, action))
+    return False
+
+
 def worker(index, args, names, stats, ready, go):
     name = names[index]
     account = "LOADTEST%02d" % (index + 1)
@@ -110,6 +133,8 @@ def worker(index, args, names, stats, ready, go):
         wc.pump(2.0)
     except Exception as exc:  # noqa: BLE001 - reported, not fatal for the others
         stats.error("%s: login failed: %r" % (account, exc))
+        with stats.lock:
+            stats.failed_logins.append(account)
         ready.release()
         return
     ready.release()
@@ -132,31 +157,65 @@ def worker(index, args, names, stats, ready, go):
         wc.move_to(center[0], center[1], LANDING[2])
         wc.pump(0.3)
 
-        spell = int(db("SELECT spellid_1 FROM item_template WHERE entry=%d" % CHAIR, "acore_world")[0][0])
+        # As the addon sends them: over the command channel, the mouse's points ten a second.
+        echo = [index * 1000]
+
+        def addon(command):
+            echo[0] += 1
+            wc.addon_command(command, name, echo=echo[0])
+
+        addon("house addon 1 1 mouse")
         for piece in range(args.pieces):
             spot = (center[0] + math.cos(piece) * 2.0, center[1] + math.sin(piece) * 2.0, LANDING[2])
-            if wc.count_item(CHAIR) == 0:
-                if not timed(stats, wc, "another like this", lambda: wc.command(".house another", wait=0), "Right-click"):
-                    break
-                deadline = time.time() + 5
-                while wc.count_item(CHAIR) == 0 and time.time() < deadline:
-                    wc.pump(0.05)
-            before = wc.count_item(CHAIR)
-            if timed(stats, wc, "place", lambda: wc.use_item(CHAIR, spell, spot, wait=0), "Placed"):
+            if not timed_state(stats, wc, "ghost appears", lambda: addon("house ghost %d" % CHAIR),
+                               lambda state: len(state) > 21 and state[21] == str(CHAIR)):
+                break
+            # The mouse sweeping in from a few yards off, ten points a second.
+            for step in range(args.mouse_points):
+                t = (step + 1) / args.mouse_points
+                addon("house ghost at %.2f %.2f %.2f 0 0 1" % (spot[0] + (1 - t) * 4.0, spot[1], spot[2]))
+                wc.pump(0.1)
+            if timed_state(stats, wc, "place (click)", lambda: addon("house ghost place at %.2f %.2f %.2f 0 0 1" % spot),
+                           lambda state: len(state) > 21 and state[21] == "0"):
                 with stats.lock:
                     stats.placed += 1
-                # The chair is taken on the player's next update: wait for it, or the next
-                # placement would try to use the same one.
-                deadline = time.time() + 5
-                while wc.count_item(CHAIR) >= before and time.time() < deadline:
-                    wc.pump(0.05)
             wc.pump(0.2)
 
         for edit in range(args.edits):
-            command, expect = [(".house rotate 15", "Turned"), (".house nudge forward", "Nudged"),
-                               (".house undo", "Undid"), (".house redo", "Redid")][edit % 4]
-            timed(stats, wc, command.split()[1], lambda: wc.command(command, wait=0), expect)
+            command = ["house rotate 15", "house nudge forward", "house undo", "house redo"][edit % 4]
+            timed_state(stats, wc, command.split()[1], lambda: addon(command))
             wc.pump(0.25)
+
+        # --hold: everyone done, standing at home with their pieces out, for that many seconds
+        # once the last one gets there: what occupied islands cost the server just being there.
+        if args.hold:
+            with stats.lock:
+                stats.holding += 1
+            deadline = time.time() + 120
+            while stats.holding < args.players - len(stats.failed_logins) and time.time() < deadline:
+                wc.pump(0.2)
+            with stats.lock:
+                if stats.hold_start is None:
+                    stats.hold_start = time.time()
+            # --walk: each walks a circle round where they stand, as a player running about
+            # does (a step every half second): moving is what makes the server look again at
+            # everything in sight, other islands' pieces included.
+            cx, cy, cz, co = wc.pos
+            step = 0
+            while time.time() < stats.hold_start + args.hold:
+                if args.walk:
+                    step += 1
+                    angle = co + step * 0.45
+                    wc.move_to(cx + 8.0 * math.cos(angle) - 8.0 * math.cos(co), cy + 8.0 * math.sin(angle) - 8.0 * math.sin(co), cz,
+                               angle + math.pi / 2)
+                    wc.pump(0.2)
+                else:
+                    wc.pump(0.2)
+            if args.walk:
+                wc.move_to(cx, cy, cz, co)
+            with stats.lock:
+                if stats.hold_end is None:
+                    stats.hold_end = time.time()
 
         # What this player sees at home: only their own pieces.
         wc.pump(1.0)
@@ -208,6 +267,7 @@ def watch_server(args, stop, samples):
                 values = [int(v.strip().rstrip("ms,")) for v in m.split(":")[1].split(",")]
                 sample["p95"], sample["p99"], sample["max"] = values
         if sample:
+            sample["at"] = time.time()
             samples.append(sample)
         stop.wait(args.interval)
     try:
@@ -262,7 +322,10 @@ def main():
     ap.add_argument("--players", type=int, default=40)
     ap.add_argument("--pieces", type=int, default=8)
     ap.add_argument("--edits", type=int, default=20)
+    ap.add_argument("--mouse-points", type=int, default=10, help="where the mouse points, sent before each click (ten a second)")
     ap.add_argument("--interval", type=float, default=3.0, help="seconds between server samples")
+    ap.add_argument("--hold", type=float, default=0.0, help="seconds everyone stands at home, pieces out, once all are done")
+    ap.add_argument("--walk", action="store_true", help="during --hold, everyone runs in circles at home instead of standing")
     args = ap.parse_args()
 
     names = [char_name(i) for i in range(args.players)]
@@ -348,6 +411,15 @@ def main():
         print("  mean %d ms, worst p95 %d ms, worst p99 %d ms, worst max %d ms, players up to %d" % (
             round(statistics.mean(s["mean"] for s in during if "mean" in s)), max(s.get("p95", 0) for s in during),
             max(s.get("p99", 0) for s in during), max(s.get("max", 0) for s in during), max(s.get("players", 0) for s in during)))
+    if stats.hold_start and stats.hold_end:
+        # .server info covers the last 500 updates: samples from well inside the hold.
+        held = [s for s in samples if stats.hold_start + min(10.0, args.hold / 2) <= s["at"] <= stats.hold_end]
+        if held:
+            print("while everyone %s at home, pieces out (%d samples, %d islands, %d pieces):" % (
+                "ran about" if args.walk else "stood", len(held), stats.holding, stats.placed))
+            print("  mean %d ms, worst p95 %d ms, worst p99 %d ms, worst max %d ms" % (
+                round(statistics.mean(s["mean"] for s in held if "mean" in s)), max(s.get("p95", 0) for s in held),
+                max(s.get("p99", 0) for s in held), max(s.get("max", 0) for s in held)))
     rss = subprocess.run(["ps", "-o", "rss=", "-C", "worldserver"], capture_output=True, text=True).stdout.split()
     if rss:
         print("worldserver memory: %d MB" % (int(rss[0]) // 1024))
