@@ -657,3 +657,7 @@ messages, relogging, and the safety rules above), and a load test.
 `sql/db_world/base/mod_playerhousing_world_rollback.sql` and
 `sql/db_characters/base/mod_playerhousing_characters_rollback.sql` remove everything the
 module added.
+
+## License
+
+GNU General Public License v3.0: see [LICENSE](LICENSE).
