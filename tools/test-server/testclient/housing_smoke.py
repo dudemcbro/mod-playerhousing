@@ -1477,6 +1477,7 @@ def main():
           and len([p for p in placements(owner_guid) if p["item"] == CHAIR]) == placed + 1,
           joined(msgs) + " had %d, now %d" % (have, storage(owner_guid).get(CHAIR, 0) + owner.count_item(CHAIR)))
     owner.command(".house undo")
+    move(owner, L["stand_stand"][0], L["stand_stand"][1], L["ground"])
     owner.command(".house decorate on")
     admin.select(owner_char["guid"])
     admin.command(".additem %s %d -%d" % (args.owner_char, WORN_DAGGER, owner.count_item(WORN_DAGGER)), wait=2.0)
