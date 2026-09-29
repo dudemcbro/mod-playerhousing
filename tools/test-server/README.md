@@ -134,10 +134,11 @@ checking the database and what the client sees after each step (287 checks, 288 
   spots off the island; swimmers brought back to the beach
 - edit mode (the addon's keys): a click only selects, `.house shift` moves and turns a
   piece relative to your facing, a quick run of shifts is one undo step, a flood of them
-  is capped, Tab picks the next piece; a ring under the selected piece, and a Move a
-  Piece item kept ready for the addon's G that moves it and comes back for the next move,
-  both gone when edit mode ends or you leave the island; a copy waiting for its spot
-  ("Another") keeps G meanwhile; full bags keep it quiet; the grid size reaches the addon
+  is capped, Tab picks the next piece; a ring under the selected piece (gone when edit
+  mode ends), and no Move a Piece in the bags; G's ghost: a see-through copy with the
+  piece's ghost model starting where the piece stands, walked over, pushed farther and
+  turned, then set down there (the ring following) and undone; Escape leaving the piece
+  where it was; the grid size reaching the addon
 - several pieces at once: the undo history newest first and `undo 2`, adding a piece to
   the selection (a ring under each), sliding and turning the group with what stands on
   it, one undo for the run and the group still selected after it, Fwd nudging all of
@@ -158,7 +159,8 @@ checking the database and what the client sees after each step (287 checks, 288 
 - size, tilt, grid and copies: a table made bigger with the lantern kept on its top (and
   the client seeing the new size), the size and tilt limits, a tilt reaching the client
   as the object's rotation, the "More turns, tilt and size" menu, "Place another like
-  this" handing over a chair that lands with the first one's turn, size and tilt, and
+  this" sending a see-through chair after the owner (the addon told which), set down
+  ahead of the owner with the first one's turn, size and tilt, the ghost gone after, and
   the grid squaring up a new piece and nudging it one square
 - full bags: pieces go to House Storage, undo takes them back out, "Take everything"
 - the Collection: categories, hints with progress, "(new)" marks that clear once seen and
@@ -176,13 +178,15 @@ checking the database and what the client sees after each step (287 checks, 288 
   banked); a guest finding it locked
 - buildings: placing a faction building, the pick up choice, what counts as inside (a
   lantern in a corner does, a table past the wall doesn't), the building and what's
-  inside coming back, undo
+  inside coming back, undo; moving the building: carried as it is, the chair and lantern
+  inside as see-through ghosts, all set down two yards over, then undone
 - a mannequin: it takes after its owner, its menu, dressing it from the bags (the item
   leaves the bags but stays the same item), the figure holding the sword and wearing the
   pants (read the way the client reads them), undo and redo giving back the very same
   item, taking gear off, picking it up with its gear and undoing that, moving it with the
   targeting circle (the Move a Piece item used up, undo), gear mailed when the bags are
-  full, and the gear still there after a relog
+  full, a ghost set down with full bags all the same, and the gear still there after a
+  relog
 - saved layouts: saving the island, setting it out again (everything back where it was,
   the mannequin's gear to the bags) and undoing that in one step, renaming (a name with
   a quote), sending a copy (refused to a stranger, fine for a friend), letting visitors
@@ -205,6 +209,7 @@ checking the database and what the client sees after each step (287 checks, 288 
   seeing what the mannequin wears but not changing anything, private copies, privacy
   presets
 - the addon messages: at login, on request, the selected piece and the undo label
+- leaving the island with a ghost following: it ends and nothing moves
 - pack up everything and undo, unstuck, logging out on the island and back in (an
   unfinished move's item is gone)
 - a GM packing up the island: every piece in House Storage, the mannequin's sword in the
