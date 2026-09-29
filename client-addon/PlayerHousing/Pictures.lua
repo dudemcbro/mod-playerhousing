@@ -1,5 +1,37 @@
--- Buildings with a picture for the preview (Pictures/<item>.tga), written by
--- tools/pictures/make_pictures.py after a GM's photo tour (/housing phototour). Empty until then:
--- buildings show a floor plan instead.
+-- Buildings with a picture for the preview (Pictures/<item>.tga), rendered from the game's
+-- models by tools/pictures/render_buildings.py (or taken by a GM's photo tour,
+-- /housing phototour, and tools/pictures/make_pictures.py).
 PlayerHousing_Pictures = {
+    [902211] = true,
+    [902212] = true,
+    [902213] = true,
+    [902214] = true,
+    [902220] = true,
+    [902221] = true,
+    [902222] = true,
+    [902223] = true,
+    [902224] = true,
+    [902225] = true,
+    [902226] = true,
+    [902227] = true,
+    [902228] = true,
+    [902229] = true,
+    [902230] = true,
+    [902231] = true,
+    [902232] = true,
+    [902233] = true,
+    [902234] = true,
+    [902235] = true,
+    [902241] = true,
+    [902242] = true,
+    [902243] = true,
+    [902244] = true,
+    [902247] = true,
+    [902248] = true,
+    [902252] = true,
+    [902253] = true,
+    [902254] = true,
+    [902255] = true,
+    [902256] = true,
+    [902257] = true,
 }
