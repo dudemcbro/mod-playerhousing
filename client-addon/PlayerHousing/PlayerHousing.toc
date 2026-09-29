@@ -10,3 +10,4 @@ PieceInfo.lua
 PlayerHousing.lua
 EditMode.lua
 Window.lua
+Minimap.lua

@@ -277,11 +277,12 @@ they'd undo, and the full menu) and eight tabs:
   frame, and its size. Buildings made of world models can't be drawn in a window, so they
   show a floor plan to scale instead, with you next to it.
 - **Collection**: every piece there is, unlocked ones in color and locked ones grey, by
-  category, unlocked only, or by name. The tooltip says how to unlock a piece, what a copy
-  costs, and how many you have in your bags, House Storage and on the island. Click a piece
-  to keep it in the preview with its details and buttons: Place (click, then click the
-  spot), Get 1, Get 5 and Take from storage. Hovering other pieces shows them for a moment.
-  New unlocks are marked until you leave the tab.
+  category, favorites, unlocked only, or by name. The tooltip says how to unlock a piece,
+  what a copy costs, and how many you have in your bags, House Storage and on the island.
+  Click a piece to keep it in the preview with its details and buttons: Place (click, then
+  click the spot; with none in your bags the first click gets one), Get 1, Get 5 and Take
+  from storage. Hovering other pieces shows them for a moment. Right-click a piece to star
+  it as a favorite. New unlocks are marked until you leave the tab.
 - **Storage**: House Storage, one piece or everything at once back to the bags.
 - **Placed**: the pieces on the island, nearest first: select one, bring it to where you
   stand, or pick it up.
@@ -330,8 +331,9 @@ bindings can't change in combat, so they wait for it to end. The client can't sl
 object, so each step redraws the piece.
 
 The window opens by itself when you arrive home (`/housing auto` turns that off).
-`/housing` shows or hides it, and `/housing <command>` runs any `.house` command. Key
-bindings: Key Bindings, Player Housing.
+`/housing` shows or hides it, and `/housing <command>` runs any `.house` command. A button
+on the minimap's edge opens the window (right-click: edit mode); drag it around the edge,
+or `/housing minimap` to hide it. Key bindings: Key Bindings, Player Housing.
 
 Install: copy the `PlayerHousing` folder into `World of Warcraft/Interface/AddOns/`. The
 window can't open or close, or change tabs, in combat (a WoW rule for windows with item
@@ -347,7 +349,8 @@ addon outside the game against stubbed WoW functions:
 ```
 lua5.1 client-addon/test/harness.lua client-addon/PlayerHousing/PieceModels.lua \
     client-addon/PlayerHousing/PieceInfo.lua client-addon/PlayerHousing/PlayerHousing.lua \
-    client-addon/PlayerHousing/EditMode.lua client-addon/PlayerHousing/Window.lua
+    client-addon/PlayerHousing/EditMode.lua client-addon/PlayerHousing/Window.lua \
+    client-addon/PlayerHousing/Minimap.lua
 ```
 
 ## Install

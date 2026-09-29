@@ -1167,6 +1167,18 @@ def main():
     owner.pump(1.0)
     check("with full bags, gear taken off is mailed to the owner", has(msgs, "mailed")
           and db("SELECT COUNT(*) FROM mail_items WHERE item_guid=%d AND receiver=%d" % (pants_guid or 0, owner_guid)) == [["1"]], joined(msgs))
+    # Edit mode with full bags: no Move a Piece to keep ready, and no retrying (and telling
+    # the addon) every update.
+    owner.command(".house edit on")
+    owner.command(".house select %d" % stand_id)
+    owner.pump(1.0)
+    owner.addon_messages.clear()
+    owner.pump(3.0)
+    states = [m for m in owner.addon_messages if m.startswith("HOUSING\tstate\t")]
+    check("edit mode with full bags keeps no Move a Piece ready, and stays quiet", len(states) <= 2
+          and not any(owner.count_item(e) for e in MOVERS), "%d states in 3 s" % len(states))
+    owner.command(".house edit off")
+    owner.command(".house decorate on")
     admin.select(owner_char["guid"])
     admin.command(".additem %s %d -%d" % (args.owner_char, WORN_DAGGER, owner.count_item(WORN_DAGGER)), wait=2.0)
     wait_for(lambda: owner.count_item(WORN_DAGGER) == 0, 4, owner)

@@ -595,8 +595,19 @@ void PlayerHousingMgr::StageMover(Player* player, Session& session)
     if (!wanted && (pending == _pendingMoves.end() || !pending->second.staged))
         return;
 
+    // The bags were full a moment ago: try again now and then, not every update.
+    uint64 now = GameTime::GetGameTimeMS().count();
+    auto retry = _stageRetries.find(player->GetGUID());
+    if (retry != _stageRetries.end())
+    {
+        if (wanted && pending == _pendingMoves.end() && retry->second.moverItem == wanted && now < retry->second.at)
+            return;
+        _stageRetries.erase(retry);
+    }
+
     // Another circle, or none: the old item goes and the right one comes, quietly (it
     // isn't loot; the chat would fill with it).
+    bool changed = pending != _pendingMoves.end();
     for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
         if (entry != wanted)
             if (uint32 count = player->GetItemCount(entry))
@@ -608,8 +619,11 @@ void PlayerHousingMgr::StageMover(Player* player, Session& session)
         ItemPosCountVec dest;
         if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, wanted, 1) != EQUIP_ERR_OK)
         {
-            SendAddonState(player);
-            return;  // bags full: G asks for the item as before, and hears why not
+            // Bags full: G asks for the item as before, and hears why not.
+            _stageRetries[player->GetGUID()] = StageRetry{ wanted, now + 2000 };
+            if (changed)
+                SendAddonState(player);
+            return;
         }
         if (Item* item = player->StoreNewItem(dest, wanted, true))
             player->SendNewItem(item, 1, true, false, false, false);
@@ -1571,6 +1585,7 @@ void PlayerHousingMgr::CancelMove(Player* player)
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _pendingMoves.erase(player->GetGUID());
         _pendingCopies.erase(player->GetGUID());
+        _stageRetries.erase(player->GetGUID());
     }
     for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
         if (uint32 count = player->GetItemCount(entry))

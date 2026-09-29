@@ -246,15 +246,24 @@ end
 -- Collection: everything there is, unlocked or not, and a copy of what's unlocked.
 
 local collectionSlots, categoryText, collectionPageText, collectionStatus, collectionPrev, collectionNext = {}, nil, nil, nil, nil, nil
+local FAVORITES = "favorites"   -- the category picker's own entry, after All
+
+-- Right-click stars a piece; the stars are kept per character.
+local function Favorites()
+    PlayerHousingDB.favorites = PlayerHousingDB.favorites or {}
+    return PlayerHousingDB.favorites
+end
 
 local function CollectionPieces()
     local list = {}
     local search = collectionView.search
+    local favorites = Favorites()
     for _, info in ipairs(PlayerHousing_Pieces or {}) do
         local id, category = info[1], info[3]
         local catalog = PlayerHousing_Categories[category] == "Catalog"
         if (not catalog or collection.catalog)
-            and (collectionView.category == 0 or collectionView.category == category)
+            and (collectionView.category == 0 or collectionView.category == category
+                 or (collectionView.category == FAVORITES and favorites[id]))
             and (not collectionView.unlockedOnly or collection.unlocked[id])
             and (search == "" or info[2]:lower():find(search, 1, true)) then
             list[#list + 1] = info
@@ -267,8 +276,10 @@ local function UpdateCollection()
     if not categoryText then
         return
     end
-    local name = collectionView.category == 0 and "All categories" or PlayerHousing_Categories[collectionView.category]
+    local name = collectionView.category == 0 and "All categories"
+        or (collectionView.category == FAVORITES and "Favorites" or PlayerHousing_Categories[collectionView.category])
     categoryText:SetText(name)
+    local favorites = Favorites()
 
     local list = CollectionPieces()
     local perPage = GRID_COLUMNS * GRID_ROWS
@@ -286,6 +297,7 @@ local function UpdateCollection()
             local have = GetItemCount(id)
             button.count:SetText(have > 0 and have or "")
             button.new:SetText(collection.fresh[id] and "New" or "")
+            if favorites[id] then button.star:Show() else button.star:Hide() end
             button:Show()
         else
             button:Hide()
@@ -304,14 +316,28 @@ local function UpdateCollection()
             end
         end
     end
-    collectionStatus:SetText(("%d of %d unlocked. Click a piece to place it or get copies."):format(unlocked, total))
+    if collectionView.category == FAVORITES and #list == 0 then
+        collectionStatus:SetText("No favorites yet: right-click a piece to star it.")
+    else
+        collectionStatus:SetText(("%d of %d unlocked. Click: place or get copies. Right-click: favorite."):format(unlocked, total))
+    end
 end
 
+-- All, Favorites, then each category (the Catalog only when the server offers it).
 local function CycleCategory(step)
-    local count = #PlayerHousing_Categories
-    repeat
-        collectionView.category = (collectionView.category + step) % (count + 1)
-    until collectionView.category == 0 or PlayerHousing_Categories[collectionView.category] ~= "Catalog" or collection.catalog
+    local order = { 0, FAVORITES }
+    for index, name in ipairs(PlayerHousing_Categories) do
+        if name ~= "Catalog" or collection.catalog then
+            order[#order + 1] = index
+        end
+    end
+    local at = 1
+    for position, category in ipairs(order) do
+        if category == collectionView.category then
+            at = position
+        end
+    end
+    collectionView.category = order[(at - 1 + step) % #order + 1]
     collectionView.page = 1
     UpdateCollection()
 end
@@ -333,6 +359,7 @@ local function CollectionTooltip(button)
     GameTooltip:AddLine(("In your bags: %d. In House Storage: %d. Placed: %d."):format(GetItemCount(id), collection.storage[id] or 0,
         collection.placed[id] or 0), 1, 1, 1, true)
     GameTooltip:AddLine("Click: show it next to the window, to place it or get copies.", 0.4, 1, 0.4, true)
+    GameTooltip:AddLine(Favorites()[id] and "Right-click: take the star off." or "Right-click: star it as a favorite.", 0.7, 0.7, 0.7)
     GameTooltip:Show()
     API.ShowPreview({ id = id, name = info[2] })
 end
@@ -377,15 +404,31 @@ local function CreateCollection()
         button.count:SetPoint("BOTTOMRIGHT", -2, 2)
         button.new = button:CreateFontString(nil, "OVERLAY", "GameFontGreenSmall")
         button.new:SetPoint("TOPLEFT", 1, -1)
+        button.star = button:CreateTexture(nil, "OVERLAY")
+        button.star:SetWidth(14)
+        button.star:SetHeight(14)
+        button.star:SetPoint("TOPRIGHT", 1, 1)
+        button.star:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
+        button.star:Hide()
         button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         button:SetScript("OnEnter", CollectionTooltip)
         button:SetScript("OnLeave", function()
             GameTooltip_Hide()
             API.HidePreview()
         end)
-        button:SetScript("OnClick", function(self)
-            if self.info then
-                API.Pin({ id = self.info[1], name = self.info[2] })
+        button:SetScript("OnClick", function(self, mouseButton)
+            if not self.info then
+                return
+            end
+            local id = self.info[1]
+            if mouseButton == "RightButton" then
+                local favorites = Favorites()
+                favorites[id] = not favorites[id] or nil
+                UpdateCollection()
+                -- In Favorites, the piece under the mouse may have just gone.
+                if self.info then CollectionTooltip(self) else GameTooltip_Hide() end
+            else
+                API.Pin({ id = id, name = self.info[2] })
             end
         end)
         button:Hide()

@@ -802,6 +802,13 @@ private:
     };
     std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
     std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
+    // Edit mode's item didn't fit in the bags: which one, and when to try again.
+    struct StageRetry
+    {
+        uint32 moverItem{0};
+        uint64 at{0};
+    };
+    std::unordered_map<ObjectGuid, StageRetry> _stageRetries;
 
     // "Place another like this": the next one placed takes the original's turn, size and tilt.
     // Players on an island: when their clock is resent, and their music replayed.

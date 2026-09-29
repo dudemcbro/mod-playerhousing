@@ -2,7 +2,8 @@
 -- checks what it does with state messages, bag contents, clicks and the mouse wheel.
 --
 --   lua5.1 client-addon/test/harness.lua client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PieceInfo.lua \
---       client-addon/PlayerHousing/PlayerHousing.lua client-addon/PlayerHousing/EditMode.lua client-addon/PlayerHousing/Window.lua
+--       client-addon/PlayerHousing/PlayerHousing.lua client-addon/PlayerHousing/EditMode.lua client-addon/PlayerHousing/Window.lua \
+--       client-addon/PlayerHousing/Minimap.lua
 --
 -- (luajit works too.) It can't show how the window looks; that needs the real client.
 local sent, printed = {}, {}
@@ -11,7 +12,7 @@ local combat = false
 
 local Widget = {}
 Widget.__index = function(t, k)
-  if k == "protected" or k == "count" or k == "icon" or k == "piece" or k == "enabled" then return nil end
+  if k == "protected" or k == "count" or k == "icon" or k == "piece" or k == "enabled" or k == "info" or k == "highlighted" then return nil end
   local v = rawget(Widget, k)
   if v then return v end
   return function(self, ...) return nil end   -- any unknown method: no-op
@@ -76,6 +77,9 @@ function CreateFrame(kind, name, parent, template)
   return f
 end
 UIParent = CreateFrame("Frame", "UIParent")
+Minimap = CreateFrame("Frame", "Minimap")
+function Minimap:GetCenter() return 100, 100 end
+function Minimap:GetEffectiveScale() return 1 end
 GameTooltip = CreateFrame("GameTooltip", "GameTooltip")
 function GameTooltip_Hide() end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) printed[#printed+1] = m end }
@@ -558,6 +562,28 @@ combat = true
 lockedSlot.scripts.OnEnter(lockedSlot)
 lockedSlot.scripts.OnLeave(lockedSlot)
 combat = false
+-- None in the bags: Place's first click gets one, and then it lights up to place it.
+local barrelSlot
+for index = 1, 36 do
+  local slot = _G["PlayerHousingCollectionSlot" .. index]
+  if slot.info and slot.info[1] == 901106 then barrelSlot = slot end
+end
+barrelSlot.scripts.OnClick(barrelSlot)
+local place = PlayerHousingDetailsPlace
+assert(place.enabled and place.attrs.item == nil, "unlocked, none in the bags: Place still works")
+place:Click()
+assert(sent[#sent - 1] == ".house get 901106 1" and last() == ".house data collection", sent[#sent - 1])
+bags[2] = { [1] = {901106, 1} }
+names[901106] = "Furnishing: Tiny Inn Table"
+fire("BAG_UPDATE")
+OnUpdate(driver, 1)
+assert(place.attrs.item == "2 1" and place.highlighted and PlayerHousingDetailsText.text:find("click Place again"), PlayerHousingDetailsText.text)
+count = #sent
+place:Click()
+assert(#sent == count and not place.highlighted, "the second click uses it")
+bags[2] = nil
+fire("BAG_UPDATE")
+OnUpdate(driver, 1)
 -- A locked piece says how to unlock it, and can't be had yet.
 count = #sent
 lockedSlot.scripts.OnClick(lockedSlot)
@@ -585,8 +611,23 @@ PlayerHousingUnlockedOnly.scripts.OnClick(PlayerHousingUnlockedOnly)
 assert(PlayerHousingCollectionSlot3:IsShown() and not PlayerHousingCollectionSlot4:IsShown(), "three unlocked")
 PlayerHousingUnlockedOnly.checked = false
 PlayerHousingUnlockedOnly.scripts.OnClick(PlayerHousingUnlockedOnly)
+-- Favorites: right-click stars a piece, and they have their own entry after All.
+PlayerHousingCategoryNext.scripts.OnClick()
+assert(PlayerHousingCategoryText.text == "Favorites" and not PlayerHousingCollectionSlot1:IsShown(), PlayerHousingCategoryText.text)
+assert(PlayerHousingCollectionStatus.text:find("right%-click a piece"), PlayerHousingCollectionStatus.text)
+PlayerHousingCategoryPrev.scripts.OnClick()
+first.scripts.OnClick(first, "RightButton")
+assert(first.star:IsShown() and PlayerHousingDB.favorites[901105], "starred")
+assert(not PlayerHousingPreview:IsShown() or PlayerHousingPreviewName.text ~= "", "right-click doesn't pin")
+PlayerHousingCategoryNext.scripts.OnClick()
+assert(PlayerHousingCollectionSlot1.info[1] == 901105 and not PlayerHousingCollectionSlot2:IsShown(), "only the favorite")
+PlayerHousingCollectionSlot1.scripts.OnClick(PlayerHousingCollectionSlot1, "RightButton")
+assert(not PlayerHousingCollectionSlot1:IsShown() and PlayerHousingDB.favorites[901105] == nil, "unstarred")
+PlayerHousingCategoryPrev.scripts.OnClick()
+PlayerHousingCategoryNext.scripts.OnClick()
 PlayerHousingCategoryNext.scripts.OnClick()
 assert(PlayerHousingCategoryText.text == "Starter", PlayerHousingCategoryText.text)
+PlayerHousingCategoryPrev.scripts.OnClick()
 PlayerHousingCategoryPrev.scripts.OnClick()
 PlayerHousingCategoryPrev.scripts.OnClick()
 assert(PlayerHousingCategoryText.text == "Figurines", "the Catalog is skipped when the server doesn't offer it: " .. PlayerHousingCategoryText.text)
@@ -690,6 +731,24 @@ assert(PlayerHousingIslandPanel:IsShown() and printed[#printed]:find("combat"))
 combat = false
 PlayerHousingTabBags.scripts.OnClick()
 assert(PlayerHousingBagsPanel:IsShown() and not PlayerHousingIslandPanel:IsShown())
+
+-- The minimap button: click for the window, right-click for edit mode, drag round the edge.
+assert(PlayerHousingMinimapButton:IsShown(), "minimap button")
+local shownBefore = PlayerHousingFrame:IsShown()
+PlayerHousingMinimapButton.scripts.OnClick(PlayerHousingMinimapButton, "LeftButton")
+assert(PlayerHousingFrame:IsShown() ~= shownBefore, "toggles the window")
+PlayerHousingMinimapButton.scripts.OnClick(PlayerHousingMinimapButton, "LeftButton")
+PlayerHousingMinimapButton.scripts.OnClick(PlayerHousingMinimapButton, "RightButton")
+assert(last() == ".house edit", last())
+cursorX, cursorY = 100, 180
+PlayerHousingMinimapButton.scripts.OnDragStart(PlayerHousingMinimapButton)
+PlayerHousingMinimapButton.scripts.OnUpdate(PlayerHousingMinimapButton, 0.1)
+PlayerHousingMinimapButton.scripts.OnDragStop(PlayerHousingMinimapButton)
+assert(math.abs(PlayerHousingDB.minimapAngle - 90) < 0.01, "dragged to the top: " .. PlayerHousingDB.minimapAngle)
+SlashCmdList.PLAYERHOUSING("minimap")
+assert(not PlayerHousingMinimapButton:IsShown() and PlayerHousingDB.minimapHidden, "hidden")
+SlashCmdList.PLAYERHOUSING("minimap")
+assert(PlayerHousingMinimapButton:IsShown(), "back")
 
 -- /housing key: the House Key opens the menu instead.
 SlashCmdList.PLAYERHOUSING("key")

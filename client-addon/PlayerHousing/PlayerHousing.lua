@@ -497,6 +497,7 @@ end
 local PREVIEW_HEIGHT, PINNED_HEIGHT = 268, 360
 local view = { facing = 0, zoom = 1, lift = 0, spin = true }
 local shownPiece, pinned        -- { id = item, name = text }
+local fetched                   -- Place had none to use and got one: this item
 local dragging, dragX, dragY
 local detailsText, detailsCounts, detailsHint, placeButton, getOneButton, getFiveButton, takeButton
 
@@ -588,20 +589,24 @@ function UpdateDetails()
     else
         status = "Open the Collection tab for how to unlock it."
     end
+    if bagsDirty and not InCombatLockdown() then
+        ScanBags()
+    end
+    local location = PieceLocation(piece.id)
+    if fetched == piece.id and location then
+        status = "|cff40ff40One's in your bags:|r click Place again, then the spot."
+    end
     detailsText:SetText((info.category and (info.category .. (info.building and ", building" or "") .. "\n") or "") .. status)
     detailsCounts:SetText(("Bags: %d   Storage: %d   Placed: %d"):format(GetItemCount(piece.id), info.storage or 0, info.placed or 0))
     if info.unlocked then getOneButton:Enable() getFiveButton:Enable() else getOneButton:Disable() getFiveButton:Disable() end
     if (info.storage or 0) > 0 then takeButton:Enable() else takeButton:Disable() end
     -- Place uses the piece in the bags, like its icon on the Bags tab: a secure button, so it
-    -- changes out of combat only.
+    -- changes out of combat only. With none in the bags, its click gets one first.
     if not InCombatLockdown() then
-        if bagsDirty then
-            ScanBags()
-        end
-        local location = PieceLocation(piece.id)
         placeButton:SetAttribute("type", "item")
         placeButton:SetAttribute("item", location)
-        if location and CanEdit() then placeButton:Enable() else placeButton:Disable() end
+        if CanEdit() and (location or info.unlocked) then placeButton:Enable() else placeButton:Disable() end
+        if fetched == piece.id and location then placeButton:LockHighlight() else placeButton:UnlockHighlight() end
     end
 end
 
@@ -813,9 +818,21 @@ local function CreatePreview()
     placeButton:SetText("Place")
     placeButton:RegisterForClicks("AnyUp")
     placeButton.tooltipTitle = "Place one"
-    placeButton.tooltipText = "Click, then click where it should go. Get one first if there's none in your bags; on your island (or as a roommate) only."
+    placeButton.tooltipText = "Click, then click where it should go. With none in your bags, the first click gets one. On your island (or as a roommate) only."
     placeButton:SetScript("OnEnter", ShowButtonTooltip)
     placeButton:SetScript("OnLeave", GameTooltip_Hide)
+    placeButton:SetScript("PreClick", function(self)
+        if pinned and not self:GetAttribute("item") then
+            fetched = pinned.id
+            PlayerHousing_Command(("get %d 1"):format(pinned.id))
+            PlayerHousing_Command("data collection")
+        elseif fetched then
+            fetched = nil
+            if not InCombatLockdown() then
+                self:UnlockHighlight()
+            end
+        end
+    end)
     getOneButton = DetailsButton("PlayerHousingDetailsGetOne", "Get 1", 60, GetCopies(1), "Get a copy", "Into your bags.")
     getOneButton:SetPoint("TOPLEFT", 88, -302)
     getFiveButton = DetailsButton("PlayerHousingDetailsGetFive", "Get 5", 60, GetCopies(5), "Get five copies", "Into your bags.")
@@ -1284,6 +1301,8 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
     elseif message == "auto" then
         db.autoShow = not db.autoShow
         Print(db.autoShow and "the window opens by itself when you arrive home." or "the window only opens with /housing.")
+    elseif message == "minimap" then
+        PlayerHousing_ToggleMinimapButton()
     elseif message == "framing" then
         -- Previews center each model from its measured middle. If they sit too high or low
         -- on some client, this tries the other way of reading the model frame's offsets.
