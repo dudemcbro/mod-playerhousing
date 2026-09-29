@@ -822,6 +822,33 @@ def main():
         c4, t4 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
         check("one undo takes the whole run back", c4 and t4 and math.dist((c4["x"], c4["y"]), (chair["x"], chair["y"])) < 0.01
               and math.dist((t4["x"], t4["y"]), (table["x"], table["y"])) < 0.01, "%s %s" % (c4, t4))
+        state = addon_state(owner)
+        check("and both are still selected after the undo", state is not None and state[4] == str(chair["id"]) and state[20] == "2",
+              str(state and state[19:]))
+
+        # The window's buttons move and turn all of them too; size and tilt are one piece at a time.
+        msgs = owner.command(".house nudge forward 0.25")
+        c7, t7 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
+        check("Fwd nudges every selected piece", c7 and t7 and abs(c7["x"] - chair["x"] - 0.25) < 0.03 and abs(t7["x"] - table["x"] - 0.25) < 0.03
+              and (has(msgs, "2 pieces") or has(msgs, "3 pieces")), joined(msgs) + " %s %s" % (c7, t7))
+        owner.command(".house undo")
+        msgs = owner.command(".house size bigger")
+        check("size waits for one piece", has(msgs, "one piece at a time"), joined(msgs))
+
+        # Placing a new piece selects just that one.
+        owner.command(".house get %d 1" % CHAIR)
+        if wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner):
+            owner.addon_messages.clear()
+            owner.use_item(CHAIR, spell_of(CHAIR), (chair["x"] - 1.5, chair["y"] + 2.0, L["ground"]))
+            newest = max(p["id"] for p in placements(owner_guid))
+            wait_for(lambda: (addon_state(owner) or [""] * 21)[4] == str(newest), 3, owner)
+            state = addon_state(owner)
+            check("placing a new piece selects just it", state is not None and state[4] == str(newest) and state[20] == "1",
+                  str(state and state[19:]))
+            owner.command(".house undo")
+            destroy_all(owner, CHAIR)
+            owner.command(".house select %d" % chair["id"])
+            owner.command(".house group add %d" % table["id"])
 
         # Match height: the others take the first piece's height.
         owner.command(".house shift 0 0 0.5 0 %d" % chair["id"])
@@ -907,6 +934,31 @@ def main():
         msgs = owner.command(".house set delete Dining")
         check("delete a set", has(msgs, "Deleted the set Dining")
               and db("SELECT COUNT(*) FROM mod_playerhousing_set WHERE owner_guid=%d" % owner_guid) == [["0"]], joined(msgs))
+        msgs = owner.command(".house set save 42")
+        check("a set's name needs a letter (numbers are the sets' own)", has(msgs, "needs a letter"), joined(msgs))
+
+        # The lantern picked before its table: still on the table's top when set down.
+        parent_of = lambda pid: db("SELECT parent_id FROM mod_playerhousing_placement WHERE owner_guid=%d AND placement_id=%d" % (owner_guid, pid))
+        if lantern and parent_of(lantern["id"]) == [[str(table["id"])]]:
+            owner.command(".house select %d" % lantern["id"])
+            owner.command(".house group add %d" % table["id"])
+            owner.command(".house set save Lamp table")
+            before_ids = {p["id"] for p in placements(owner_guid)}
+            owner.command(".house set place Lamp table")
+            wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
+            mover = next((e for e in MOVERS if owner.count_item(e)), None)
+            spot = (chair["x"] + 7.0, chair["y"] - 5.0, L["ground"])
+            msgs = owner.use_item(mover, spell_of(mover), spot) if mover else []
+            new = [p for p in placements(owner_guid) if p["id"] not in before_ids]
+            new_lamp = next((p for p in new if p["item"] == LANTERN), None)
+            new_table = next((p for p in new if p["item"] == TABLE), None)
+            check("a set keeps what stands on what, whichever was picked first", new_lamp and new_table
+                  and parent_of(new_lamp["id"]) == [[str(new_table["id"])]] and abs(new_table["z"] - table["z"]) < 0.3
+                  and abs((new_lamp["z"] - new_table["z"]) - (lantern["z"] - table["z"])) < 0.06, joined(msgs) + " " + str(new))
+            owner.command(".house undo")
+            for item in (TABLE, LANTERN):
+                destroy_all(owner, item)
+            owner.command(".house set delete Lamp table")
 
         # Go to a piece.
         msgs = owner.command(".house goto %d" % table["id"], wait=1.5)

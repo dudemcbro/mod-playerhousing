@@ -32,6 +32,7 @@ namespace
     constexpr size_t MAX_SET_PIECES = 50;
     constexpr size_t SET_NAME_MAX = 40;
     constexpr uint32 MAX_UNDO_STEPS = 20;   // undone in one go
+    constexpr size_t MAX_UNDO_PIECES = 300; // pieces those steps touch, past the first step
 
     float NormalizeAngle(float angle)
     {
@@ -151,6 +152,13 @@ bool PlayerHousingMgr::SetGroupMember(Player* player, uint32 placementId, bool m
     if (!session->placements.count(primary))
         primary = 0;
     std::vector<uint32>& extras = session->groups[self];
+    extras.erase(std::remove_if(extras.begin(), extras.end(),
+        [&](uint32 id) { return id == primary || !session->placements.count(id); }), extras.end());
+    if (!primary && !extras.empty())
+    {
+        primary = extras.front();
+        extras.erase(extras.begin());
+    }
     auto extra = std::find(extras.begin(), extras.end(), placementId);
 
     if (!member)
@@ -218,6 +226,45 @@ bool PlayerHousingMgr::IsGroupHold(Player const* player) const
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     return _groupHold.count(player->GetGUID()) > 0;
+}
+
+void PlayerHousingMgr::SelectOne(Session& session, ObjectGuid::LowType self, uint32 placementId)
+{
+    auto selected = session.selected.find(self);
+    if (selected == session.selected.end() || selected->second != placementId)
+        session.groups.erase(self);
+    session.selected[self] = placementId;
+}
+
+bool PlayerHousingMgr::KeepGroupAfterStep(Session& session, ObjectGuid::LowType self, uint32 selectedBefore,
+    std::vector<uint32> const& groupBefore, std::vector<Change> const& changes)
+{
+    bool aboutGroup = false;
+    if (!groupBefore.empty() && session.placements.count(selectedBefore))
+        for (Change const& change : changes)
+            if (change.placementId == selectedBefore
+                    || std::find(groupBefore.begin(), groupBefore.end(), change.placementId) != groupBefore.end())
+            {
+                aboutGroup = true;
+                break;
+            }
+    if (!aboutGroup)
+    {
+        session.groups.erase(self);
+        return false;
+    }
+
+    // Applying the step selected each piece in turn: back to the group as it was.
+    session.selected[self] = selectedBefore;
+    std::vector<uint32> extras;
+    for (uint32 id : groupBefore)
+        if (id != selectedBefore && session.placements.count(id))
+            extras.push_back(id);
+    if (extras.empty())
+        session.groups.erase(self);
+    else
+        session.groups[self] = extras;
+    return true;
 }
 
 void PlayerHousingMgr::GroupRoots(Session const& session, std::vector<uint32> const& members, std::vector<uint32>& roots,
@@ -289,21 +336,20 @@ bool PlayerHousingMgr::CommitGroup(Player* player, Session& session, std::vector
     return Commit(player, session, label, std::move(changes), reason, merge, true);
 }
 
-bool PlayerHousingMgr::ShiftGroup(Player* player, Session& session, std::vector<uint32> const& members, float forward, float left, float up,
-    float degrees, std::string& reason)
+bool PlayerHousingMgr::ShiftGroup(Player* player, Session& session, std::vector<uint32> const& members, float dx, float dy, float dz,
+    float turn, bool snap, std::string const& verb, std::string const& tail, std::string& reason, bool merge)
 {
-    forward = std::clamp(forward, -5.0f, 5.0f);
-    left = std::clamp(left, -5.0f, 5.0f);
-    up = std::clamp(up, -2.0f, 2.0f);
-    degrees = std::clamp(degrees, -360.0f, 360.0f);
-    if (forward == 0.0f && left == 0.0f && up == 0.0f && degrees == 0.0f)
+    if (dx == 0.0f && dy == 0.0f && dz == 0.0f && turn == 0.0f)
         return true;
 
     std::vector<uint32> roots;
     std::vector<uint32> carried;
     GroupRoots(session, members, roots, carried);
     if (roots.empty())
+    {
+        reason = "Select some pieces first.";
         return false;
+    }
 
     // They turn about their middle.
     float centerX = 0.0f;
@@ -316,10 +362,6 @@ bool PlayerHousingMgr::ShiftGroup(Player* player, Session& session, std::vector<
     centerX /= float(roots.size());
     centerY /= float(roots.size());
 
-    float po = player->GetOrientation();
-    float dx = std::cos(po) * forward - std::sin(po) * left;
-    float dy = std::sin(po) * forward + std::cos(po) * left;
-    float turn = degrees * PI_F / 180.0f;
     float cosTurn = std::cos(turn);
     float sinTurn = std::sin(turn);
     auto place = [&](Placement const& before, float& x, float& y)
@@ -331,7 +373,7 @@ bool PlayerHousingMgr::ShiftGroup(Player* player, Session& session, std::vector<
     };
 
     // With the grid on, the first piece lands on it and the rest keep their places around it.
-    if ((dx != 0.0f || dy != 0.0f) && GetGridSize(player->GetGUID().GetCounter()) > 0.0f)
+    if (snap && (dx != 0.0f || dy != 0.0f) && GetGridSize(player->GetGUID().GetCounter()) > 0.0f)
     {
         float x;
         float y;
@@ -343,16 +385,13 @@ bool PlayerHousingMgr::ShiftGroup(Player* player, Session& session, std::vector<
         dy += snappedY - y;
     }
 
-    std::string label = Acore::StringFormat("adjusted {}", Pieces(roots.size() + carried.size()));
-    if (!CommitGroup(player, session, members, label, [&](Placement const& before, Placement& after)
+    std::string label = verb + " " + Pieces(roots.size() + carried.size()) + tail;
+    return CommitGroup(player, session, members, label, [&](Placement const& before, Placement& after)
         {
             place(before, after.x, after.y);
-            after.z = before.z + up;
+            after.z = before.z + dz;
             after.o = before.o + turn;
-        }, reason, true))
-        return false;
-    reason.clear();  // quiet, like one piece: the addon shows it
-    return true;
+        }, reason, merge);
 }
 
 bool PlayerHousingMgr::PickUpGroup(Player* player, Session& session, std::vector<uint32> const& members, std::string& reason)
@@ -390,7 +429,9 @@ bool PlayerHousingMgr::MoveGroupTo(Player* player, Session& session, std::vector
     SnapToGrid(player->GetGUID().GetCounter(), tx, ty);
     float dx = tx - first.x;
     float dy = ty - first.y;
-    float dz = target.GetPositionZ() - first.z;
+    // The whole group keeps its height above the ground: the first piece may stand on a
+    // table left behind, and the rest shouldn't sink by the table's height.
+    float dz = target.GetPositionZ() - FloorHeightNear(player, session, first, first.x, first.y);
     std::vector<uint32> roots;
     std::vector<uint32> carried;
     GroupRoots(session, members, roots, carried);
@@ -568,6 +609,23 @@ float PlayerHousingMgr::GroundHeightNear(Player* player, float x, float y, float
     return ground > INVALID_HEIGHT + 1.0f ? ground : z;
 }
 
+float PlayerHousingMgr::FloorHeightNear(Player* player, Session const& session, Placement const& reference, float x, float y) const
+{
+    // What it stands on, down to the piece on the floor (tables carry things).
+    Placement const* root = &reference;
+    for (uint32 depth = 0; depth < 16 && root->parent; ++depth)
+    {
+        auto parent = session.placements.find(root->parent);
+        if (parent == session.placements.end())
+            break;
+        root = &parent->second;
+    }
+    // Well above the ground under it: a building's floor, which the server can't see.
+    if (root->z - GroundHeightNear(player, root->x, root->y, root->z) > 0.5f)
+        return root->z;
+    return GroundHeightNear(player, x, y, root->z);
+}
+
 bool PlayerHousingMgr::PlaceRow(Player* player, uint32 placementId, uint32 count, float spacing, std::string const& direction, std::string& reason)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -621,18 +679,18 @@ bool PlayerHousingMgr::PlaceRow(Player* player, uint32 placementId, uint32 count
         copy.placedBy = self != session->ownerGuid ? self : 0;
         copy.x = source.x + stepX * spacing * float(i);
         copy.y = source.y + stepY * spacing * float(i);
-        // Along a table top, or on the ground as it rises and falls.
+        // Along a table top, a building's floor, or the ground as it rises and falls.
         if (source.parent)
             copy.parent = FindSurfaceUnder(*session, copy.x, copy.y, copy.z);
         else
-            copy.z = GroundHeightNear(player, copy.x, copy.y, source.z);
+            copy.z = FloorHeightNear(player, *session, source, copy.x, copy.y);
         changes.push_back(Change{ copy.id, std::nullopt, copy });
     }
 
     std::string label = Acore::StringFormat("placed a row of {} {}", count, piece->name);
     if (!Commit(player, *session, label, std::move(changes), reason, false, true))
         return false;
-    session->selected[self] = placementId;
+    SelectOne(*session, self, placementId);
     reason = Acore::StringFormat("Placed a row of {} {} ({}).", count, piece->name, CountsText(session->ownerGuid));
     SendAddonState(player);
     return true;
@@ -658,9 +716,12 @@ std::vector<SavedSet> PlayerHousingMgr::GetSavedSets(ObjectGuid::LowType ownerGu
 
 std::optional<SavedSet> PlayerHousingMgr::FindSavedSet(ObjectGuid::LowType ownerGuid, std::string const& nameOrNumber) const
 {
+    // A number (or #number) is the set's number, never its name: names have a letter.
     std::string wanted = ToLower(CleanName(nameOrNumber));
+    std::string digits = !wanted.empty() && wanted[0] == '#' ? wanted.substr(1) : wanted;
+    bool number = !digits.empty() && digits.size() < 10 && std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return std::isdigit(c); });
     for (SavedSet const& set : GetSavedSets(ownerGuid))
-        if (ToLower(set.name) == wanted || std::to_string(set.id) == wanted)
+        if (number ? set.id == uint32(std::strtoul(digits.c_str(), nullptr, 10)) : ToLower(set.name) == wanted)
             return set;
     return std::nullopt;
 }
@@ -671,6 +732,11 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
     if (setName.empty())
     {
         reason = "Give the set a name.";
+        return false;
+    }
+    if (std::none_of(setName.begin(), setName.end(), [](unsigned char c) { return std::isalpha(c) || c >= 0x80; }))
+    {
+        reason = "A set's name needs a letter in it (numbers alone are the sets' own numbers).";
         return false;
     }
 
@@ -717,9 +783,14 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
         return false;
     }
 
+    // Across, from the first piece (it goes where the circle is clicked); up, from the lowest
+    // (it goes on the ground there), so a vase picked before its table doesn't sink it.
     Placement const anchor = session->placements[ids.front()];
     float cosA = std::cos(-anchor.o);
     float sinA = std::sin(-anchor.o);
+    float baseZ = anchor.z;
+    for (uint32 id : ids)
+        baseZ = std::min(baseZ, session->placements[id].z);
     uint32 setId = sets.empty() ? 1 : sets.back().id + 1;
     std::string escaped = setName;
     CharacterDatabase.EscapeString(escaped);
@@ -734,10 +805,11 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
         uint32 parentIndex = placement.parent && parent != ids.end() ? uint32(parent - ids.begin()) + 1 : 0;
         trans->Append("INSERT INTO mod_playerhousing_set_piece (owner_guid, set_id, piece_index, item_entry, pos_x, pos_y, pos_z, orientation, "
                       "scale, pitch, roll, look, parent_index) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-            self, setId, index, placement.itemEntry, relX * cosA - relY * sinA, relX * sinA + relY * cosA, placement.z - anchor.z,
+            self, setId, index, placement.itemEntry, relX * cosA - relY * sinA, relX * sinA + relY * cosA, placement.z - baseZ,
             NormalizeAngle(placement.o - anchor.o), placement.scale, placement.pitch, placement.roll, placement.look, parentIndex);
     }
-    CharacterDatabase.CommitTransaction(trans);
+    // Written now, so the window's list asked for right after has it.
+    CharacterDatabase.DirectCommitTransaction(trans);
 
     reason = Acore::StringFormat("Saved {} as the set {}. Set it down anywhere from the Layouts tab, or .house set place {}.",
         Pieces(ids.size()), setName, setName);
@@ -756,7 +828,7 @@ bool PlayerHousingMgr::DeleteSet(Player* player, uint32 setId, std::string& reas
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     trans->Append("DELETE FROM mod_playerhousing_set_piece WHERE owner_guid={} AND set_id={}", self, setId);
     trans->Append("DELETE FROM mod_playerhousing_set WHERE owner_guid={} AND set_id={}", self, setId);
-    CharacterDatabase.CommitTransaction(trans);
+    CharacterDatabase.DirectCommitTransaction(trans);
     reason = Acore::StringFormat("Deleted the set {}.", set->name);
     return true;
 }
@@ -862,13 +934,17 @@ bool PlayerHousingMgr::StampSet(Player* player, Session& session, uint32 setId, 
 
     float cosF = std::cos(facing);
     float sinF = std::sin(facing);
+    // Every piece's number first: a vase can come before the table it stands on.
     std::vector<uint32> newIds;
+    for (size_t index = 0; index < pieces.size(); ++index)
+        newIds.push_back(session.nextPlacementId++);
     std::vector<Change> changes;
-    for (SetPiece const& piece : pieces)
+    for (size_t index = 0; index < pieces.size(); ++index)
     {
+        SetPiece const& piece = pieces[index];
         PieceDefinition const* definition = GetPiece(piece.itemEntry);
         Placement placement;
-        placement.id = session.nextPlacementId++;
+        placement.id = newIds[index];
         placement.itemEntry = piece.itemEntry;
         placement.x = tx + piece.x * cosF - piece.y * sinF;
         placement.y = ty + piece.x * sinF + piece.y * cosF;
@@ -879,8 +955,7 @@ bool PlayerHousingMgr::StampSet(Player* player, Session& session, uint32 setId, 
         placement.roll = definition->IsCreature() ? 0.0f : piece.roll;
         placement.look = piece.look;
         placement.placedBy = self != session.ownerGuid ? self : 0;
-        placement.parent = piece.parent >= 0 && size_t(piece.parent) < newIds.size() ? newIds[piece.parent] : 0;
-        newIds.push_back(placement.id);
+        placement.parent = piece.parent >= 0 && size_t(piece.parent) < newIds.size() && size_t(piece.parent) != index ? newIds[piece.parent] : 0;
         changes.push_back(Change{ placement.id, std::nullopt, placement });
     }
 
@@ -898,16 +973,32 @@ bool PlayerHousingMgr::UndoSteps(Player* player, uint32 steps, std::string& reas
 {
     steps = std::clamp<uint32>(steps, 1, MAX_UNDO_STEPS);
     uint32 done = 0;
+    size_t pieces = 0;
     std::string last;
     for (uint32 i = 0; i < steps; ++i)
     {
+        // Big steps wait between goes (see Undo): checked once here, then as many as a few
+        // hundred pieces in one go, the rest after the wait.
+        size_t next = 0;
+        {
+            std::lock_guard<std::recursive_mutex> guard(_lock);
+            auto journal = _journals.find(player->GetGUID().GetCounter());
+            if (journal != _journals.end() && !journal->second.undo.empty())
+                next = journal->second.undo.back().changes.size();
+        }
+        if (i > 0 && pieces + next > MAX_UNDO_PIECES)
+        {
+            last = "The rest in a moment: that's a lot of pieces at once.";
+            break;
+        }
         std::string stepReason;
-        if (!Undo(player, stepReason))
+        if (!Undo(player, stepReason, i == 0))
         {
             last = stepReason;
             break;
         }
         last = stepReason;
+        pieces += next;
         ++done;
     }
     if (steps == 1 || done == 0)
@@ -960,7 +1051,7 @@ bool PlayerHousingMgr::GoTo(Player* player, uint32 placementId, std::string& rea
         x = placement.x + std::cos(angle) * distance;
         y = placement.y + std::sin(angle) * distance;
     }
-    float z = GroundHeightNear(player, x, y, placement.z + 1.0f);
+    float z = FloorHeightNear(player, *session, placement, x, y);
     player->NearTeleportTo(x, y, z + 0.1f, NormalizeAngle(angle + PI_F));
 
     SelectPlacement(player, placementId);

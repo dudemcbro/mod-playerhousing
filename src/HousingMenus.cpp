@@ -1312,7 +1312,12 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
                 Add(player, GOSSIP_ICON_DOT, "No notes yet: visitors sign it from their House Key", CMD_GUESTBOOK);
             for (GuestbookNote const& note : notes)
             {
-                std::string text = note.text.size() > 60 ? note.text.substr(0, 57) + "..." : note.text;
+                std::string text = note.text;
+                if (text.size() > 60)
+                {
+                    PlayerHousingMgr::TruncateUtf8(text, 57);  // never half a letter
+                    text += "...";
+                }
                 Confirm(player, GOSSIP_ICON_DOT, Acore::StringFormat("{}{}, {}: {}", note.fresh ? "(new) " : "", note.author, note.when, text),
                     CMD_NOTE_DELETE, note.id, Acore::StringFormat("Throw out {}'s note?\n\n{}", note.author, note.text));
             }

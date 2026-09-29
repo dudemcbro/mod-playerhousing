@@ -208,7 +208,8 @@ StaticPopupDialogs["PLAYERHOUSING_SAVE_SET"] = {
 
 local SETTLE, SHOT, RESTORE = 4.0, 0.3, 1.0  -- seconds: for the building to load, then around the shot
 local tour = { active = false, step = nil, at = 0, item = 0, taken = 0 }
-local tourFrame = CreateFrame("Frame", "PlayerHousingPhotoTour", UIParent)
+-- Not under UIParent: hiding the interface for the shot would stop its OnUpdate too.
+local tourFrame = CreateFrame("Frame", "PlayerHousingPhotoTour")
 
 local function StopTour(message)
     tour.active, tour.step = false, nil

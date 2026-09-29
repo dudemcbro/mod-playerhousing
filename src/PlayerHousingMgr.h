@@ -402,7 +402,8 @@ public:
     bool PackUpEverything(Player* player, std::string& reason);
     // A Bank Chest: the owner's bank, through a banker standing unseen at the chest.
     bool OpenBankAtChest(Player* player, uint32 placementId, std::string& reason);
-    bool Undo(Player* player, std::string& reason);
+    // cooldown false: part of undoing several steps at once, which checked it once.
+    bool Undo(Player* player, std::string& reason, bool cooldown = true);
     bool Redo(Player* player, std::string& reason);
     std::string UndoLabel(Player const* player) const;
     std::string RedoLabel(Player const* player) const;
@@ -796,8 +797,19 @@ private:
     // one undo step.
     bool CommitGroup(Player* player, Session& session, std::vector<uint32> const& members, std::string const& label,
         std::function<void(Housing::Placement const& before, Housing::Placement& after)> const& move, std::string& reason, bool merge = false);
-    bool ShiftGroup(Player* player, Session& session, std::vector<uint32> const& members, float forward, float left, float up, float degrees,
-        std::string& reason);
+    // Moves the group by dx, dy, dz and turns it about its middle (radians); with snap and the
+    // grid on, the first piece lands on the grid. The label reads "<verb> 3 pieces<tail>".
+    bool ShiftGroup(Player* player, Session& session, std::vector<uint32> const& members, float dx, float dy, float dz, float turn,
+        bool snap, std::string const& verb, std::string const& tail, std::string& reason, bool merge);
+    // The group the selection was part of, kept after a step that changed its pieces;
+    // after any other step (or with its first piece gone) the group is let go.
+    bool KeepGroupAfterStep(Session& session, ObjectGuid::LowType self, uint32 selectedBefore, std::vector<uint32> const& groupBefore,
+        std::vector<Housing::Change> const& changes);
+    // The selection moves to this piece: a group it doesn't lead is let go.
+    void SelectOne(Session& session, ObjectGuid::LowType self, uint32 placementId);
+    // A piece standing on a raised floor (a building's, which the server can't see: pieces
+    // have no collision) keeps its height; one on the ground follows the ground.
+    float FloorHeightNear(Player* player, Session const& session, Housing::Placement const& reference, float x, float y) const;
     bool PickUpGroup(Player* player, Session& session, std::vector<uint32> const& members, std::string& reason);
     bool MoveGroupTo(Player* player, Session& session, std::vector<uint32> const& members, Position const& target, std::string& reason);
     // The items new pieces need, from the bags and House Storage; FreeMode hands over the

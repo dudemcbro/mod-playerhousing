@@ -65,7 +65,7 @@ def saved_photos(wow, character):
                 found.append((os.path.getmtime(path), char, photos))
     if not found:
         sys.exit("No photo tour in the saved variables yet. In the game: go home, /housing phototour, then log out.")
-    found.sort()
+    found.sort(key=lambda entry: entry[0])  # the newest save wins
     return found[-1][1], found[-1][2]
 
 

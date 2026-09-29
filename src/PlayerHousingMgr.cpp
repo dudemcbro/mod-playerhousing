@@ -1287,7 +1287,13 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
     _arrivals.erase(playerGuid);
     _editMode.erase(playerGuid);  // or it would come back with decorating, next visit
     _groupHold.erase(playerGuid);
-    _photoTours.erase(playerGuid);
+    if (_photoTours.erase(playerGuid) && ownerGuid)
+    {
+        // A GM leaving mid-tour takes the building being photographed along.
+        auto sessionItr = _sessionsByOwner.find(ownerGuid);
+        if (sessionItr != _sessionsByOwner.end())
+            DespawnPhoto(sessionItr->second, GetHousingMap());
+    }
     if (eraseReturnLocation)
         _returnLocations.erase(playerGuid);
 

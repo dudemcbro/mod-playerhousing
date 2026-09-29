@@ -21,6 +21,7 @@ local collectionView = { category = 0, unlockedOnly = false, inBags = false, sea
 local island = { weathers = {}, times = {}, tracks = {}, privacy = 0, weather = 0, time = 0, music = 0, musicBox = false, door = false, newNotes = 0 }
 local visitList = 1
 local collectionPending = false  -- the grid's secure buttons wait for combat to end
+local UpdateIsland  -- the Island tab, below; the guestbook clears its "new" count
 
 for index, info in ipairs(PlayerHousing_Pieces or {}) do
     pieceById[info[1]] = info
@@ -588,10 +589,17 @@ local function CreateCollection()
     panel:SetScript("OnShow", UpdateCollection)
     panel:EnableMouseWheel(true)
     panel:SetScript("OnMouseWheel", function(self, delta)
-        -- Over the grid with nothing selected: pages.
+        -- Over the grid with nothing selected: pages. With a piece selected it turns, as
+        -- anywhere over the window.
         if API.state.selected == 0 or not API.CanEdit() then
             collectionView.page = collectionView.page - delta
             UpdateCollection()
+        else
+            local window = API.GetFrame()
+            local turn = window and window:GetScript("OnMouseWheel")
+            if turn then
+                turn(window, delta)
+            end
         end
     end)
 end
@@ -918,6 +926,7 @@ API.OnData("guestbook", function(list)
         end
     end
     island.newNotes = 0
+    UpdateIsland()
     guestbookStatus:SetText(#items == 0 and "" or (fresh > 0 and ("%d notes, %d new. Hover one to read it all."):format(#items, fresh)
         or ("%d notes. Hover one to read it all."):format(#items)))
     noteList:SetItems(items, function(row, item)
@@ -1021,7 +1030,7 @@ end)
 local privacyButtons, greetingBox, weatherText, timeText, musicText, islandStats, doorText, guestbookButton =
     {}, nil, nil, nil, nil, nil, nil, nil
 
-local function UpdateIsland()
+function UpdateIsland()
     if not weatherText then
         return
     end

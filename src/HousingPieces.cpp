@@ -530,47 +530,51 @@ void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType own
         }
     }
 
-    std::map<uint32, SelectionRing>& rings = session.rings[self];
-    for (auto itr = rings.begin(); itr != rings.end();)
+    // Only players with something selected, or rings still out, get an entry.
+    if (!wanted.empty() || session.rings.count(self))
     {
-        auto want = wanted.find(itr->first);
-        SelectionRing const& ring = itr->second;
-        if (want != wanted.end() && std::fabs(ring.x - want->second.x) < 0.001f && std::fabs(ring.y - want->second.y) < 0.001f
-                && std::fabs(ring.z - want->second.z) < 0.001f && std::fabs(ring.scale - want->second.scale) < 0.001f)
+        std::map<uint32, SelectionRing>& rings = session.rings[self];
+        for (auto itr = rings.begin(); itr != rings.end();)
         {
-            wanted.erase(want);  // already there
-            ++itr;
-            continue;
+            auto want = wanted.find(itr->first);
+            SelectionRing const& ring = itr->second;
+            if (want != wanted.end() && std::fabs(ring.x - want->second.x) < 0.001f && std::fabs(ring.y - want->second.y) < 0.001f
+                    && std::fabs(ring.z - want->second.z) < 0.001f && std::fabs(ring.scale - want->second.scale) < 0.001f)
+            {
+                wanted.erase(want);  // already there
+                ++itr;
+                continue;
+            }
+            if (GameObject* old = map->GetGameObject(ring.guid))
+                old->AddObjectToRemoveList();
+            itr = rings.erase(itr);
         }
-        if (GameObject* old = map->GetGameObject(ring.guid))
-            old->AddObjectToRemoveList();
-        itr = rings.erase(itr);
+        for (auto const& [id, want] : wanted)
+        {
+            GameObject* ring = new GameObject();
+            if (!ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), SELECTION_RING_GO, map, PHASEMASK_NORMAL,
+                    want.x, want.y, want.z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
+            {
+                delete ring;
+                continue;
+            }
+            ring->SetObjectScale(want.scale);
+            ring->SetRespawnTime(0);
+            ring->SetSpawnedByDefault(false);
+            if (!map->AddToMap(ring))
+            {
+                delete ring;
+                continue;
+            }
+            ring->SetPhaseMask(session.phaseMask, true);
+            ring->EnableCollision(false);
+            SelectionRing placed = want;
+            placed.guid = ring->GetGUID();
+            rings[id] = placed;
+        }
+        if (rings.empty())
+            session.rings.erase(self);
     }
-    for (auto const& [id, want] : wanted)
-    {
-        GameObject* ring = new GameObject();
-        if (!ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), SELECTION_RING_GO, map, PHASEMASK_NORMAL,
-                want.x, want.y, want.z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
-        {
-            delete ring;
-            continue;
-        }
-        ring->SetObjectScale(want.scale);
-        ring->SetRespawnTime(0);
-        ring->SetSpawnedByDefault(false);
-        if (!map->AddToMap(ring))
-        {
-            delete ring;
-            continue;
-        }
-        ring->SetPhaseMask(session.phaseMask, true);
-        ring->EnableCollision(false);
-        SelectionRing placed = want;
-        placed.guid = ring->GetGUID();
-        rings[id] = placed;
-    }
-    if (rings.empty())
-        session.rings.erase(self);
 
     if (IsInEditMode(player))
         StageMover(player, session);
@@ -814,7 +818,7 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     ++reserved;
 
     session->placements[placement.id] = placement;
-    session->selected[player->GetGUID().GetCounter()] = placement.id;
+    SelectOne(*session, player->GetGUID().GetCounter(), placement.id);
     SavePlacement(session->ownerGuid, placement, session->mapId);
     if (session->decorating)
         SpawnMarkers(*session, map);
@@ -1095,7 +1099,7 @@ std::string PlayerHousingMgr::DescribeItemReturns() const
     return mine;
 }
 
-bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
+bool PlayerHousingMgr::Undo(Player* player, std::string& reason, bool cooldown)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason);
@@ -1112,7 +1116,7 @@ bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
     }
 
     // A step with many pieces is real work for the server: not over and over.
-    if (journal.undo.back().changes.size() > BIG_STEP && OnCooldown(player, COOLDOWN_UNDO, 3 * IN_MILLISECONDS, reason))
+    if (cooldown && journal.undo.back().changes.size() > BIG_STEP && OnCooldown(player, COOLDOWN_UNDO, 3 * IN_MILLISECONDS, reason))
         return false;
 
     JournalEntry entry = journal.undo.back();
@@ -1126,9 +1130,13 @@ bool PlayerHousingMgr::Undo(Player* player, std::string& reason)
         return false;
     }
 
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    uint32 selectedBefore = session->selected.count(self) ? session->selected[self] : 0;
+    std::vector<uint32> groupBefore = session->groups.count(self) ? session->groups[self] : std::vector<uint32>{};
     _report = {};
     std::string failure;
     bool ok = ApplyChanges(player, *session, entry.changes, false, failure);
+    KeepGroupAfterStep(*session, self, selectedBefore, groupBefore, entry.changes);
     journal.redo.push_back(entry);
 
     reason = Acore::StringFormat("Undid: {}.{} ({})", entry.label, DescribeReturns(), CountsText(session->ownerGuid));
@@ -1170,9 +1178,13 @@ bool PlayerHousingMgr::Redo(Player* player, std::string& reason)
         return false;
     }
 
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    uint32 selectedBefore = session->selected.count(self) ? session->selected[self] : 0;
+    std::vector<uint32> groupBefore = session->groups.count(self) ? session->groups[self] : std::vector<uint32>{};
     _report = {};
     std::string failure;
     bool ok = ApplyChanges(player, *session, entry.changes, true, failure);
+    KeepGroupAfterStep(*session, self, selectedBefore, groupBefore, entry.changes);
     journal.undo.push_back(entry);
 
     reason = Acore::StringFormat("Redid: {}.{} ({})", entry.label, DescribeReturns(), CountsText(session->ownerGuid));
@@ -1463,12 +1475,7 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
     // Applying the changes selected each piece in turn: the step is about the first one (or,
     // moving a group, the group as it was).
     uint32 subject = changes.front().after ? changes.front().placementId : 0;
-    if (!groupBefore.empty() && session.placements.count(selectedBefore))
-    {
-        session.selected[self] = selectedBefore;
-        session.groups[self] = groupBefore;
-    }
-    else if (subject && session.placements.count(subject))
+    if (!KeepGroupAfterStep(session, self, selectedBefore, groupBefore, changes) && subject && session.placements.count(subject))
         session.selected[self] = subject;
 
     std::string entryLabel = label;
@@ -1589,7 +1596,7 @@ bool PlayerHousingMgr::StartMove(Player* player, uint32 placementId, std::string
     }
 
     _pendingMoves[player->GetGUID()] = PendingMove{ placementId, moverItr->second };
-    session->selected[player->GetGUID().GetCounter()] = placementId;
+    SelectOne(*session, player->GetGUID().GetCounter(), placementId);
     reason = Acore::StringFormat("Right-click Move a Piece in your bags, then click where the {} should go.", piece->name);
     SendAddonState(player);
     return true;
@@ -1717,6 +1724,19 @@ ObjectGuid PlayerHousingMgr::GetObjectForPlacement(Player const* player, uint32 
 
 bool PlayerHousingMgr::Rotate(Player* player, uint32 placementId, float degrees, std::string& reason)
 {
+    if (!placementId)
+    {
+        std::vector<uint32> group = GetGroup(player);
+        if (group.size() > 1)
+        {
+            std::lock_guard<std::recursive_mutex> guard(_lock);
+            Session* session = GetOwnerSession(player, reason);
+            degrees = std::clamp(degrees, -360.0f, 360.0f);
+            return session && ShiftGroup(player, *session, group, 0.0f, 0.0f, 0.0f, degrees * PI_F / 180.0f, false, "turned",
+                Acore::StringFormat(" {:.0f}° {}", std::fabs(degrees), degrees >= 0.0f ? "left" : "right"), reason, false);
+        }
+    }
+
     std::string label = Acore::StringFormat("turned {:.0f}° {}", std::fabs(degrees), degrees >= 0.0f ? "left" : "right");
     return Transform(player, placementId, label, 0.0f, 0.0f, 0.0f, degrees * PI_F / 180.0f, false, 0.0f, reason);
 }
@@ -1749,6 +1769,19 @@ bool PlayerHousingMgr::Nudge(Player* player, uint32 placementId, float forward, 
         label = "raised";
     else if (up < 0.0f)
         label = "lowered";
+
+    // Several pieces selected: all of them, the same step (on the grid, the first one lands
+    // on it and the rest keep their places around it).
+    if (!placementId)
+    {
+        std::vector<uint32> group = GetGroup(player);
+        if (group.size() > 1)
+        {
+            std::lock_guard<std::recursive_mutex> guard(_lock);
+            Session* session = GetOwnerSession(player, reason);
+            return session && ShiftGroup(player, *session, group, dx, dy, up, 0.0f, true, label, "", reason, false);
+        }
+    }
     return Transform(player, placementId, label, dx, dy, up, 0.0f, false, 0.0f, reason);
 }
 
@@ -1762,7 +1795,16 @@ bool PlayerHousingMgr::Shift(Player* player, uint32 placementId, float forward, 
         {
             std::lock_guard<std::recursive_mutex> guard(_lock);
             Session* session = GetOwnerSession(player, reason);
-            return session && ShiftGroup(player, *session, group, forward, left, up, degrees, reason);
+            if (!session)
+                return false;
+            forward = std::clamp(forward, -5.0f, 5.0f);
+            left = std::clamp(left, -5.0f, 5.0f);
+            float po = player->GetOrientation();
+            if (!ShiftGroup(player, *session, group, std::cos(po) * forward - std::sin(po) * left, std::sin(po) * forward + std::cos(po) * left,
+                    std::clamp(up, -2.0f, 2.0f), std::clamp(degrees, -360.0f, 360.0f) * PI_F / 180.0f, true, "adjusted", "", reason, true))
+                return false;
+            reason.clear();  // quiet, like one piece: the addon shows it
+            return true;
         }
     }
 
@@ -1865,6 +1907,18 @@ bool PlayerHousingMgr::FaceMe(Player* player, uint32 placementId, std::string& r
     }
 
     float o = std::atan2(player->GetPositionY() - placement->y, player->GetPositionX() - placement->x);
+    if (!placementId)
+    {
+        std::vector<uint32> group = GetGroup(player);
+        if (group.size() > 1)
+        {
+            // The group turns about its middle until its first piece faces the player.
+            std::lock_guard<std::recursive_mutex> guard(_lock);
+            Session* session = GetOwnerSession(player, reason);
+            float turn = std::remainder(o - placement->o, 2.0f * PI_F);
+            return session && ShiftGroup(player, *session, group, 0.0f, 0.0f, 0.0f, turn, false, "turned", " toward you", reason, false);
+        }
+    }
     return Transform(player, placement->id, "turned toward you", 0.0f, 0.0f, 0.0f, 0.0f, true, o, reason);
 }
 
@@ -1877,6 +1931,17 @@ bool PlayerHousingMgr::MoveHere(Player* player, uint32 placementId, std::string&
         return false;
     }
 
+    if (!placementId)
+    {
+        std::vector<uint32> group = GetGroup(player);
+        if (group.size() > 1)
+        {
+            std::lock_guard<std::recursive_mutex> guard(_lock);
+            Session* session = GetOwnerSession(player, reason);
+            return session && MoveGroupTo(player, *session, group, player->GetPosition(), reason);
+        }
+    }
+
     float x = player->GetPositionX();
     float y = player->GetPositionY();
     SnapToGrid(player->GetGUID().GetCounter(), x, y);
@@ -1886,6 +1951,12 @@ bool PlayerHousingMgr::MoveHere(Player* player, uint32 placementId, std::string&
 
 bool PlayerHousingMgr::Resize(Player* player, uint32 placementId, float percent, bool relative, std::string& reason)
 {
+    if (!placementId && GetGroup(player).size() > 1)
+    {
+        reason = "Size and tilt change one piece at a time: click just that piece.";
+        return false;
+    }
+
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason);
     if (!session)
@@ -1972,6 +2043,12 @@ bool PlayerHousingMgr::Resize(Player* player, uint32 placementId, float percent,
 
 bool PlayerHousingMgr::Tilt(Player* player, uint32 placementId, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason)
 {
+    if (!placementId && GetGroup(player).size() > 1)
+    {
+        reason = "Size and tilt change one piece at a time: click just that piece.";
+        return false;
+    }
+
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason);
     if (!session)
