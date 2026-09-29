@@ -3,7 +3,8 @@
 Housing uses GM Island with its guild hall removed, so every island starts as open ground
 where the hall stood (with a fallen cart and a shredded tent waiting). The island's own
 trees, rocks and beach stay. To keep the hall instead, set
-`PlayerHousing.Layout = "guildhouse"` and skip everything here.
+`PlayerHousing.Layout = "guildhouse"` and skip everything here except the client patch,
+built with `--icons-only` (see [Item icons](#item-icons)).
 
 Three things have to match, or the server and clients disagree about where walls are:
 
@@ -50,13 +51,32 @@ sudo apt install smpq
 tools/gm-island-cleared/make_client_patch.sh /path/to/WoW-3.3.5a/Data patch-H.MPQ
 ```
 
-The folder can be the client's install folder or its `Data` folder, in any letter case, and
-any `patch-*.MPQ` the client already has is read too. Copy `patch-H.MPQ` into the `Data` folder of every client that plays on this server, and
-clear the client's `WDB` cache folder once. Without the patch, players still see (and bump
-into) the hall while the server treats the spot as open ground. Pick another letter if
-`patch-H.MPQ` is already taken.
+The folder can be the client's install folder or its `Data` folder, in any letter case,
+and any `patch-*.MPQ` the client already has is read too. Copy `patch-H.MPQ` into the
+`Data` folder of every client that plays on this server, and clear the client's `WDB`
+cache folder once. Without the patch, players still see (and bump into) the hall while the
+server treats the spot as open ground, and housing items show as question marks. Pick
+another letter if `patch-H.MPQ` is already taken. Rebuild and recopy the patch whenever the
+module's content changes, so new pieces get their icons.
+
+## Item icons
+
+The 3.3.5a client draws an item's bag icon from its own `Item.dbc`, so items that only
+exist on the server show a red question mark. The patch adds every housing item to the
+client's `Item.dbc`, and adds `ItemDisplayInfo.dbc` rows for the spell and achievement
+icons some pieces use (display ids 190000 and up; other icons reuse the display of an item
+that already has them). The rows come from `client_items.tsv`, which
+`tools/content/build_content.py` writes; `dbc_add_items.py` adds them to the client's own
+copies of the two files, so nothing else in them changes.
+
+If another patch in the client also carries one of these files and loads after
+`patch-H.MPQ`, the script warns: its copy would win and the icons would be lost, so give
+the output a later letter than that patch.
+
+For a server on the guildhouse layout, `make_client_patch.sh --icons-only` builds a patch
+with the icons alone.
 
 `adt_sink_wmo.py` and the MPQ packing were checked against a synthetic tile (only the
 hall's placement changes, the file keeps its size, and the entry is found by the client's
-backslash path). They have not been run against a real client file from here, since this
-environment has no WoW client, so check the island in game after the first build.
+backslash path), and the whole patch was since built from a real client and checked in
+game. The item tables were checked against the server's copies of the client files.

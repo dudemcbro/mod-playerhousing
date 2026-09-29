@@ -4,6 +4,7 @@
   sql/db_world/base/mod_playerhousing_world_content.sql   items, objects, pieces, rules
   sql/db_world/base/mod_playerhousing_world_catalog.sql   every other object model (Catalog = everything)
   docs/UNLOCKS.md                                          the same list for people
+  tools/gm-island-cleared/client_items.tsv                 bag icons, for the client patch
 
 Needs the world database (to copy models and behavior from existing gameobjects) and the
 client data's dbc folder (for model sizes, achievement, faction and creature names):
@@ -23,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import pieces as content  # noqa: E402
+from icons import MOVER, icons_for  # noqa: E402
 
 CATEGORIES = ["Starter", "Buildings", "Exploration", "Dungeons", "Raids", "Reputation", "Professions", "Holidays", "Capstones",
               "Figurines", "Catalog"]
@@ -46,8 +48,11 @@ ITEM_SCRIPT = "item_playerhousing_piece"
 # The targeting circle of each piece comes from its item's spell. These ground-target spells
 # have circles from 1 to 20 yards, so the circle shows how much room a piece takes. None of
 # them ever casts: spell_playerhousing_place stops the cast as soon as the circle is clicked.
-CIRCLE_SPELLS = [(1.0, 61736), (2.0, 47004), (3.0, 42340), (4.0, 69680), (5.0, 43440),
-                 (6.0, 61985), (8.0, 34435), (10.0, 1543), (15.0, 26540), (20.0, 29882)]
+# Each is an unused creature or quest spell with no description (the item's tooltip shows a
+# spell's description as "Use: ..."), no cost, cooldown or global cooldown, and no script or
+# condition of its own on the server. The game has no such spell with a 4 or 6 yard circle.
+CIRCLE_SPELLS = [(1.0, 61736), (2.0, 52923), (3.0, 53261), (5.0, 68316), (8.0, 45959),
+                 (10.0, 54686), (15.0, 48431), (18.0, 55295), (20.0, 32150)]
 PLACE_SCRIPT = "spell_playerhousing_place"
 MOVER_FIRST = 901190  # Housing::MOVER_ITEM_FIRST, one "Move a Piece" item per circle
 
@@ -65,7 +70,11 @@ COST = {"Starter": 0, "Exploration": 5000, "Dungeons": 10000, "Raids": 50000, "R
 SHELTER_COST, FACTION_BUILDING_COST = 2000, 50000
 QUALITY = {"Starter": 1, "Buildings": 2, "Exploration": 2, "Dungeons": 3, "Raids": 4, "Reputation": 3,
            "Professions": 2, "Holidays": 2, "Capstones": 4, "Figurines": 3}
-ICON_FURNISHING, ICON_BUILDING = 1102, 7744
+# Bag icons: an icon some item already uses keeps that item's display; any other icon (spell
+# and achievement icons) gets a display of its own, added by the client patch.
+CUSTOM_DISPLAY_BASE = 190000   # plus the icon's SpellIcon.dbc id, so ids never move
+HOUSE_KEY, HOUSE_KEY_DISPLAY = 902000, 22071   # as in mod_playerhousing_world.sql
+CLIENT_ITEMS = os.path.join(MODULE, "tools/gm-island-cleared/client_items.tsv")
 
 
 def live_entry(item):
@@ -199,6 +208,33 @@ def load_models(dbc):
     return models
 
 
+class Icons:
+    """Turns icon names into item display ids, remembering the displays the patch must add."""
+
+    def __init__(self, dbc):
+        self.items, self.spells, self.added = {}, {}, {}
+        rows, text = read_dbc(os.path.join(dbc, "ItemDisplayInfo.dbc"))
+        for ints, _ in rows:
+            icon = text(ints[5]).lower()
+            if icon and (icon not in self.items or ints[0] < self.items[icon]):
+                self.items[icon] = ints[0]
+        rows, text = read_dbc(os.path.join(dbc, "SpellIcon.dbc"))
+        for ints, _ in rows:
+            icon = text(ints[1]).replace("\\", "/").split("/")[-1]
+            if icon:
+                self.spells.setdefault(icon.lower(), (ints[0], icon))
+
+    def display(self, candidates):
+        for icon in candidates:
+            if icon.lower() in self.items:
+                return self.items[icon.lower()]
+            if icon.lower() in self.spells:
+                spell_icon, name = self.spells[icon.lower()]
+                self.added[CUSTOM_DISPLAY_BASE + spell_icon] = name
+                return CUSTOM_DISPLAY_BASE + spell_icon
+        raise SystemExit("the client has none of these icons: %s" % ", ".join(candidates))
+
+
 def describe_rule(rule, category, world, names):
     kind, p1, p2 = rule
     _, achievements, factions, areas = names
@@ -241,6 +277,8 @@ def build(args):
     models = load_models(args.dbc)
     world_bounds = load_world_model_bounds(args.dbc)
     creature_boxes = load_creature_boxes(args.dbc)
+    icons = Icons(args.dbc)
+    client_items = [(HOUSE_KEY, HOUSE_KEY_DISPLAY)]
     creatures = []
     previews = []
     boxes = names[0]
@@ -380,8 +418,10 @@ def build(args):
         prefix = "Building: " if building else "Furnishing: "
         description = ("Right-click on your island, then click where it should stand." if building
                        else "Right-click on your island, then click where it should go.")
+        icon = icons.display(piece["icon"] if "icon" in piece else icons_for(name, style, building))
+        client_items.append((item, icon))
         items.append("(%d, 15, 0, -1, %s, %d, %d, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, %d, 0, 0, 0, -1, %s, %s, 0)" % (
-            item, sql_text(prefix + name), ICON_BUILDING if building else ICON_FURNISHING, QUALITY.get(category, 1),
+            item, sql_text(prefix + name), icon, QUALITY.get(category, 1),
             circle_spell(footprint), sql_text(description), sql_text(ITEM_SCRIPT)))
 
         notes = []
@@ -412,9 +452,11 @@ def build(args):
 
     # "Move a Piece": one per circle size, handed out to move a placed piece with the circle
     # (PlayerHousingMgr::StartMove). Not pieces themselves.
+    mover_icon = icons.display(MOVER)
     for index, (radius, spell) in enumerate(CIRCLE_SPELLS):
+        client_items.append((MOVER_FIRST + index, mover_icon))
         items.append("(%d, 15, 0, -1, %s, %d, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, %d, 0, 0, 0, -1, %s, %s, 0)" % (
-            MOVER_FIRST + index, sql_text("Move a Piece"), ICON_FURNISHING, spell,
+            MOVER_FIRST + index, sql_text("Move a Piece"), mover_icon, spell,
             sql_text("Right-click, then click where the piece should go. Gone once used."), sql_text(ITEM_SCRIPT)))
 
     go_columns = "`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, " + \
@@ -492,7 +534,8 @@ def build(args):
 
     curated_displays = {int(world.gameobject(p["go"])["display"]) for p in content.PIECES if "go" in p}
     curated_displays |= {p["display"] for p in content.PIECES if "display" in p}
-    catalog_count = build_catalog(world, models, boxes, curated_displays, previews)
+    catalog_count = build_catalog(world, models, boxes, curated_displays, previews, icons, client_items)
+    write_client_items(icons, client_items)
     md += ["## Catalog (%d)" % catalog_count, "",
            "With `PlayerHousing.Catalog = everything`, every other object model in the game is a piece too, one per",
            "model, everyone's from the start (search the Collection for them). They come from",
@@ -514,6 +557,18 @@ def build(args):
     print("wrote %d pieces, %d objects, %d rules" % (len(piece_rows), len(gameobjects), len(rule_rows)))
 
 
+def write_client_items(icons, client_items):
+    """The rows make_client_patch.sh adds to the client's Item.dbc and ItemDisplayInfo.dbc."""
+    lines = ["# Generated by tools/content/build_content.py: what make_client_patch.sh adds to the",
+             "# client so housing items show their icons.",
+             "#   item    <entry> <display>         a row of Item.dbc (class 15, miscellaneous)",
+             "#   display <id> <icon>               a row of ItemDisplayInfo.dbc with only an icon"]
+    lines += ["display\t%d\t%s" % (display, name) for display, name in sorted(icons.added.items())]
+    lines += ["item\t%d\t%d" % (item, display) for item, display in sorted(client_items)]
+    with open(CLIENT_ITEMS, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def catalog_name(go_name, model):
     """A readable name: the object's own, unless it's an internal one, then the model's."""
     bad = ("[", "DND", "Doodad", "doodad", "_", "TEST", "Test ", "zz", "PH ", "(", "Dummy", "Trigger", "Bunny", "Visual", "Effect",
@@ -531,7 +586,7 @@ def catalog_name(go_name, model):
     return " ".join(word.capitalize() if word.islower() or (word.isupper() and len(word) > 2) else word for word in words) or "Object"
 
 
-def build_catalog(world, models, boxes, curated_displays, previews):
+def build_catalog(world, models, boxes, curated_displays, previews, icons, client_items):
     """Every other object model in the game, one piece each: the catalog. Returns how many."""
     rows = world.query("SELECT entry, displayId, name, size FROM gameobject_template WHERE displayId > 0 ORDER BY entry")
     chosen = {}
@@ -575,8 +630,10 @@ def build_catalog(world, models, boxes, curated_displays, previews):
         gameobjects.append("(%d, %d, %d, %s, '', '', '', %s, %s, '', %s, 0)" % (
             live_entry(item), GO_TYPE_GOOBER, display, sql_text(name), repr(round(size, 4)), ", ".join("0" for _ in range(24)),
             sql_text(GO_SCRIPT)))
+        icon = icons.display(icons_for(name))
+        client_items.append((item, icon))
         items.append("(%d, 15, 0, -1, %s, %d, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 0, 20, 1, %d, 0, 0, 0, -1, %s, %s, 0)" % (
-            item, sql_text("Furnishing: " + name), ICON_FURNISHING, circle_spell(footprint),
+            item, sql_text("Furnishing: " + name), icon, circle_spell(footprint),
             sql_text("Right-click on your island, then click where it should go."), sql_text(ITEM_SCRIPT)))
         piece_rows.append("(%d, 0, %d, %s, %d, 0, 0, 1.0, %s, %s, %d, %d, %d, '', 0, %s)" % (
             item, CATEGORIES.index("Catalog"), sql_text(name), live_entry(item), repr(round(footprint, 2)), repr(round(max(height, 0.1), 2)),

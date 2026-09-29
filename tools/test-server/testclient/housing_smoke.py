@@ -32,7 +32,7 @@ MANNEQUIN, MANNEQUIN_NPC = 901107, 900201               # a stand, and the figur
 BANK_CHEST, CHEST_BANKER = 901108, 900202               # level 20: opens the bank
 BANKSLOT_NOTBANKER, BANKSLOT_OK = 2, 3
 MUSIC_BOX, GRIZZLY_HILLS = 901109, 12816               # level 10; a zone music track
-WEATHER_FINE, WEATHER_RAIN = 0, 4
+WEATHER_RAIN = 4
 HOGGER_FIGURINE, HOGGER_FIGURE_NPC = 902952, 932952   # unlocked by defeating Hogger
 QUEST_HOME, QUEST_PLACE, QUEST_CHANGE, QUEST_UNDO, QUEST_OPEN = range(900400, 900405)   # Krook's welcome tour
 PICNIC_BASKET = 901110                                  # the tour's reward
@@ -195,7 +195,7 @@ def addon_state(wc):
 
 
 # Targeting circle radius (yards) of each placement spell (tools/content/build_content.py).
-CIRCLE_RADIUS = {61736: 1, 47004: 2, 42340: 3, 69680: 4, 43440: 5, 61985: 6, 34435: 8, 1543: 10, 26540: 15, 29882: 20}
+CIRCLE_RADIUS = {61736: 1, 52923: 2, 53261: 3, 68316: 5, 45959: 8, 54686: 10, 48431: 15, 55295: 18, 32150: 20}
 
 
 def spell_of(item):
@@ -1301,8 +1301,11 @@ def main():
     wait_for(lambda: guest.map_id != HOUSING_MAP or not guest.find_objects(entry=live(FARMHOUSE)), 8, guest)
     wait_for(lambda: guest.clock != (0, 0), 3, guest)
     now = time.localtime()
+    # The zone's own weather comes back, which the server rolls at random: only the island's
+    # rain (medium rain at 0.6) must be gone.
     check("leaving brings back the real clock and weather", guest.clock is not None and guest.clock[0] in (now.tm_hour, (now.tm_hour - 1) % 24)
-          and guest.weather is not None and guest.weather[0] == WEATHER_FINE, "%s %s" % (guest.clock, guest.weather))
+          and guest.weather is not None and not (guest.weather[0] == WEATHER_RAIN and abs(guest.weather[1] - 0.6) < 0.01),
+          "%s %s" % (guest.clock, guest.weather))
     guest.command(".house home", wait=1.0)
     wait_for_map(guest, HOUSING_MAP)
     guest.pump(1.5)

@@ -28,6 +28,7 @@ Fields:
             world models take theirs from the server's collision data; set these only to
             correct one whose outline includes surrounding pieces (check in game first)
   legacy    the old catalog id this piece replaces
+  icon      bag icons to try instead of the one tools/content/icons.py picks from the name
 """
 
 # Rules: (type, param1, param2)

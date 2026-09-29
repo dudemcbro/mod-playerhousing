@@ -307,8 +307,9 @@ client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHous
 4. The island: the default layout, `cleared`, is GM Island with its guild hall removed.
    It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
    the server data (collision and pathing without the hall, one script) and a client patch
-   every player installs once. To keep the hall instead, set
-   `PlayerHousing.Layout = "guildhouse"`; no patch is needed then.
+   every player installs once. The same patch gives the housing items their bag icons
+   (without it they show as question marks). To keep the hall instead, set
+   `PlayerHousing.Layout = "guildhouse"`; players then build the patch with `--icons-only`.
 5. Restart the worldserver.
 
 ## Configuration
@@ -339,9 +340,12 @@ Every setting can also come from an environment variable, for example
 The pieces, their models and what unlocks them are written as a Python list in
 `tools/content/pieces.py`. `tools/content/build_content.py` turns it into
 `sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces, rules and
-the targeting circle spells), `docs/UNLOCKS.md` and the addon's model list
-(`client-addon/PlayerHousing/PieceModels.lua`). It reads the world database (to copy models and behavior from
-existing objects) and the client data's `dbc` folder (for model sizes and names):
+the targeting circle spells), `docs/UNLOCKS.md`, the addon's model list
+(`client-addon/PlayerHousing/PieceModels.lua`) and the items the client patch adds
+(`tools/gm-island-cleared/client_items.tsv`). Each item's bag icon is picked from its name
+by `tools/content/icons.py` (a piece's `icon` field overrides it). It reads the world
+database (to copy models and behavior from existing objects) and the client data's `dbc`
+folder (for model sizes, names and icons):
 
 ```
 python3 tools/content/build_content.py --dbc /path/to/data/dbc \
@@ -384,10 +388,11 @@ fits, since players already see and track those.
   data (`vmaps/GameObjectModels.dtree`). A building's outline, turned the way it faces, is
   what counts as inside it when picking it up with what's inside.
 - **Placement** uses a targeting circle: each piece's item carries a ground-target spell
-  whose circle matches the piece's size (ten spells, 1 to 20 yards, listed in
-  `tools/content/build_content.py`). The spell is caught before it casts, so there's no
-  cast bar, sound or cooldown. The core has already checked range and line of sight to
-  the clicked spot by then. Players who have old copies of the items cached see the old
+  whose circle matches the piece's size (nine spells, 1 to 20 yards, listed in
+  `tools/content/build_content.py`). They're unused creature and quest spells with no
+  description, so the item's tooltip has no misleading "Use:" line. The spell is caught
+  before it casts, so there's no cast bar, sound or cooldown. The core has already checked
+  range and line of sight to the clicked spot by then. Players who have old copies of the items cached see the old
   circle size until they clear their `WDB` folder.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. Each player has
