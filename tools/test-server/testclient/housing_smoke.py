@@ -1888,16 +1888,17 @@ def main():
     # Leaving with a ghost following: it stays behind, and nothing is set down.
     owner.command(".house edit on")
     owner.command(".house select next", wait=0.8)
-    count = len(placements(owner_guid))
-    owner.command(".house ghost move")
-    wait_for(lambda: ghosts_in_sight(owner), 3, owner)
-    following = bool(ghosts_in_sight(owner))
+    before = placements(owner_guid)
+    owner.addon_messages.clear()
+    msgs = owner.command(".house ghost move")
+    state = addon_state(owner)
+    following = state is not None and len(state) > 21 and state[21] != "0"
     owner.command(".house leave", wait=1.0)
     owner.addon_messages.clear()
     owner.command(".house state")
     state = addon_state(owner)
-    check("leaving the island ends the ghost, and nothing moves", following and len(placements(owner_guid)) == count
-          and state is not None and state[21] == "0", str(state and state[20:]))
+    check("leaving the island ends the ghost, and nothing moves", following and placements(owner_guid) == before
+          and state is not None and state[21] == "0", joined(msgs) + " following=%s %s" % (following, state and state[20:]))
     owner.command(".house home", wait=1.0)
     wait_for_map(owner, HOUSING_MAP)
     wait_for(lambda: math.dist(owner.pos[:2], L["landing"][:2]) < 5, 6, owner)
