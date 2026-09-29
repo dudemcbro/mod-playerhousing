@@ -1333,8 +1333,11 @@ def main():
     msgs = owner.command(".house ghost move %d" % house["id"])
     wait_for(lambda: len([o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]) == 2, 3, owner)
     carried = [o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]
-    check("a building is carried as it is: its copy follows, nothing see-through", len(carried) == 2 and not ghosts_in_sight(owner),
-          joined(msgs) + " %s %s" % (carried, ghosts_in_sight(owner)))
+    wait_for(lambda: len(ghosts_in_sight(owner)) == 2, 3, owner)
+    displays = sorted(o.fields.get(UNIT_FIELD_DISPLAYID) for o in ghosts_in_sight(owner))
+    check("a building is carried as it is, the chair and lantern inside as see-through ghosts", len(carried) == 2
+          and displays == sorted([ghost_display(CHAIR), ghost_display(LANTERN)]) and has(msgs, "3 pieces follow you"),
+          joined(msgs) + " %s %s" % (carried, displays))
     owner.command(".house ghost adjust 0 2 0 0")
     msgs = owner.command(".house ghost place")
     moved_house, moved_chair = placement_of(owner_guid, FARMHOUSE), placement_of(owner_guid, CHAIR)
