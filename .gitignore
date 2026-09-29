@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# Local overrides of conf/conf.sh.dist (read by include.sh)
+conf/conf.sh
