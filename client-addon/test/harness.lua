@@ -355,17 +355,23 @@ assert(PlayerHousingEditHud:IsShown() and PlayerHousingEditHudTitle.text == "Pla
   tostring(PlayerHousingEditHudTitle.text) .. " " .. tostring(PlayerHousingEditHudName.text))
 assert(PlayerHousingEditHudSetDown:IsShown() and PlayerHousingEditHudAnother:IsShown() and PlayerHousingEditHudCancel:IsShown()
   and not PlayerHousingEditHudRow:IsShown() and not PlayerHousingEditHudUndo:IsShown(), "the ghost's buttons, not edit mode's")
+-- Steps add up and go out together, a few times a second, like edit mode's.
+local function step() now = now + 1; OnUpdate(driver, 1) end
 PlayerHousingEditForward.scripts.OnClick(PlayerHousingEditForward, "LeftButton", true)
-assert(last() == ".house ghost adjust 0.25 0.00 0.00 0", last())
 PlayerHousingEditForward.scripts.OnClick(PlayerHousingEditForward, "LeftButton", false)
+step()
+assert(last() == ".house ghost adjust 0.25 0.00 0.00 0", last())
 PlayerHousingEditLeft.scripts.OnClick(PlayerHousingEditLeft, "LeftButton", true)
-assert(last() == ".house ghost adjust 0.00 0.25 0.00 0", last())
 PlayerHousingEditLeft.scripts.OnClick(PlayerHousingEditLeft, "LeftButton", false)
 PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
-assert(last() == ".house ghost adjust 0.00 0.00 0.00 15", last())
+PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
+step()
+assert(last() == ".house ghost adjust 0.00 0.25 0.00 30", "two wheel notches and a step, in one: " .. last())
 PlayerHousingEditRaiseWheelDown.scripts.OnClick(PlayerHousingEditRaiseWheelDown, "LeftButton", true)
+step()
 assert(last() == ".house ghost adjust 0.00 0.00 -0.10 0", last())
 PlayerHousingEditPickUp.scripts.OnClick(PlayerHousingEditPickUp, "LeftButton", true)
+step()
 assert(last() == ".house ghost adjust 0.00 0.00 -0.10 0", "Delete waits while a piece follows you: " .. last())
 PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
 assert(last() == ".house ghost place", last())
@@ -600,15 +606,21 @@ assert(PlayerHousingPreviewHint.text ~= "", "says how to show it instead")
 lockedSlot.scripts.OnLeave(lockedSlot)
 assert(PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == first.info[2] and PlayerHousingDetailsPlace:IsShown(),
   "back to the pinned piece: " .. tostring(PlayerHousingPreviewName.text))
--- None in the bags: still a ghost (the server finds one). In combat too: nothing secure.
+-- None to hand: a click only shows it (no copy bought by looking); Place asks for one. In
+-- combat too: nothing secure.
 local barrelSlot
 for index = 1, 36 do
   local slot = _G["PlayerHousingCollectionSlot" .. index]
   if slot.info and slot.info[1] == 901106 then barrelSlot = slot end
 end
 combat = true
+count = #sent
 barrelSlot:Click("LeftButton")
-assert(last() == ".house ghost 901106" and PlayerHousingDetailsPlace.enabled and PlayerHousingDetailsPlace:IsShown(), last())
+assert(#sent == count and PlayerHousingDetailsPlace.enabled and PlayerHousingDetailsPlace:IsShown(), "only shown: " .. last())
+PlayerHousingDetailsPlace:Click()
+assert(last() == ".house ghost 901106", last())
+first:Click("LeftButton")
+assert(last() == ".house ghost 901105", "in combat too: " .. last())
 combat = false
 -- Off the island, a click only shows it.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t0\t0\t\t0\t200\t0\t10\t\t\t\t0", "WHISPER", "Krookowner")

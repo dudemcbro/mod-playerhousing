@@ -908,6 +908,9 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
 
 void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
 {
+    // Whatever the addon thought before (a ghost left behind on another island, say) is over.
+    SendAddonState(player);
+
     HouseRecord house;
     if (!GetHouseRecord(ownerGuid, house))
         return;
@@ -1010,7 +1013,16 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
             DespawnSessionObjects(sessionItr->second, map);
 
         for (ObjectGuid const& occupant : sessionItr->second.occupants)
+        {
             _playerOwnerByGuid.erase(occupant);
+            // What followed them goes with the island.
+            auto carrying = _carrying.find(occupant);
+            if (carrying != _carrying.end())
+            {
+                DespawnGhost(carrying->second, GetHousingMap());
+                _carrying.erase(carrying);
+            }
+        }
 
         _sessionsByOwner.erase(sessionItr);
     }

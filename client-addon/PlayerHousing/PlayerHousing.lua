@@ -1033,7 +1033,9 @@ driver:SetScript("OnUpdate", function(self, elapsed)
     -- them one undo step.
     local turn = pending.turn % 360 == 0 and 0 or pending.turn
     if math.abs(pending.forward) >= 0.005 or math.abs(pending.left) >= 0.005 or math.abs(pending.up) >= 0.005 or turn ~= 0 then
-        PlayerHousing_Command(("shift %.2f %.2f %.2f %d"):format(pending.forward, pending.left, pending.up, turn))
+        -- With a piece following you, the same steps move the ghost.
+        PlayerHousing_Command(("%s %.2f %.2f %.2f %d"):format(state.ghostItem > 0 and "ghost adjust" or "shift",
+            pending.forward, pending.left, pending.up, turn))
         sinceSend = 0
     end
     pending.forward, pending.left, pending.up, pending.turn = 0, 0, 0, 0

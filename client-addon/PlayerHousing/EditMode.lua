@@ -64,17 +64,13 @@ local function Yd(value)
     return (("%.2f"):format(math.abs(value)):gsub("%.?0+$", "")) .. " yd"
 end
 
--- A ghost: farther (forward), to the left, up, turned (degrees), from where you face.
-local function Carry(forward, left, up, degrees)
-    API.Command(("ghost adjust %.2f %.2f %.2f %d"):format(forward, left, up, degrees))
-end
-
 local function Step(action)
     local state = API.state
     local fine = IsShiftKeyDown()
     local flat = state.grid > 0 and state.grid or (fine and 0.05 or 0.25)
     local rise = fine and 0.02 or 0.1
-    local move = Ghosting() and function(f, l, u) Carry(f, l, u, 0) end or function(f, l, u) API.Shift(f, l, u, 0) end
+    -- With a ghost following you, the same steps move it (farther, nearer, to the side).
+    local move = function(f, l, u) API.Shift(f, l, u, 0) end
     if action == "Forward" then move(flat, 0, 0)
     elseif action == "Back" then move(-flat, 0, 0)
     elseif action == "Left" then move(0, flat, 0)
@@ -122,11 +118,11 @@ local function Wheel(delta, how)
         Feedback(key, API.state.selected == 0 and how ~= "zoom" and "camera zoom (nothing selected)" or "camera zoom")
     elseif how == "raise" then
         local yards = delta * (fine and 0.02 or 0.1)
-        if ghost then Carry(0, 0, yards, 0) else API.Shift(0, 0, yards, 0) end
+        API.Shift(0, 0, yards, 0)
         Feedback(key, (yards > 0 and "raised " or "lowered ") .. Yd(yards))
     else
         local degrees = delta * (fine and 5 or 15)
-        if ghost then Carry(0, 0, 0, degrees) else API.Shift(0, 0, 0, degrees) end
+        API.Shift(0, 0, 0, degrees)
         Feedback(key, ("turned %s %d degrees"):format(degrees > 0 and "left" or "right", math.abs(degrees)))
     end
 end
@@ -390,7 +386,7 @@ function UpdateHud()
         local name = API.PieceName(state.ghostItem)
         hudName:SetText(state.ghostMove and state.groupSize > 1 and ("%s and %d more"):format(name, state.groupSize - 1) or name)
         hudHelp:SetText("It follows you: walk it where it goes.   Up/Down arrows: farther, nearer   Left/Right: sideways\n" ..
-            "Wheel: turn   Ctrl+wheel, Page Up/Down: raise, lower   Shift: finer   Alt+wheel: zoom\n" ..
+            (wheelRaises and "Wheel: raise, lower" or "Wheel: turn") .. "   Ctrl+wheel, Page Up/Down: raise, lower   Shift: finer   Alt+wheel: zoom\n" ..
             "G: set it down" .. (state.ghostMove and "" or "   Shift+G: set it down, then another") .. "   Escape: never mind")
         wheelButton:Hide()
         undoButton:Hide()
@@ -443,13 +439,16 @@ local function SyncKeys()
     bound = want
 end
 
+local lastGhost = 0
 API.OnState(function()
     if not hud then
         CreateHud()
     end
-    if not API.state.editMode and API.state.ghostItem == 0 then
+    -- A key held when the ghost was set down stops, rather than nudge the piece now selected.
+    if (not API.state.editMode and API.state.ghostItem == 0) or (lastGhost > 0 and API.state.ghostItem == 0) then
         wipe(held)
     end
+    lastGhost = API.state.ghostItem
     UpdateHud()
     SyncKeys()
 end)

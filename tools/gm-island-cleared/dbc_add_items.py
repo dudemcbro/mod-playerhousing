@@ -44,11 +44,12 @@ def main():
     for line in open(args.tsv, encoding="utf-8"):
         if not line.strip() or line.startswith("#"):
             continue
-        kind, key, value = line.rstrip("\n").split("\t")
-        if kind == "item":
-            items[int(key)] = int(value)
-        elif kind == "display":
-            displays[int(key)] = value
+        # Other kinds of rows (the ghosts) are dbc_add_ghosts.py's.
+        parts = line.rstrip("\n").split("\t")
+        if parts[0] == "item":
+            items[int(parts[1])] = int(parts[2])
+        elif parts[0] == "display":
+            displays[int(parts[1])] = parts[2]
 
     # Item.dbc: id, class, subclass, sound override subclass, material, display, inventory type, sheath
     rows, strings = read(args.item_dbc, 8, 32)

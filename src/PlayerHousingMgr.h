@@ -884,6 +884,9 @@ private:
         bool floorRaised{false};  // above the ground: a building's floor
     };
     uint32 GhostDisplayFor(uint32 itemEntry) const;
+    uint32 SolidDisplayFor(Housing::PieceDefinition const& piece) const;
+    // One in the bags (not counting one a placement still uses) or in House Storage.
+    bool HasOneToPlace(Player* player, uint32 itemEntry) const;
     // The player where they are about now: their last movement packet, carried forward.
     void PredictPlayer(Player* player, Ghost& ghost, float& x, float& y, float& z, float& o) const;
     // What x, y would stand on: a table top (parent), else the floor.

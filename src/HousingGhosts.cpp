@@ -58,10 +58,36 @@ namespace
 uint32 PlayerHousingMgr::GhostDisplayFor(uint32 itemEntry) const
 {
     PieceDefinition const* piece = GetPiece(itemEntry);
-    if (!_ghosts || !piece || piece->IsBuilding() || itemEntry < 900000)
+    if (!_ghosts || !piece || piece->IsBuilding() || itemEntry < 900000 || !sObjectMgr->GetCreatureTemplate(GHOST_ENTRY))
         return 0;
+    // Its display and its model both: a display without a model would stop the server.
     uint32 display = GHOST_DISPLAY_BASE + (itemEntry - 900000);
-    return sCreatureDisplayInfoStore.LookupEntry(display) ? display : 0;
+    CreatureDisplayInfoEntry const* info = sCreatureDisplayInfoStore.LookupEntry(display);
+    return info && sCreatureModelDataStore.LookupEntry(info->ModelId) ? display : 0;
+}
+
+uint32 PlayerHousingMgr::SolidDisplayFor(PieceDefinition const& piece) const
+{
+    // A figurine or a mannequin without a ghost model: its own creature's, solid.
+    if (!piece.IsCreature() || !sObjectMgr->GetCreatureTemplate(GHOST_ENTRY))
+        return 0;
+    CreatureTemplate const* creature = sObjectMgr->GetCreatureTemplate(piece.HasFlag(PIECE_FLAG_STAND) ? MANNEQUIN_ENTRY : piece.creatureEntry);
+    CreatureModel const* model = creature ? creature->GetFirstValidModel() : nullptr;
+    return model ? model->CreatureDisplayID : 0;
+}
+
+bool PlayerHousingMgr::HasOneToPlace(Player* player, uint32 itemEntry) const
+{
+    // In the bags (not counting one a placement is still using), or in House Storage.
+    uint32 reserved = 0;
+    auto consumes = _pendingConsumes.find(player->GetGUID());
+    if (consumes != _pendingConsumes.end() && consumes->second.count(itemEntry))
+        reserved = consumes->second.at(itemEntry);
+    if (player->GetItemCount(itemEntry) > reserved)
+        return true;
+    std::map<uint32, uint32> storage = GetStorage(player->GetGUID().GetCounter());
+    auto stored = storage.find(itemEntry);
+    return stored != storage.end() && stored->second > 0;
 }
 
 uint32 PlayerHousingMgr::GetGhostItem(Player const* player) const
@@ -210,8 +236,17 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
         if (!definition)
             continue;
         float size = definition->scale > 0.0f ? piece.scale / definition->scale : 1.0f;
+        uint32 display = GhostDisplayFor(piece.itemEntry);
+        if (!display)
+            display = SolidDisplayFor(*definition);
+        // Shown the other way before (the setting changed): that one goes.
+        if (piece.shown && piece.shown.IsCreature() != (display != 0))
+        {
+            RemoveSpawned(map, piece.shown);
+            piece.shown.Clear();
+        }
 
-        if (uint32 display = GhostDisplayFor(piece.itemEntry))
+        if (display)
         {
             // See-through: a creature with the piece's model, gliding to the new spot.
             Creature* ghostCreature = piece.shown ? map->GetCreature(piece.shown) : nullptr;
@@ -225,9 +260,9 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
                 summon->SetDisplayId(display);
                 summon->SetNativeDisplayId(display);
                 float scale = 1.0f;
-                if (definition->HasFlag(PIECE_FLAG_FIGURE))
-                    scale = piece.scale;
-                else if (!definition->IsCreature())
+                if (definition->IsCreature())
+                    scale = piece.scale;  // figurines and mannequins are sized like the piece
+                else
                     if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(definition->goEntry))
                         scale = goInfo->size * size;
                 summon->SetObjectScale(scale);
@@ -251,8 +286,9 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
         }
         else
         {
-            // Carried as it is: the object itself, put down again in the new spot.
-            if (!force && piece.shown && getMSTimeDiff(piece.drawnMs, now) < CARRY_REDRAW_MS)
+            // Carried as it is: the object itself, put down again in the new spot, a few
+            // times a second at most (a key held down can't make it more; each is a new object).
+            if (piece.shown && getMSTimeDiff(piece.drawnMs, now) < CARRY_REDRAW_MS)
                 continue;  // soon: the next update redraws it
             GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(definition->goEntry);
             if (!goInfo)
@@ -310,17 +346,15 @@ void PlayerHousingMgr::EndGhost(Player* player)
     auto itr = _carrying.find(player->GetGUID());
     if (itr == _carrying.end())
         return;
-    DespawnGhost(itr->second, player->IsInWorld() ? player->GetMap() : GetHousingMap());
+    DespawnGhost(itr->second, GetHousingMap());
     _carrying.erase(itr);
 }
 
 void PlayerHousingMgr::CancelGhost(Player* player)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    if (!_carrying.count(player->GetGUID()))
-        return;
     EndGhost(player);
-    SendAddonState(player);
+    SendAddonState(player);  // even with nothing following: the addon may think otherwise
 }
 
 bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 copyOf, std::string& reason)
@@ -357,21 +391,31 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
         return false;
     }
 
-    // One to set down: from the bags or House Storage, else a new copy from the Collection
-    // (FreeMode's into House Storage; otherwise bought, into the bags).
+    // One to set down: from the bags or House Storage. With none, FreeMode hands one over when
+    // it's set down; otherwise a new copy is bought now, into House Storage (no bag space
+    // needed).
     std::string got;
-    std::string missing;
-    if (!EnsurePieces(player, { { itemEntry, 1 } }, missing))
+    if (!HasOneToPlace(player, itemEntry))
     {
-        if (_freeMode || !IsUnlocked(player, *piece))
+        if (!IsUnlocked(player, *piece))
         {
-            reason = missing;
+            reason = Acore::StringFormat("{} is still locked: {}.", piece->name, DescribeProgress(player, *piece));
             return false;
         }
         uint32 cost = piece->copyCost;
-        if (!GetCopy(player, itemEntry, reason))
-            return false;
-        got = cost ? Acore::StringFormat("Bought a new one for {}. ", FormatMoney(cost)) : "";
+        if (!_freeMode)
+        {
+            if (cost && player->GetMoney() < cost)
+            {
+                reason = Acore::StringFormat("A {} costs {}.", piece->name, FormatMoney(cost));
+                return false;
+            }
+            if (cost)
+                player->ModifyMoney(-int64(cost));
+            AddToStorage(player->GetGUID().GetCounter(), itemEntry, 1);
+            if (cost)
+                got = Acore::StringFormat("Bought a new one for {} (it waits in House Storage). ", FormatMoney(cost));
+        }
     }
 
     CancelMove(player);
@@ -403,7 +447,8 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
 
     Ghost& carried = _carrying[player->GetGUID()] = ghost;
     DrawGhost(player, *session, carried, true);
-    reason = got + Acore::StringFormat("The {} follows you: walk it where it goes, then G sets it down (Escape: never mind).", piece->name);
+    reason = got + Acore::StringFormat("The {} follows you: walk it where it goes, then G sets it down (Escape: never mind). "
+        "Without the addon: House Key, Set it down.", piece->name);
     SendAddonState(player);
     return true;
 }
@@ -490,7 +535,8 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
     Ghost& shown = _carrying[player->GetGUID()] = ghost;
     DrawGhost(player, *session, shown, true);
     size_t count = moving.size();
-    reason = Acore::StringFormat("{} {} you: walk {} where {} go, then G sets {} down (Escape: never mind).",
+    reason = Acore::StringFormat("{} {} you: walk {} where {} go, then G sets {} down (Escape: never mind; without the addon, "
+        "the House Key's menu).",
         count == 1 ? "The " + PieceName(lead.itemEntry) : Pieces(count), count == 1 ? "follows" : "follow",
         count == 1 ? "it" : "them", count == 1 ? "it should" : "they should", count == 1 ? "it" : "them");
     SendAddonState(player);
@@ -504,6 +550,7 @@ bool PlayerHousingMgr::AdjustGhost(Player* player, float forward, float left, fl
     if (itr == _carrying.end())
     {
         reason = "Nothing is following you: choose a piece to place or move first.";
+        SendAddonState(player);  // the addon thought otherwise
         return false;
     }
     Session* session = GetOwnerSession(player, reason);
@@ -526,12 +573,14 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
     if (itr == _carrying.end())
     {
         reason = "Nothing is following you: choose a piece to place or move first.";
+        SendAddonState(player);  // the addon thought otherwise
         return false;
     }
     Session* session = GetOwnerSession(player, reason);
     if (!session)
     {
         EndGhost(player);
+        SendAddonState(player);
         return false;
     }
 
@@ -565,12 +614,18 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
             reason = "That spot is off your island.";
             return false;
         }
+        // From the bags or House Storage; in FreeMode the Collection hands over a missing one.
+        bool handedOver = false;
         if (!TakeItem(player, lead.itemEntry))
         {
-            reason = Acore::StringFormat("You don't have another {}.", piece->name);
-            EndGhost(player);
-            SendAddonState(player);
-            return false;
+            if (!_freeMode || !IsUnlocked(player, *piece))
+            {
+                reason = Acore::StringFormat("You don't have another {}.", piece->name);
+                EndGhost(player);
+                SendAddonState(player);
+                return false;
+            }
+            handedOver = true;
         }
 
         placement.id = session->nextPlacementId++;
@@ -585,14 +640,18 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
             placement.placedBy = player->GetGUID().GetCounter();
         if (!AddNewPlacement(player, *session, placement, reason))
         {
-            bool toStorage;
-            ReturnItem(player, lead.itemEntry, toStorage);
+            if (!handedOver)
+            {
+                bool toStorage;
+                ReturnItem(player, lead.itemEntry, toStorage);
+            }
             return false;
         }
 
         // Another of the same, while there are more (and room for them).
         std::string more;
-        if (another && CheckLimit(*session, *piece, more) && EnsurePieces(player, { { lead.itemEntry, 1 } }, more))
+        bool anotherOne = HasOneToPlace(player, lead.itemEntry) || (_freeMode && IsUnlocked(player, *piece));
+        if (another && CheckLimit(*session, *piece, more) && anotherOne)
         {
             DrawGhost(player, *session, ghost, true);
             reason += " Another follows you.";

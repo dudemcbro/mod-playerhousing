@@ -300,11 +300,17 @@ function PlayerHousing_SelectTab(name)
 end
 
 ---------------------------------------------------------------------------------------------
--- Collection: everything there is, unlocked or not. A piece in the bags goes down with a
--- click (on the island); any piece shows in the preview with its buttons.
+-- Collection: everything there is, unlocked or not. A click shows a piece in the preview
+-- with its buttons and, on the island, a ghost of it follows you when you have one (in the
+-- bags or House Storage, or free); buying a copy takes Place or Get.
 
 local collectionSlots, categoryText, collectionPageText, collectionStatus, collectionPrev, collectionNext, sortButton, collectionCount =
     {}, nil, nil, nil, nil, nil, nil, nil
+
+-- One to place without buying: in the bags, in House Storage, or free (FreeMode, unlocked).
+local function HaveOne(id)
+    return GetItemCount(id) > 0 or (collection.storage[id] or 0) > 0 or (collection.free and collection.unlocked[id]) and true or false
+end
 
 -- Right-click stars a piece; the stars are kept per character.
 local function Favorites()
@@ -419,7 +425,7 @@ local function UpdateCollection()
     elseif #list == 0 and collectionView.category == RECENT then
         collectionStatus:SetText("Nothing placed yet.")
     else
-        collectionStatus:SetText("Click: place it (in your bags) or show it. Right-click: favorite.")
+        collectionStatus:SetText("Click: place it (one you have follows you) or show it. Right-click: favorite.")
     end
 end
 
@@ -459,8 +465,9 @@ local function CollectionTooltip(button)
     end
     GameTooltip:AddLine(("In your bags: %d. In House Storage: %d. Placed: %d."):format(GetItemCount(id), collection.storage[id] or 0,
         collection.placed[id] or 0), 1, 1, 1, true)
-    if button.location then
-        GameTooltip:AddLine("Click: place one (then click the spot). Drag: onto an action bar.", 0.4, 1, 0.4, true)
+    if API.CanEdit() and HaveOne(id) then
+        GameTooltip:AddLine("Click: it follows you; walk it where it goes, then G sets it down." ..
+            (button.location and " Drag: onto an action bar." or ""), 0.4, 1, 0.4, true)
     else
         GameTooltip:AddLine("Click: show it next to the window, to place it or get copies.", 0.4, 1, 0.4, true)
     end
@@ -546,7 +553,7 @@ local function CreateCollection()
                 if self.info then CollectionTooltip(self) else GameTooltip_Hide() end
             else
                 API.Pin({ id = id, name = self.info[2] })
-                if API.CanEdit() and (collection.unlocked[id] or GetItemCount(id) > 0 or (collection.storage[id] or 0) > 0) then
+                if API.CanEdit() and HaveOne(id) then
                     API.StartGhost(id)
                 end
             end

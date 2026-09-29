@@ -103,6 +103,8 @@ namespace
         CMD_SIGN,             // coded: the note
         CMD_DOOR_HERE,
         CMD_DOOR_RESET,
+        CMD_GHOST_PLACE,      // the piece following the player: set it down
+        CMD_GHOST_CANCEL,
         CMD_CLOSE
     };
 
@@ -882,10 +884,24 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
     for (auto const& [itemEntry, count] : sPlayerHousingMgr->GetStorage(self))
         stored += count;
 
+    // A piece following the player (without the addon's keys, this is how it's set down).
+    auto ghostOptions = [&]()
+    {
+        if (uint32 ghost = sPlayerHousingMgr->GetGhostItem(player))
+        {
+            PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(ghost);
+            std::string name = piece ? piece->name : "piece";
+            Add(player, GOSSIP_ICON_INTERACT_1, "Set down the " + name + " following you", CMD_GHOST_PLACE);
+            Add(player, GOSSIP_ICON_CHAT, "Never mind the " + name + " (" + std::string(sPlayerHousingMgr->IsGhostMove(player)
+                ? "it stays where it was)" : "nothing is used)"), CMD_GHOST_CANCEL);
+        }
+    };
+
     if (islandOwner == self)
     {
         bool decorating = sPlayerHousingMgr->IsDecorating(player);
         Add(player, GOSSIP_ICON_CHAT, StatusLine(player), CMD_HOME);
+        ghostOptions();
         if (decorating)
             Add(player, GOSSIP_ICON_INTERACT_1, "Done decorating", CMD_DECORATE_OFF);
         else
@@ -921,6 +937,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
             + "'s island", CMD_HOME);
         if (roommate)
         {
+            ghostOptions();
             bool decorating = sPlayerHousingMgr->IsDecorating(player);
             Add(player, GOSSIP_ICON_INTERACT_1, decorating ? "Done decorating" : "Start decorating", decorating ? CMD_DECORATE_OFF : CMD_DECORATE_ON);
             std::string undo = sPlayerHousingMgr->UndoLabel(player);
@@ -1292,6 +1309,15 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             sPlayerHousingMgr->SignGuestbook(player, text, reason);
             Say(player, reason);
             ShowHome(player, source);
+            return;
+        case CMD_GHOST_PLACE:
+            sPlayerHousingMgr->PlaceGhost(player, false, reason);
+            Say(player, reason);
+            CloseGossipMenuFor(player);
+            return;
+        case CMD_GHOST_CANCEL:
+            sPlayerHousingMgr->CancelGhost(player);
+            CloseGossipMenuFor(player);
             return;
         case CMD_DOOR_HERE:
         case CMD_DOOR_RESET:

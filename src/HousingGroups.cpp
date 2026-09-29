@@ -886,6 +886,7 @@ bool PlayerHousingMgr::StartSetPlacement(Player* player, uint32 setId, std::stri
     }
 
     CancelMove(player);
+    EndGhost(player);
     if (!player->AddItem(mover, 1))
     {
         reason = "Your bags are full: make room for a Move a Piece item first.";
