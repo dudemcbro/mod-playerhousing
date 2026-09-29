@@ -81,7 +81,8 @@ case "${1:-}" in
         wait_ready
         ;;
     rebuild)
-        if ! run "ninja -C /opt/acore/build install > /tmp/build.log 2>&1"; then
+        # cmake first: new source files in the module are only picked up when it runs.
+        if ! run "cd /opt/acore/build && cmake . > /tmp/build.log 2>&1 && ninja install >> /tmp/build.log 2>&1"; then
             run "grep -E 'error|FAILED' -A3 /tmp/build.log | head -80" >&2
             echo "build failed (full log: /tmp/build.log in the container)" >&2
             exit 1
