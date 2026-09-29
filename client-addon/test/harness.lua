@@ -442,6 +442,10 @@ PlayerHousingSpotButton:Click()
 assert(#sent == count, "G uses the item: nothing to ask the server")
 assert(PlayerHousingEditHudLast.text:find("click the new spot"), PlayerHousingEditHudLast.text)
 targeting = false
+-- A copy waiting for its spot ("Another") comes first: its button shows, and G places it.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t901190\t902101\t0\t1\t0\t1", "WHISPER", "Krookowner")
+flush()
+assert(PlayerHousingSpotButton.attrs.item == "1 4" and PlayerHousingSpotButton.text == "Now place the copy", tostring(PlayerHousingSpotButton.attrs.item))
 bags[0][7] = nil
 fire("BAG_UPDATE")
 fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
@@ -584,6 +588,15 @@ assert(#sent == count and not place.highlighted, "the second click uses it")
 bags[2] = nil
 fire("BAG_UPDATE")
 OnUpdate(driver, 1)
+-- Pinning another piece in combat: Place can't change until combat ends, then catches up.
+first.scripts.OnClick(first)
+assert(place.attrs.item == "0 1")
+combat = true
+barrelSlot.scripts.OnClick(barrelSlot)
+assert(place.attrs.item == "0 1", "no change in combat")
+combat = false
+fire("PLAYER_REGEN_ENABLED")
+assert(place.attrs.item == nil, "caught up after combat: " .. tostring(place.attrs.item))
 -- A locked piece says how to unlock it, and can't be had yet.
 count = #sent
 lockedSlot.scripts.OnClick(lockedSlot)

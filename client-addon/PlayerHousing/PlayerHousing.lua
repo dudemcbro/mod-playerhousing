@@ -166,19 +166,20 @@ end
 -- While a move or a copy waits for its spot, a button uses the item (Move a Piece, or the
 -- copy), so there's no need to find it in the bags. It's a secure button too.
 local function UpdateSpotButton()
-    local location
-    if CanEdit() and state.pendingMover > 0 then
-        location = movers[state.pendingMover]
-        spotButton:SetText("Now pick the spot")
-    elseif CanEdit() and state.pendingCopy > 0 then
+    local location, staged
+    if CanEdit() and state.pendingCopy > 0 then
         location = PieceLocation(state.pendingCopy)
         spotButton:SetText("Now place the copy")
+    elseif CanEdit() and state.pendingMover > 0 then
+        location = movers[state.pendingMover]
+        staged = state.moverStaged
+        spotButton:SetText("Now pick the spot")
     end
     if location then
         spotButton:SetAttribute("type", "item")
         spotButton:SetAttribute("item", location)
         -- The one edit mode keeps ready is for G: no button needed.
-        if state.moverStaged then
+        if staged then
             spotButton:Hide()
         else
             spotButton:Show()
@@ -601,8 +602,11 @@ function UpdateDetails()
     if info.unlocked then getOneButton:Enable() getFiveButton:Enable() else getOneButton:Disable() getFiveButton:Disable() end
     if (info.storage or 0) > 0 then takeButton:Enable() else takeButton:Disable() end
     -- Place uses the piece in the bags, like its icon on the Bags tab: a secure button, so it
-    -- changes out of combat only. With none in the bags, its click gets one first.
-    if not InCombatLockdown() then
+    -- changes out of combat only (and catches up after). With none in the bags, its click
+    -- gets one first.
+    if InCombatLockdown() then
+        layoutPending = true
+    else
         placeButton:SetAttribute("type", "item")
         placeButton:SetAttribute("item", location)
         if CanEdit() and (location or info.unlocked) then placeButton:Enable() else placeButton:Disable() end

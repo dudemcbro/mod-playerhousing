@@ -843,6 +843,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
         if (player->GetMapId() == _layout.mapId)
             EndSessionIfEmpty(leftOwner);
         RestoreNormalPhase(player);
+        CancelMove(player);
         return;
     }
 
@@ -960,7 +961,10 @@ void PlayerHousingMgr::OnPlayerMapChanged(Player* player)
 
     // Runs on the world thread, so the island left behind can be despawned here.
     if (tracked)
+    {
         EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
+        CancelMove(player);
+    }
 
     if (IsHousingPhase(player->GetPhaseMask()))
         RestoreNormalPhase(player);
@@ -1257,6 +1261,7 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
     }
 
     _arrivals.erase(playerGuid);
+    _editMode.erase(playerGuid);  // or it would come back with decorating, next visit
     if (eraseReturnLocation)
         _returnLocations.erase(playerGuid);
 
@@ -1498,6 +1503,7 @@ bool PlayerHousingMgr::LeaveHouse(Player* player, std::string& reason)
 
     EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
     RestoreNormalPhase(player);
+    CancelMove(player);  // Move a Piece (edit mode keeps one ready) stays behind
 
     bool teleportOk = hasReturn ? player->TeleportTo(returnLocation) : player->TeleportToEntryPoint();
     if (!teleportOk)

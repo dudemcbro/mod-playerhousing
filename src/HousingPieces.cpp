@@ -557,11 +557,15 @@ void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType own
         StageMover(player, session);
     else
     {
-        // Edit mode ended some other way (decorating turned off): its item goes too.
+        // Edit mode ended some other way (decorating turned off): its item goes too. Only
+        // that: a copy waiting for its spot keeps the original's turn, size and tilt.
         auto pending = _pendingMoves.find(player->GetGUID());
         if (pending != _pendingMoves.end() && pending->second.staged)
         {
-            CancelMove(player);
+            uint32 mover = pending->second.moverItem;
+            _pendingMoves.erase(pending);
+            if (uint32 count = player->GetItemCount(mover, true))
+                player->DestroyItemCount(mover, count, true);
             SendAddonState(player);
         }
     }
@@ -569,6 +573,10 @@ void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType own
 
 void PlayerHousingMgr::StageMover(Player* player, Session& session)
 {
+    // A copy waiting for its spot ("Another") has G until it's placed.
+    if (_pendingCopies.count(player->GetGUID()))
+        return;
+
     auto selectedItr = session.selected.find(player->GetGUID().GetCounter());
     uint32 selected = selectedItr != session.selected.end() && session.placements.count(selectedItr->second) ? selectedItr->second : 0;
 
@@ -609,9 +617,13 @@ void PlayerHousingMgr::StageMover(Player* player, Session& session)
     // isn't loot; the chat would fill with it).
     bool changed = pending != _pendingMoves.end();
     for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
-        if (entry != wanted)
-            if (uint32 count = player->GetItemCount(entry))
-                player->DestroyItemCount(entry, count, true);
+    {
+        // Other circles go, and so does one put in the bank, where G can't reach it (and
+        // where, the item being unique, it would keep the bags from getting another).
+        uint32 everywhere = player->GetItemCount(entry, true);
+        if (everywhere && (entry != wanted || !player->GetItemCount(entry)))
+            player->DestroyItemCount(entry, everywhere, true);
+    }
     _pendingMoves.erase(player->GetGUID());
 
     if (wanted && !player->GetItemCount(wanted))
@@ -1588,7 +1600,7 @@ void PlayerHousingMgr::CancelMove(Player* player)
         _stageRetries.erase(player->GetGUID());
     }
     for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
-        if (uint32 count = player->GetItemCount(entry))
+        if (uint32 count = player->GetItemCount(entry, true))
             player->DestroyItemCount(entry, count, true);
 }
 

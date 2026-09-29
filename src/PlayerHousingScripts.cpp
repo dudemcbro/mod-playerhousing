@@ -768,6 +768,7 @@ public:
                 reason = Acore::StringFormat("The grid is {} yards. Usage: .house grid <off|yards> (0.25 to 4).", PlayerHousingMgr::FormatYards(current));
             else
                 reason = "The grid is off. Usage: .house grid <off|yards> (0.25 to 4).";
+            mgr->SendAddonState(player);  // the edit mode banner shows it
         }
         else if (sub == "select" && tokens.size() > 1 && (Lower(tokens[1]) == "next" || Lower(tokens[1]) == "previous" || Lower(tokens[1]) == "prev"))
         {

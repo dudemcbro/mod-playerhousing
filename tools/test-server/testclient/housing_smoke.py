@@ -690,6 +690,34 @@ def main():
                   str(ring and (ring.x, ring.y)) + " " + str([owner.count_item(e) for e in MOVERS]))
             owner.command(".house undo")
 
+            # "Another" in edit mode: the copy has G until it's placed, then Move a Piece is back.
+            owner.addon_messages.clear()
+            msgs = owner.command(".house another %d" % chair["id"])
+            wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+            owner.pump(1.0)
+            state = addon_state(owner)
+            check("in edit mode a copy waiting for its spot has G: no Move a Piece meanwhile", state is not None
+                  and state[15] == str(CHAIR) and state[14] == "0" and not any(owner.count_item(e) for e in MOVERS),
+                  joined(msgs) + " " + str(state))
+            copy_spot = (chair["x"] - 1.5, chair["y"] + 1.5, L["ground"])
+            owner.use_item(CHAIR, spell_of(CHAIR), copy_spot)
+            copy = next((p for p in placements(owner_guid) if p["item"] == CHAIR and p["id"] != chair["id"]), None)
+            wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
+            check("the copy placed, Move a Piece is ready again", copy is not None and any(owner.count_item(e) for e in MOVERS), str(copy))
+            if copy:
+                owner.command(".house pickup %d" % copy["id"])
+                wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+                owner.destroy_item(CHAIR)
+                wait_for(lambda: owner.count_item(CHAIR) == 0, 3, owner)
+            owner.command(".house select %d" % chair["id"])
+
+            # The grid button on the banner: the addon hears the new size.
+            owner.addon_messages.clear()
+            owner.command(".house grid 0.5")
+            state = addon_state(owner)
+            check("changing the grid tells the addon", state is not None and state[18] == "0.5", str(state))
+            owner.command(".house grid off")
+
         # Facing east: forward is +x, left is +y. (Positions read back with the float column's
         # six digits, so to a tenth of a yard out here.)
         msgs = owner.command(".house shift 0.5 0 0 0 %d" % chair["id"]) + owner.command(".house shift 0.5 0.25 0 90 %d" % chair["id"])
@@ -1556,6 +1584,23 @@ def main():
           joined(owner.messages_since(visits_mark)[-10:]))
     check("back home, the mannequin still holds the sword", fig is not None and fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) == SWORD,
           str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
+
+    # Leaving with edit mode's Move a Piece in the bags: it stays behind, and so does edit mode.
+    owner.command(".house edit on")
+    owner.command(".house select next", wait=0.8)
+    wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
+    ready = any(owner.count_item(e) for e in MOVERS)
+    owner.command(".house leave", wait=1.0)
+    wait_for(lambda: not any(owner.count_item(e) for e in MOVERS), 3, owner)
+    check("leaving the island takes edit mode's Move a Piece with it", ready and not any(owner.count_item(e) for e in MOVERS),
+          str(owner.backpack()))
+    owner.command(".house home", wait=1.0)
+    wait_for_map(owner, HOUSING_MAP)
+    wait_for(lambda: math.dist(owner.pos[:2], L["landing"][:2]) < 5, 6, owner)
+    owner.addon_messages.clear()
+    owner.command(".house decorate on")
+    state = addon_state(owner)
+    check("and edit mode doesn't come back with decorating", state is not None and state[3] == "1" and state[17] == "0", str(state))
 
     # Last: a GM packs the island up. Nothing is lost: pieces to House Storage, gear by mail.
     owner.command(".house decorate on")
