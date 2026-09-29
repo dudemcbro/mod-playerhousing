@@ -20,6 +20,11 @@ podman login ghcr.io -u dudemcbro      # once; token with read:packages
 tools/test-server/podman-test.sh           # add --verbose for every chat line
 ```
 
+If you can't pull that image, build it from the core fork's root
+(`podman build -f apps/test-server-image/Containerfile -t acore-test-server .`, about an
+hour) and point the scripts at it: `IMAGE=localhost/acore-test-server tools/test-server/podman-test.sh`
+(the same `IMAGE` works for `dev-container.sh`).
+
 It starts a throwaway container with this checkout mounted (`:Z`, for Bluefin's SELinux;
 on an NTFS or exFAT drive it turns labeling off for the container instead), clears GM
 Island's guild hall from the server data, builds the module, starts the servers with
