@@ -28,10 +28,17 @@ command -v smpq >/dev/null || { echo "smpq not found (sudo apt install smpq)" >&
 # common.MPQ or common.mpq), so every lookup ignores case.
 find_ci() { find "$1" -maxdepth 1 -type f -iname "$2" 2>/dev/null | head -n 1; }
 DATA_DIR="$(cd "$DATA_DIR" && pwd)"
-if [ -z "$(find "$DATA_DIR" -maxdepth 1 -type f -iname '*.mpq' 2>/dev/null | head -n 1)" ]; then
+# The Data folder is the one with common.MPQ: the folder given, or its Data folder (an install
+# folder can hold other MPQs of its own).
+if [ -z "$(find_ci "$DATA_DIR" common.mpq)" ]; then
     sub="$(find "$DATA_DIR" -maxdepth 1 -type d -iname data 2>/dev/null | head -n 1)"
     [ -n "$sub" ] && DATA_DIR="$sub"
 fi
+if [ -z "$(find_ci "$DATA_DIR" common.mpq)" ]; then
+    echo "no common.MPQ in $DATA_DIR: give the client's folder or its Data folder" >&2
+    exit 1
+fi
+echo "client data: $DATA_DIR"
 # The locale folder (enUS, deDE...) holds the game's data tables.
 LOCALE_DIR="$(find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -iregex '.*/[a-z]{4}' 2>/dev/null | head -n 1)"
 LOC="$(basename "${LOCALE_DIR:-none}")"
