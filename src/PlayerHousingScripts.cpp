@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -413,7 +414,8 @@ public:
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
-        handler->SendSysMessage(".house ghost <item> | ghost move [id] | ghost adjust <forward> <left> <up> <degrees> | ghost place [another] | ghost cancel");
+        handler->SendSysMessage(".house ghost <item> | ghost move [id] | ghost adjust <forward> <left> <up> <degrees> | ghost at <x> <y> <z>");
+        handler->SendSysMessage(".house ghost place [another] | ghost cancel");
         handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name> | like | visitors");
         handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
@@ -492,7 +494,13 @@ public:
         // window; everything else counts.
         bool holdMessage = sub == "group" && tokens.size() > 1 && Lower(tokens[1]) == "hold";
         bool ghostAdjust = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "adjust";
-        if (sub == "shift" || ghostAdjust)
+        bool ghostAt = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "at";
+        if (ghostAt)
+        {
+            if (!gm && mgr->PointFlood(player))
+                return true;
+        }
+        else if (sub == "shift" || ghostAdjust)
         {
             if (!gm && mgr->ShiftFlood(player))
                 return true;
@@ -525,8 +533,9 @@ public:
         }
         else if (sub == "addon")
         {
-            // Quiet: the addon says it's there, and whether the House Key opens its window.
-            mgr->SetAddonClient(player, !(tokens.size() > 2 && tokens[2] == "0"));
+            // Quiet: the addon says it's there, whether the House Key opens its window, and
+            // whether PlayerHousing.dll is there (mouse).
+            mgr->SetAddonClient(player, !(tokens.size() > 2 && tokens[2] == "0"), tokens.size() > 3 && Lower(tokens[3]) == "mouse");
             mgr->SendAddonState(player);
             return true;
         }
@@ -784,6 +793,15 @@ public:
                 if (mgr->AdjustGhost(player, decimal(2, 0.0f), decimal(3, 0.0f), decimal(4, 0.0f), decimal(5, 0.0f), reason))
                     reason.clear();
             }
+            else if (what == "at")
+            {
+                // Quiet: where the mouse points, a few times a second (the addon, with
+                // PlayerHousing.dll); x y z, then which way the surface there faces.
+                float nan = std::numeric_limits<float>::quiet_NaN();
+                float facing[3] = { decimal(5, nan), decimal(6, nan), decimal(7, nan) };
+                mgr->GhostAt(player, decimal(2, nan), decimal(3, nan), decimal(4, nan), tokens.size() > 7 ? facing : nullptr, reason);
+                return true;
+            }
             else if (what == "place")
                 mgr->PlaceGhost(player, tokens.size() > 2 && Lower(tokens[2]) == "another", reason);
             else if (what == "cancel")
@@ -793,7 +811,7 @@ public:
             else if (uint32 item = number(1))
                 mgr->StartGhostNew(player, item, 0, reason);
             else
-                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | place [another] | cancel";
+                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | at <x> <y> <z> | place [another] | cancel";
         }
         else if (sub == "group")
         {

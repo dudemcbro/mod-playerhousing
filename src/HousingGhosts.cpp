@@ -18,12 +18,14 @@
 
 using namespace Housing;
 
-// Ghosts: a piece that follows its player until it's set down. The client can't say where the
-// mouse points in the world, so the piece floats ahead of the player instead: they walk it
-// where it goes, push it farther or nearer, raise it and turn it, and see it there before
-// setting it down. Furniture is a see-through copy of itself (a creature with its model, which
-// can glide); buildings (world models, which creatures can't be) and pieces without a ghost
-// model are carried as they are, redrawn a few times a second.
+// Ghosts: a piece that follows its player until it's set down. With PlayerHousing.dll the
+// addon says where the mouse points in the world (the game alone can't) and the piece shows
+// there: on the floor, on a table, or on a wall facing out; a click sets it down. Without it
+// the piece floats ahead of the player instead: they walk it where it goes, push it farther
+// or nearer, raise it and turn it, and see it there before setting it down. Furniture is a
+// see-through copy of itself (a creature with its model, which can glide); a building (a world
+// model, which a creature can't show) is a see-through block its size. Pieces without a ghost
+// model (an old client patch) are carried as they are, redrawn a few times a second.
 
 namespace
 {
@@ -37,6 +39,10 @@ namespace
     constexpr float MIN_LIFT = -3.0f;
     constexpr float MAX_LIFT = 30.0f;
     constexpr float ON_TOP = 0.35f;          // this close to a table's top, it stands on the table
+    constexpr float POINT_ON_TOP = 0.5f;     // the mouse on a table: its top this close to the point
+    constexpr float MAX_POINT_DISTANCE = 120.0f;  // the mouse on something farther off: not taken
+    constexpr uint32 POINT_DRAW_MS = 60;     // points coming faster than this are drawn by the update
+    constexpr float WALL_STEEPNESS = 0.6f;   // a surface facing up less than this is a wall
 
     float NormalizeAngle(float angle)
     {
@@ -58,7 +64,8 @@ namespace
 uint32 PlayerHousingMgr::GhostDisplayFor(uint32 itemEntry) const
 {
     PieceDefinition const* piece = GetPiece(itemEntry);
-    if (!_ghosts || !piece || piece->IsBuilding() || itemEntry < 900000 || !sObjectMgr->GetCreatureTemplate(GHOST_ENTRY))
+    // (A building's is a see-through block its size.)
+    if (!_ghosts || !piece || itemEntry < 900000 || !sObjectMgr->GetCreatureTemplate(GHOST_ENTRY))
         return 0;
     // Its display and its model both: a display without a model would stop the server.
     uint32 display = GHOST_DISPLAY_BASE + (itemEntry - 900000);
@@ -177,8 +184,42 @@ float PlayerHousingMgr::GhostFloor(Player* player, Session const& session, Ghost
     return ghost.floorRaised ? ghost.floorZ : GroundHeightNear(player, x, y, playerZ);
 }
 
+float PlayerHousingMgr::GhostFacing(Ghost const& ghost)
+{
+    return ghost.atPoint && ghost.onWall ? NormalizeAngle(ghost.wallO + ghost.wallTurn) : ghost.o;
+}
+
 void PlayerHousingMgr::PoseGhost(Player* player, Session const& session, Ghost& ghost, float& x, float& y, float& z, uint32& parent)
 {
+    PieceDefinition const* lead = GetPiece(ghost.pieces.front().itemEntry);
+    parent = 0;
+    if (ghost.atPoint)
+    {
+        // Where the mouse points: on the grid (not on a wall), and on the table there when the
+        // mouse is on its top.
+        x = ghost.pointX;
+        y = ghost.pointY;
+        float floor = ghost.pointZ;
+        if (!ghost.onWall)
+        {
+            SnapToGrid(player->GetGUID().GetCounter(), x, y);
+            if (!lead || !lead->IsBuilding())
+            {
+                uint32 table = 0;
+                float top = GhostFloor(player, session, ghost, x, y, ghost.pointZ, false, table);
+                if (table && std::fabs(top - ghost.pointZ) <= POINT_ON_TOP)
+                {
+                    floor = top;
+                    parent = table;
+                }
+            }
+        }
+        z = floor + ghost.lift;
+        if (parent && std::fabs(ghost.lift) > ON_TOP)
+            parent = 0;
+        return;
+    }
+
     float px;
     float py;
     float pz;
@@ -196,7 +237,6 @@ void PlayerHousingMgr::PoseGhost(Player* player, Session const& session, Ghost& 
     y = py + std::sin(po) * ghost.forward + std::cos(po) * ghost.side;
     SnapToGrid(player->GetGUID().GetCounter(), x, y);
 
-    PieceDefinition const* lead = GetPiece(ghost.pieces.front().itemEntry);
     float floor = GhostFloor(player, session, ghost, x, y, ghost.floorRaised ? ghost.floorZ : pz, lead && lead->IsBuilding(), parent);
     z = floor + ghost.lift;
     // Held above a table, it isn't standing on it.
@@ -218,15 +258,16 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
     ghost.parent = parent;
 
     uint32 now = getMSTime();
-    float cosO = std::cos(ghost.o);
-    float sinO = std::sin(ghost.o);
+    float facing = GhostFacing(ghost);
+    float cosO = std::cos(facing);
+    float sinO = std::sin(facing);
     for (GhostPiece& piece : ghost.pieces)
     {
         // Its spot: the lead's, and its own place around the lead, turned with it.
         float gx = x + piece.dx * cosO - piece.dy * sinO;
         float gy = y + piece.dx * sinO + piece.dy * cosO;
         float gz = z + piece.dz;
-        float go = NormalizeAngle(ghost.o + piece.dO);
+        float go = NormalizeAngle(facing + piece.dO);
         bool moved = force || !piece.shown || std::fabs(gx - piece.x) > 0.02f || std::fabs(gy - piece.y) > 0.02f
             || std::fabs(gz - piece.z) > 0.02f || AngleBetween(go, piece.o) > 0.005f;
         if (!moved)
@@ -266,6 +307,8 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
                     if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(definition->goEntry))
                         scale = goInfo->size * size;
                 summon->SetObjectScale(scale);
+                if (definition->IsBuilding())
+                    summon->SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
                 summon->SetReactState(REACT_PASSIVE);
                 summon->SetDisableGravity(true);
                 summon->SetCanFly(true);
@@ -447,8 +490,12 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
 
     Ghost& carried = _carrying[player->GetGUID()] = ghost;
     DrawGhost(player, *session, carried, true);
-    reason = got + Acore::StringFormat("The {} follows you: walk it where it goes, then G sets it down (Escape: never mind). "
-        "Without the addon: House Key, Set it down.", piece->name);
+    if (HasMouse(player))
+        reason = got + Acore::StringFormat("The {} follows your mouse: click where it goes (Shift-click: and another; Escape: never mind).",
+            piece->name);
+    else
+        reason = got + Acore::StringFormat("The {} follows you: walk it where it goes, then G sets it down (Escape: never mind). "
+            "Without the addon: House Key, Set it down.", piece->name);
     SendAddonState(player);
     return true;
 }
@@ -535,10 +582,15 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
     Ghost& shown = _carrying[player->GetGUID()] = ghost;
     DrawGhost(player, *session, shown, true);
     size_t count = moving.size();
-    reason = Acore::StringFormat("{} {} you: walk {} where {} go, then G sets {} down (Escape: never mind; without the addon, "
-        "the House Key's menu).",
-        count == 1 ? "The " + PieceName(lead.itemEntry) : Pieces(count), count == 1 ? "follows" : "follow",
-        count == 1 ? "it" : "them", count == 1 ? "it should" : "they should", count == 1 ? "it" : "them");
+    std::string what = count == 1 ? "The " + PieceName(lead.itemEntry) : Pieces(count);
+    if (HasMouse(player))
+        reason = Acore::StringFormat("{} {} your mouse: click where {} go (Escape: never mind).", what, count == 1 ? "follows" : "follow",
+            count == 1 ? "it should" : "they should");
+    else
+        reason = Acore::StringFormat("{} {} you: walk {} where {} go, then G sets {} down (Escape: never mind; without the addon, "
+            "the House Key's menu).",
+            what, count == 1 ? "follows" : "follow", count == 1 ? "it" : "them", count == 1 ? "it should" : "they should",
+            count == 1 ? "it" : "them");
     SendAddonState(player);
     return true;
 }
@@ -558,12 +610,130 @@ bool PlayerHousingMgr::AdjustGhost(Player* player, float forward, float left, fl
         return false;
 
     Ghost& ghost = itr->second;
-    ghost.forward = std::clamp(ghost.forward + std::clamp(forward, -5.0f, 5.0f), MIN_FORWARD, MAX_FORWARD);
-    ghost.side = std::clamp(ghost.side + std::clamp(left, -5.0f, 5.0f), -MAX_SIDE, MAX_SIDE);
+    forward = std::clamp(forward, -5.0f, 5.0f);
+    left = std::clamp(left, -5.0f, 5.0f);
+    float turn = std::clamp(degrees, -360.0f, 360.0f) * PI_F / 180.0f;
+    if (ghost.atPoint)
+    {
+        // Following the mouse: nudged from the point the player's way (until the mouse moves on).
+        float po = player->GetOrientation();
+        float x = ghost.pointX + std::cos(po) * forward - std::sin(po) * left;
+        float y = ghost.pointY + std::sin(po) * forward + std::cos(po) * left;
+        if (player->GetExactDist2d(x, y) <= MAX_POINT_DISTANCE && IsSpotOnIsland(x, y, ghost.pointZ))
+        {
+            ghost.pointX = x;
+            ghost.pointY = y;
+        }
+        if (ghost.onWall)
+            ghost.wallTurn = NormalizeAngle(ghost.wallTurn + turn);
+        else
+            ghost.o = NormalizeAngle(ghost.o + turn);
+    }
+    else
+    {
+        ghost.forward = std::clamp(ghost.forward + forward, MIN_FORWARD, MAX_FORWARD);
+        ghost.side = std::clamp(ghost.side + left, -MAX_SIDE, MAX_SIDE);
+        ghost.o = NormalizeAngle(ghost.o + turn);
+    }
     ghost.lift = std::clamp(ghost.lift + std::clamp(up, -2.0f, 2.0f), MIN_LIFT, MAX_LIFT);
-    ghost.o = NormalizeAngle(ghost.o + std::clamp(degrees, -360.0f, 360.0f) * PI_F / 180.0f);
     DrawGhost(player, *session, ghost, true);
     return true;
+}
+
+bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float const* facing, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _carrying.find(player->GetGUID());
+    if (itr == _carrying.end())
+    {
+        reason = "Nothing is following you: choose a piece to place or move first.";
+        SendAddonState(player);  // the addon thought otherwise
+        return false;
+    }
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+
+    Ghost& ghost = itr->second;
+    std::string note;
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || player->GetExactDist(x, y, z) > MAX_POINT_DISTANCE)
+        note = "That's too far away.";
+    else if (!IsSpotOnIsland(x, y, z))
+        note = "That spot is off your island.";
+    if (!note.empty())
+    {
+        // It stays where it was; the addon hears why (once, not for every point).
+        reason = note;
+        if (ghost.note != note)
+        {
+            ghost.note = note;
+            SendAddonState(player);
+        }
+        return false;
+    }
+
+    // The mouse on a piece being moved (still standing where it was): what that stands on.
+    bool onOriginal = false;
+    for (GhostPiece const& piece : ghost.pieces)
+    {
+        auto placementItr = piece.placementId ? session->placements.find(piece.placementId) : session->placements.end();
+        if (placementItr == session->placements.end())
+            continue;
+        Placement const& original = placementItr->second;
+        PieceDefinition const* definition = GetPiece(original.itemEntry);
+        if (!definition)
+            continue;
+        float scale = definition->scale > 0.0f ? original.scale / definition->scale : 1.0f;
+        if (z < original.z - 0.2f || z > original.z + definition->height * scale + 0.2f || !IsOverSurface(*definition, original, x, y))
+            continue;
+        z = original.z;
+        onOriginal = true;
+        break;
+    }
+
+    // From the first point on it sits on what the mouse points at: its height over what was
+    // under it until now doesn't carry over (the wheel still raises it from there).
+    if (!ghost.atPoint)
+        ghost.lift = 0.0f;
+    ghost.atPoint = true;
+    ghost.pointX = x;
+    ghost.pointY = y;
+    ghost.pointZ = z;
+    // A wall (the surface facing more sideways than up): the piece faces out from it.
+    bool wall = false;
+    if (facing && !onOriginal && std::isfinite(facing[0]) && std::isfinite(facing[1]) && std::isfinite(facing[2]))
+    {
+        float length = std::sqrt(facing[0] * facing[0] + facing[1] * facing[1] + facing[2] * facing[2]);
+        if (length > 0.5f && length < 1.5f && std::fabs(facing[2] / length) < WALL_STEEPNESS)
+        {
+            wall = true;
+            if (!ghost.onWall)
+                ghost.wallTurn = 0.0f;
+            ghost.wallO = NormalizeAngle(std::atan2(facing[1], facing[0]));
+        }
+    }
+    ghost.onWall = wall;
+    if (!ghost.note.empty())
+    {
+        ghost.note.clear();
+        SendAddonState(player);
+    }
+
+    // Drawn now, unless points are coming quickly: then the next update draws the latest.
+    uint32 now = getMSTime();
+    if (getMSTimeDiff(ghost.updatedMs, now) >= POINT_DRAW_MS)
+    {
+        ghost.updatedMs = now;
+        DrawGhost(player, *session, ghost, false);
+    }
+    return true;
+}
+
+std::string PlayerHousingMgr::GetGhostNote(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _carrying.find(player->GetGUID());
+    return itr != _carrying.end() ? itr->second.note : "";
 }
 
 bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& reason)
@@ -591,14 +761,15 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
     float z;
     uint32 parent;
     PoseGhost(player, *session, ghost, x, y, z, parent);
-    float cosO = std::cos(ghost.o);
-    float sinO = std::sin(ghost.o);
+    float facing = GhostFacing(ghost);
+    float cosO = std::cos(facing);
+    float sinO = std::sin(facing);
     auto spotOf = [&](GhostPiece const& piece, Placement& placement)
     {
         placement.x = x + piece.dx * cosO - piece.dy * sinO;
         placement.y = y + piece.dx * sinO + piece.dy * cosO;
         placement.z = z + piece.dz;
-        placement.o = NormalizeAngle(ghost.o + piece.dO);
+        placement.o = NormalizeAngle(facing + piece.dO);
     };
 
     if (ghost.isNew)

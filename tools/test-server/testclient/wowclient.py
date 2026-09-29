@@ -82,12 +82,15 @@ SMSG_AUTH_CHALLENGE = 0x1EC
 CMSG_AUTH_SESSION = 0x1ED
 SMSG_AUTH_RESPONSE = 0x1EE
 SMSG_COMPRESSED_UPDATE_OBJECT = 0x1F6
+SMSG_MONSTER_MOVE = 0x0DD
 SMSG_LOGIN_VERIFY_WORLD = 0x236
 SMSG_TIME_SYNC_REQ = 0x390
 CMSG_TIME_SYNC_RESP = 0x391
 
 CHAT_MSG_SYSTEM = 0x00
 CHAT_MSG_SAY = 0x01
+CHAT_MSG_WHISPER = 0x07
+LANG_ADDON = 0xFFFFFFFF
 LANG_COMMON = 7
 LANG_ORCISH = 1
 
@@ -462,6 +465,8 @@ class WorldClient:
             self.send(CMSG_TIME_SYNC_RESP, struct.pack("<II", counter, self.now_ms()))
         elif opcode == SMSG_MESSAGECHAT:
             self._on_chat(data)
+        elif opcode == SMSG_MONSTER_MOVE:
+            self._on_monster_move(data)
         elif opcode == SMSG_STANDSTATE_UPDATE:
             self.stand_state = data[0]
         elif opcode == SMSG_MAIL_LIST_RESULT:
@@ -566,6 +571,45 @@ class WorldClient:
             self._add_message(text)
         elif lang == -1:  # LANG_ADDON: what a client addon would get as CHAT_MSG_ADDON
             self.addon_messages.append(text)
+
+    def _on_monster_move(self, data):
+        """A creature gliding somewhere: its object takes the destination (and final facing) at
+        once, which is where it will be."""
+        r = Reader(data)
+        guid = r.packed_guid()
+        r.u8()
+        r.take(12)  # where it starts
+        r.u32()     # spline id
+        kind = r.u8()
+        facing = None
+        if kind == 1:  # stop
+            return
+        if kind == 2:
+            r.take(12)
+        elif kind == 3:
+            r.take(8)
+        elif kind == 4:
+            facing = struct.unpack("<f", r.take(4))[0]
+        flags = r.u32()
+        if flags & 0x00200000:  # animation
+            r.take(5)
+        r.u32()  # duration
+        if flags & 0x00000800:  # parabolic
+            r.take(8)
+        count = r.u32()
+        if count < 1:
+            return
+        if flags & (0x00002000 | 0x00040000):  # flying or catmull-rom: every point
+            points = [struct.unpack("<3f", r.take(12)) for _ in range(count)]
+            destination = points[-1]
+        else:
+            destination = struct.unpack("<3f", r.take(12))
+        with self.objects_lock:
+            obj = self.objects.get(guid)
+            if obj:
+                obj.x, obj.y, obj.z = destination
+                if facing is not None:
+                    obj.o = facing
 
     def _parse_gossip(self, data):
         r = Reader(data)
@@ -849,6 +893,16 @@ class WorldClient:
     def command(self, text, lang=LANG_COMMON, wait=1.5):
         self.log("  >> " + text)
         return self.say(text, lang, wait)
+
+    def addon_command(self, text, to, echo=1, wait=0.0):
+        """A command over AzerothCore's addon command channel, as the Player Housing addon sends
+        quick ones: an addon whisper to yourself, prefix AzerothCore, "i", a 4-character echo,
+        then the command without its dot. The answers come back as addon messages."""
+        message = "AzerothCore\ti%04d%s" % (echo % 10000, text)
+        body = struct.pack("<II", CHAT_MSG_WHISPER, LANG_ADDON) + to.encode() + b"\x00" + message.encode() + b"\x00"
+        self.send(CMSG_MESSAGECHAT, body)
+        if wait:
+            self.pump(wait)
 
     def find_objects(self, entry=None, type_id=None):
         with self.objects_lock:

@@ -40,6 +40,7 @@ local state = {
     ghostItem = 0,          -- the piece following you until you set it down (0: none)
     ghostMove = false,      -- moving pieces already placed (else placing a new one)
     ghosts = false,         -- see-through ghosts (else pieces are carried as they are)
+    ghostNote = "",         -- why the ghost isn't where the mouse points ("off your island")
 }
 
 -- Changing things: on your own island, or as a roommate on someone else's.
@@ -98,6 +99,30 @@ end
 
 local function Command(command)
     return function() PlayerHousing_Command(command) end
+end
+
+-- PlayerHousing.dll (client-dll/, started with PlayerHousingLauncher.exe) says where the mouse
+-- points in the world: then a piece being placed follows the mouse (Mouse.lua).
+local function HasMouse()
+    return type(PlayerHousing_CursorWorld) == "function"
+end
+
+-- Quick, quiet commands (where the mouse points, ten times a second): AzerothCore's addon
+-- command channel, which chat's flood limit doesn't count and which answers the addon, not
+-- the chat window.
+local fastCount = 0
+local function FastCommand(command)
+    if not known then
+        return
+    end
+    fastCount = fastCount % 9999 + 1
+    SendAddonMessage("AzerothCore", ("i%04dhouse %s"):format(fastCount, command), "WHISPER", UnitName("player"))
+end
+
+-- The server learns the addon is here, whether the House Key opens this window, and whether
+-- the mouse can place pieces.
+local function Register()
+    PlayerHousing_Command("addon 1 " .. (db.keyWindow == false and "0" or "1") .. (HasMouse() and " mouse" or ""))
 end
 
 ---------------------------------------------------------------------------------------------
@@ -288,11 +313,12 @@ local function OnState(fields)
     state.ghostItem = tonumber(fields[21] or "") or 0
     state.ghostMove = fields[22] == "move"
     state.ghosts = fields[23] == "1"
+    state.ghostNote = fields[24] or ""
     -- Once a session: the server learns the addon is here, and whether the House Key should
     -- open this window instead of the menu.
     if not registered and db then
         registered = true
-        PlayerHousing_Command("addon 1 " .. (db.keyWindow == false and "0" or "1"))
+        Register()
     end
     for _, hook in ipairs(stateHooks) do
         hook(state)
@@ -1134,6 +1160,8 @@ end
 PlayerHousingAPI = {
     state = state,
     Command = PlayerHousing_Command,
+    FastCommand = FastCommand,
+    HasMouse = HasMouse,
     CanEdit = CanEdit,
     Shift = Shift,
     PickUp = PickUp,
@@ -1213,7 +1241,7 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
         Print(db.framing and "previews use the second way of centering. /housing framing goes back." or "previews use the usual centering.")
     elseif message == "key" then
         db.keyWindow = db.keyWindow == false
-        PlayerHousing_Command("addon 1 " .. (db.keyWindow and "1" or "0"))
+        Register()
         Print(db.keyWindow and "the House Key opens this window." or "the House Key opens its menu.")
     else
         -- Anything else is a .house command: /housing undo, /housing rotate 90, ...

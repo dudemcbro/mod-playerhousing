@@ -740,6 +740,71 @@ def main():
         still = placement_of(owner_guid, CHAIR)
         check("Escape: the ghost goes and the piece stays", not ghosts_in_sight(owner) and still is not None
               and math.dist((still["x"], still["y"]), (chair["x"], chair["y"])) < 0.01, str(still))
+
+        # With PlayerHousing.dll the addon sends where the mouse points, ten times a second, over
+        # AzerothCore's addon command channel (quiet, and not counted as chat): the ghost shows
+        # there, faces out from a wall, and a click sets it down there.
+        me = args.owner_char
+        owner.command(".house addon 1 1 mouse")
+        msgs = owner.command(".house ghost move")
+        wait_for(lambda: ghosts_in_sight(owner), 3, owner)
+        check("with the DLL, the ghost follows the mouse", has(msgs, "follows your mouse"), joined(msgs))
+
+        def ghost_near(x, y):
+            found = ghosts_in_sight(owner)
+            return found[0] if len(found) == 1 and math.dist((found[0].x, found[0].y), (x, y)) < 0.1 else None
+
+        owner.addon_messages.clear()
+        mark = owner.message_mark()
+        spot = (chair["x"] + 3.0, chair["y"] - 1.0, chair["z"])
+        owner.addon_command("house ghost at %.2f %.2f %.2f" % spot, me, echo=7, wait=1.0)
+        wait_for(lambda: ghost_near(*spot[:2]), 3, owner)
+        ghost = ghost_near(*spot[:2])
+        check("the ghost goes where the mouse points; the channel answers the addon, not the chat", ghost is not None
+              and abs(ghost.z - spot[2]) < 0.1 and any(m.startswith("AzerothCore\to0007") for m in owner.addon_messages)
+              and not owner.messages_since(mark), "%s %s %s" % (ghosts_in_sight(owner), owner.addon_messages[-3:], owner.messages_since(mark)))
+
+        for index in range(12):
+            owner.addon_command("house ghost at %.2f %.2f %.2f" % (spot[0] + 0.1 * index, spot[1], spot[2]), me, echo=10 + index)
+            owner.pump(0.08)
+        wait_for(lambda: ghost_near(spot[0] + 1.1, spot[1]), 3, owner)
+        check("twelve points a second: it keeps up, and the last one counts", ghost_near(spot[0] + 1.1, spot[1]) is not None
+              and not owner.messages_since(mark), str(ghosts_in_sight(owner)))
+
+        wall = (chair["x"] + 2.0, chair["y"] + 2.0, chair["z"] + 1.5)
+        owner.addon_command("house ghost at %.2f %.2f %.2f 0 1 0" % wall, me, echo=30, wait=0.5)
+        wait_for(lambda: ghost_near(*wall[:2]) and angle_diff(ghost_near(*wall[:2]).o, math.pi / 2) < 0.02, 3, owner)
+        ghost = ghost_near(*wall[:2])
+        check("on a wall (the surface faces sideways) it faces out from it, where the mouse points", ghost is not None
+              and abs(ghost.z - wall[2]) < 0.1 and angle_diff(ghost.o, math.pi / 2) < 0.02, str(ghosts_in_sight(owner)))
+        owner.command(".house ghost adjust 0 0 0 90")
+        wait_for(lambda: ghost_near(*wall[:2]) and angle_diff(ghost_near(*wall[:2]).o, math.pi) < 0.02, 3, owner)
+        ghost = ghost_near(*wall[:2])
+        check("the wheel turns it on the wall too", ghost is not None and angle_diff(ghost.o, math.pi) < 0.02, str(ghosts_in_sight(owner)))
+
+        owner.addon_messages.clear()
+        owner.addon_command("house ghost at %.2f %.2f %.2f" % (spot[0] + 500, spot[1], spot[2]), me, echo=40, wait=1.0)
+        state = addon_state(owner)
+        check("too far off: it stays, and the addon hears why", state is not None and len(state) > 24 and "too far" in state[24].lower()
+              and ghost_near(*wall[:2]) is not None, str(state and state[20:]))
+        owner.addon_messages.clear()
+        owner.addon_command("house ghost at %.2f %.2f %.2f" % (chair["x"], chair["y"], chair["z"] + 0.5), me, echo=41, wait=1.0)
+        wait_for(lambda: ghost_near(chair["x"], chair["y"]), 3, owner)
+        ghost = ghost_near(chair["x"], chair["y"])
+        state = addon_state(owner)
+        check("pointing at the piece being moved (still standing there) puts it where that stands, not on top of itself",
+              ghost is not None and abs(ghost.z - chair["z"]) < 0.1 and state is not None and state[24] == "",
+              "%s %s" % (ghosts_in_sight(owner), state and state[20:]))
+
+        owner.addon_command("house ghost at %.2f %.2f %.2f 0 0 1" % spot, me, echo=60, wait=0.5)
+        msgs = owner.command(".house ghost place")
+        moved = placement_of(owner_guid, CHAIR)
+        wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
+        check("a click sets it down where the mouse points, turned as before (the wall's turn stays with the wall)", moved is not None
+              and math.dist((moved["x"], moved["y"]), spot[:2]) < 0.1 and abs(moved["z"] - spot[2]) < 0.1
+              and angle_diff(moved["o"], chair["o"]) < 0.02, joined(msgs) + " %s -> %s" % (chair, moved))
+        owner.command(".house undo")
+        owner.command(".house addon 1 1")
         move(owner, chair["x"] - 2.0, chair["y"], chair["z"], 0.0)
         owner.command(".house select %d" % chair["id"])
 
@@ -1324,20 +1389,21 @@ def main():
     check("undo puts the building and the chair back", placement_of(owner_guid, FARMHOUSE) is not None and placement_of(owner_guid, CHAIR) is not None
           and placement_of(owner_guid, LANTERN) is not None and placement_of(owner_guid, TABLE) is not None, joined(msgs))
 
-    # Moving a building: carried as it is (a building can't be see-through), and what's inside
-    # comes along.
+    # Moving a building: a see-through block its size (a creature can't show the building
+    # itself), and what's inside comes along as see-through ghosts.
     house = placement_of(owner_guid, FARMHOUSE)
     inside = placement_of(owner_guid, CHAIR)
     facing = math.atan2(house["y"] - L["farmhouse_stand"][1], house["x"] - L["farmhouse_stand"][0])
     move(owner, L["farmhouse_stand"][0], L["farmhouse_stand"][1], L["ground"], facing)
     msgs = owner.command(".house ghost move %d" % house["id"])
-    wait_for(lambda: len([o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]) == 2, 3, owner)
-    carried = [o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]
-    wait_for(lambda: len(ghosts_in_sight(owner)) == 2, 3, owner)
+    wait_for(lambda: len(ghosts_in_sight(owner)) == 3, 3, owner)
+    buildings = [o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]
     displays = sorted(o.fields.get(UNIT_FIELD_DISPLAYID) for o in ghosts_in_sight(owner))
-    check("a building is carried as it is, the chair and lantern inside as see-through ghosts", len(carried) == 2
-          and displays == sorted([ghost_display(CHAIR), ghost_display(LANTERN)]) and has(msgs, "3 pieces follow you"),
-          joined(msgs) + " %s %s" % (carried, displays))
+    block = next((o for o in ghosts_in_sight(owner) if o.fields.get(UNIT_FIELD_DISPLAYID) == ghost_display(FARMHOUSE)), None)
+    check("a building shows as a see-through block its size, the chair and lantern inside as see-through ghosts", len(buildings) == 1
+          and displays == sorted([ghost_display(FARMHOUSE), ghost_display(CHAIR), ghost_display(LANTERN)]) and has(msgs, "3 pieces follow you")
+          and block is not None and abs(block.scale() - buildings[0].scale()) < 0.01,
+          joined(msgs) + " %s %s %s" % (buildings, displays, block and (block.scale(), buildings and buildings[0].scale())))
     owner.command(".house ghost adjust 0 2 0 0")
     msgs = owner.command(".house ghost place")
     moved_house, moved_chair = placement_of(owner_guid, FARMHOUSE), placement_of(owner_guid, CHAIR)

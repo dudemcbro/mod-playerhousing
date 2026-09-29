@@ -113,6 +113,18 @@ local now = 0
 function GetTime() return now end
 local cursorX, cursorY = 0, 0
 function GetCursorPosition() return cursorX, cursorY end
+-- The world's view, the mouse over it, and the addon messages sent (Mouse.lua).
+WorldFrame = CreateFrame("Frame", "WorldFrame")
+function WorldFrame:GetLeft() return 0 end
+function WorldFrame:GetBottom() return 0 end
+function WorldFrame:GetWidth() return 1000 end
+function WorldFrame:GetHeight() return 750 end
+function WorldFrame:GetEffectiveScale() return 1 end
+local mouseFocus, mouseButtons, addonSent = nil, {}, {}
+function GetMouseFocus() return mouseFocus end
+function IsMouselooking() return false end
+function IsMouseButtonDown(button) return mouseButtons[button] or false end
+function SendAddonMessage(prefix, message, channel, target) addonSent[#addonSent + 1] = { prefix, message, channel, target } end
 function IsAltKeyDown() return false end
 local zoomed = 0
 function CameraZoomIn() zoomed = zoomed + 1 end
@@ -393,6 +405,103 @@ IsShiftKeyDown = function() return false end
 -- Set down: the keys and the banner go.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t0\t\t1", "WHISPER", "Krookowner")
 assert(next(overrides) == nil and not PlayerHousingEditHud:IsShown(), "keys and banner gone after the ghost")
+
+-- With PlayerHousing.dll: the piece follows the mouse over the world (points go quietly over
+-- AzerothCore's addon command channel), and a click on the world sets it down.
+local pointed = { 16210.5, 16255.25, 12, 0, 0, 1 }
+local asked
+PlayerHousing_CursorWorld = function(fx, fy) asked = { fx, fy }; return unpack(pointed) end
+SlashCmdList.PLAYERHOUSING("key")
+SlashCmdList.PLAYERHOUSING("key")
+assert(last() == ".house addon 1 1 mouse", "the server hears about the mouse: " .. last())
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t", "WHISPER", "Krookowner")
+assert(PlayerHousingEditHudHelp.text:find("follows your mouse"), PlayerHousingEditHudHelp.text)
+local mouse = PlayerHousingMouse
+local function tick(seconds) now = now + seconds; mouse.scripts.OnUpdate(mouse, seconds) end
+local function lastAddon() return addonSent[#addonSent] end
+mouseFocus = WorldFrame
+cursorX, cursorY = 250, 600
+tick(0.1)
+assert(#addonSent == 1 and lastAddon()[1] == "AzerothCore" and lastAddon()[3] == "WHISPER" and lastAddon()[4] == "Krookowner"
+  and lastAddon()[2]:match("^i%d%d%d%dhouse ghost at 16210%.50 16255%.25 12%.00 0%.00 0%.00 1%.00$"), tostring(lastAddon() and lastAddon()[2]))
+assert(asked[1] == 0.25 and asked[2] == 0.8, "the mouse as a fraction of the view: " .. asked[1] .. " " .. asked[2])
+tick(0.1)
+assert(#addonSent == 1, "the same spot isn't sent again")
+pointed[1] = 16210.52
+tick(0.1)
+assert(#addonSent == 1, "a hair's move isn't sent")
+pointed[1] = 16212
+tick(0.05)
+assert(#addonSent == 1, "not before a tenth of a second")
+tick(0.05)
+assert(#addonSent == 2 and lastAddon()[2]:find("ghost at 16212%.00"), lastAddon()[2])
+-- Over the window, or with a button held (turning the camera): it waits.
+mouseFocus = PlayerHousingFrame
+pointed[1] = 16215
+tick(0.2)
+assert(#addonSent == 2, "the mouse over the window moves nothing")
+mouseFocus = WorldFrame
+mouseButtons.RightButton = true
+tick(0.2)
+assert(#addonSent == 2, "right button held: the camera turns, the piece waits")
+mouseButtons.RightButton = nil
+-- A click on the world: sent there, and set down.
+local before = #sent
+mouseButtons.LeftButton = true
+tick(0.1)
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(#sent == before + 1 and last() == ".house ghost place" and lastAddon()[2]:find("ghost at 16215%.00"), last() .. " " .. lastAddon()[2])
+assert(PlayerHousingEditHudLast.text:find("Click"), tostring(PlayerHousingEditHudLast.text))
+IsShiftKeyDown = function() return true end
+mouseButtons.LeftButton = true
+tick(0.1)
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(last() == ".house ghost place another", "Shift-click: " .. last())
+IsShiftKeyDown = function() return false end
+-- A long press, or one that turned the camera, is a drag: nothing set down.
+before = #sent
+mouseButtons.LeftButton = true
+tick(0.1)
+tick(0.5)
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(#sent == before, "a long press isn't a click: " .. last())
+mouseButtons.LeftButton = true
+tick(0.1)
+pointed[1] = 16230
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(#sent == before, "the camera turned: not a click")
+-- A click on the window's buttons is theirs.
+mouseFocus = PlayerHousingFrame
+mouseButtons.LeftButton = true
+tick(0.1)
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(#sent == before, "a click on the window isn't one on the world")
+-- The server says why it stopped following (off the island): the banner shows it.
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\tThat spot is off your island.", "WHISPER", "Krookowner")
+assert(PlayerHousingEditHudLast.text:find("off your island"), tostring(PlayerHousingEditHudLast.text))
+-- Moving: Shift-click just sets it down.
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST:gsub("\tnew\t", "\tmove\t") .. "\t", "WHISPER", "Krookowner")
+mouseFocus = WorldFrame
+IsShiftKeyDown = function() return true end
+mouseButtons.LeftButton = true
+tick(0.1)
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(last() == ".house ghost place", "Shift-click on a moved piece: " .. last())
+IsShiftKeyDown = function() return false end
+-- No ghost: the mouse sends nothing.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t0\t\t1\t", "WHISPER", "Krookowner")
+local sentBefore = #addonSent
+pointed[1] = 16240
+tick(0.5)
+assert(#addonSent == sentBefore, "no ghost, no points")
+PlayerHousing_CursorWorld = nil
+mouseFocus = nil
 
 -- Edit mode: the server says so, and the keys come on.
 local function click(name, down) _G[name].scripts.OnClick(_G[name], "LeftButton", down) end

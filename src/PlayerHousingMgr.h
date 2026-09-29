@@ -463,7 +463,8 @@ public:
 
     // ---- ghosts (HousingGhosts.cpp): a piece that follows its player until it's set down.
     // Furniture shows as a see-through copy of itself (a creature with its model, from the
-    // client patch); buildings, and any piece without a ghost model, are carried as they are.
+    // client patch), a building as a see-through block its size; any piece without a ghost
+    // model is carried as it is.
     // A new piece from the bags or House Storage (or a new copy from the Collection); with
     // copyOf, it takes after that placed piece (turn, size, tilt).
     bool StartGhostNew(Player* player, uint32 itemEntry, uint32 copyOf, std::string& reason);
@@ -471,6 +472,12 @@ public:
     bool StartGhostMove(Player* player, uint32 placementId, std::string& reason);
     // Farther (forward), to the left, up, and turned (degrees), from where the player faces.
     bool AdjustGhost(Player* player, float forward, float left, float up, float degrees, std::string& reason);
+    // Shown at a point in the world from now on: where the mouse points (the addon with
+    // PlayerHousing.dll sends it a few times a second). facing: which way the surface there
+    // faces (x, y, z), or null; on a wall, the piece faces out from it.
+    bool GhostAt(Player* player, float x, float y, float z, float const* facing, std::string& reason);
+    // Why the ghost isn't where the mouse points ("off your island"), or empty.
+    std::string GetGhostNote(Player const* player) const;
     // Sets it down where it's shown; another: then a new one of the same, if there is one.
     bool PlaceGhost(Player* player, bool another, std::string& reason);
     void CancelGhost(Player* player);
@@ -483,9 +490,11 @@ public:
     void SendAddon(Player* player, std::string const& text) const;
     // A list for one of the window's tabs: collection, placed, layouts, guests, visits, island.
     bool SendAddonData(Player* player, std::string const& kind, std::string const& argument, std::string& reason);
-    // The addon says it's there; with keyOpensWindow the House Key opens its window instead of the menu.
-    void SetAddonClient(Player* player, bool keyOpensWindow);
+    // The addon says it's there; with keyOpensWindow the House Key opens its window instead of the
+    // menu; with mouse, PlayerHousing.dll is there too (ghosts follow the mouse).
+    void SetAddonClient(Player* player, bool keyOpensWindow, bool mouse);
     bool KeyOpensWindow(Player const* player) const;
+    bool HasMouse(Player const* player) const;
     // count: at most that many (0: all of that piece).
     bool TakeFromStorageCommand(Player* player, std::string const& what, uint32 count, std::string& reason);
     void MarkAllSeen(Player* player) const;
@@ -630,6 +639,7 @@ public:
     bool CommandFlood(Player* player);
     // Edit mode's moves come in quick runs and have a window of their own.
     bool ShiftFlood(Player* player);
+    bool PointFlood(Player* player);  // where the mouse points: up to 25 a second
     // Messages to another player (invites, likes, roommate news): each kind not over and over.
     enum Notice : uint8
     {
@@ -882,7 +892,18 @@ private:
         uint32 updatedMs{0};
         float floorZ{0.0f};     // the floor the player stands on, kept while they jump
         bool floorRaised{false};  // above the ground: a building's floor
+        // Following the mouse instead: the point it shows at (what the mouse points at).
+        bool atPoint{false};
+        float pointX{0.0f};
+        float pointY{0.0f};
+        float pointZ{0.0f};
+        bool onWall{false};     // the point is on a wall: the piece faces out from it
+        float wallO{0.0f};
+        float wallTurn{0.0f};   // the player's own turn, on top of the wall's
+        std::string note;       // why the last point wasn't taken (for the addon), or empty
     };
+    // Which way the lead faces now: its own turn, or out from the wall it's on.
+    static float GhostFacing(Ghost const& ghost);
     uint32 GhostDisplayFor(uint32 itemEntry) const;
     uint32 SolidDisplayFor(Housing::PieceDefinition const& piece) const;
     // One in the bags (not counting one a placement still uses) or in House Storage.
@@ -961,9 +982,11 @@ private:
     };
     std::unordered_map<ObjectGuid, CommandWindow> _commandWindows;
     std::unordered_map<ObjectGuid, CommandWindow> _shiftWindows;
+    std::unordered_map<ObjectGuid, CommandWindow> _pointWindows;
     std::unordered_set<ObjectGuid> _editMode;  // asked for edit mode; it holds while they decorate here
     std::unordered_set<ObjectGuid> _groupHold;  // the addon says Ctrl is down: clicks add to the group
     std::unordered_map<ObjectGuid, bool> _addonClients;  // has the addon -> the House Key opens its window
+    std::unordered_set<ObjectGuid> _mouseClients;        // has PlayerHousing.dll: ghosts follow the mouse
     mutable std::unordered_set<ObjectGuid::LowType> _knownHouses;  // have a house row (EnsureHouse); until logout
     mutable std::unordered_map<ObjectGuid::LowType, float> _gridSizes;  // read once a login: the addon's state has it
     void SendAddonRows(Player* player, std::string const& kind, std::string const& label, std::vector<std::string> const& parts) const;

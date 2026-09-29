@@ -39,15 +39,16 @@ above Krook's menu, so skipping them costs nothing.
 
 ### Placing things
 
-With the client addon (below), click a piece in the Collection (or Place next to it): it
-follows you as a see-through ghost, a couple of yards ahead (a building comes along as it
-is). Walk it where it goes. The arrow keys push it farther or nearer and to the sides, the
-mouse wheel turns it, Ctrl+wheel (or Page Up and Page Down) raises and lowers it, and it
-sits on a table top it's over. G sets it down (Shift+G: then another of the same), Escape
-puts it back. Nothing is used until it's set down: it comes from your bags, House Storage,
-or a new copy from the Collection. The client can't tell anyone where the mouse points in
-the world, so the ghost follows you rather than the cursor: raise it and push it out to hang
-something on a wall or up under a roof.
+With the client addon (below), click a piece in the Collection (or Place next to it): a
+see-through ghost of it appears (a building shows as a see-through block its size). With
+[PlayerHousing.dll](client-dll/README.md) the ghost follows your mouse over the world: on the
+floor, on a table top, or on a wall facing out, and a click sets it down there (Shift-click:
+then another of the same). Without the DLL the game can't say where the mouse points, so the
+ghost follows you instead, a couple of yards ahead: walk it where it goes, and the arrow keys
+push it farther or nearer and to the sides. Either way the mouse wheel turns it, Ctrl+wheel
+(or Page Up and Page Down) raises and lowers it, G sets it down (Shift+G: then another), and
+Escape puts it back. Nothing is used until it's set down: it comes from your bags, House
+Storage, or a new copy from the Collection.
 
 Without the addon:
 
@@ -243,6 +244,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house ghost <item>` | A new piece follows you as a ghost, from your bags, House Storage or the Collection |
 | `.house ghost move [id]` | The piece (or the selection) follows you as a ghost, what's on it too |
 | `.house ghost adjust <forward> <left> <up> <degrees>` | Push the ghost farther, to the side, up, or turn it |
+| `.house ghost at <x> <y> <z> [<nx> <ny> <nz>]` | Show the ghost at that point (where the mouse points; the addon sends it with PlayerHousing.dll) |
 | `.house ghost place [another]`, `ghost cancel` | Set it down (then another of the same), or never mind |
 | `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
 | `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
@@ -379,15 +381,19 @@ undo step. The keys are only bound in edit mode, so the usual ones come back aft
 bindings can't change in combat, so they wait for it to end. The client can't slide a game
 object, so each step redraws the piece.
 
-**Ghosts**: a piece being placed or moved follows you, in or out of edit mode, until you set
-it down. Furniture is a see-through copy of itself that glides along; a building comes as it
-is, redrawn a few times a second (the client can't draw a building see-through). The banner
-says Placing or Moving and has Set it down, And another and Never mind buttons.
+**Ghosts**: a piece being placed or moved follows you (or your mouse, with
+[PlayerHousing.dll](client-dll/README.md)), in or out of edit mode, until you set it down.
+Furniture is a see-through copy of itself that glides along; a building is a see-through
+block its size (the client can't draw a building see-through), with whatever is inside it
+coming along as ghosts too. The banner says Placing or Moving and has Set it down, And
+another and Never mind buttons.
 
 | Key | Does |
 | --- | --- |
-| Walk, turn | It comes along, the same distance ahead |
-| Up, Down arrows | Farther, nearer |
+| Move the mouse (with the DLL) | It follows the cursor: floor, table top, or a wall, facing out |
+| Click, Shift-click (with the DLL) | Set it down there; Shift: then another of the same |
+| Walk, turn (without the DLL) | It comes along, the same distance ahead |
+| Up, Down arrows | Farther, nearer (with the DLL: nudge it from where the mouse put it) |
 | Left, Right arrows | To the side |
 | Mouse wheel | Turn it |
 | Page Up, Page Down, Ctrl+wheel | Raise, lower (on a wall, under a roof) |
@@ -397,9 +403,9 @@ says Placing or Moving and has Set it down, And another and Never mind buttons.
 | Escape | Never mind: a new piece stays in your bags, a moved one where it was |
 
 It lands on the grid when the grid is on, and stands on a table top it's over (held higher,
-it floats). The see-through ghosts need the client patch (see Install) from this version:
-without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as it is
-instead.
+it floats). The see-through ghosts and blocks need the client patch (see Install) from this
+version: without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as
+it is instead.
 
 The window opens by itself when you arrive home (`/housing auto` turns that off).
 `/housing` shows or hides it, and `/housing <command>` runs any `.house` command. A button
@@ -465,10 +471,14 @@ the script again (it only needs a moment) to use yours.
    It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
    the server data (collision and pathing without the hall, one script) and a client patch
    every player installs once. The same patch gives the housing items their bag icons
-   (without it they show as question marks) and adds the ghosts' see-through models (a
-   patch from before ghosts needs building again). To keep the hall instead, set
+   (without it they show as question marks) and adds the ghosts' see-through models and the
+   buildings' see-through blocks (a patch from before those needs building again). To keep
+   the hall instead, set
    `PlayerHousing.Layout = "guildhouse"`; players then build the patch with `--icons-only`.
 5. Restart the worldserver.
+6. Optional, for each player: [PlayerHousing.dll](client-dll/README.md) (copy two files next
+   to Wow.exe and start the game with the launcher) lets a piece being placed follow the
+   mouse, and a click set it down.
 
 ## Configuration
 
@@ -561,8 +571,18 @@ fits, since players already see and track those.
   the content builder writes for the server (`creaturemodeldata_dbc`,
   `creaturedisplayinfo_dbc`) and the client patch adds to the client. It glides with a
   movement spline, its facing held. Figurines and the mannequin get a see-through copy of
-  their creature's display. Buildings, and pieces whose model has no ghost, are carried as
-  game objects, put down again in the new spot at most four times a second.
+  their creature's display. A building's ghost is a see-through block: a model the client
+  patch writes for each building (`tools/gm-island-cleared/make_ghost_blocks.py`, a box from
+  the building's outline and height, with one shared texture), under the same display
+  numbers. Pieces whose model has no ghost are carried as game objects, put down again in the
+  new spot at most four times a second. With PlayerHousing.dll the addon sends where the
+  mouse points (`.house ghost at x y z [facing]`) up to ten times a second over AzerothCore's
+  addon command channel (prefix `AzerothCore`), which chat's flood limit doesn't count and
+  which answers the addon rather than the chat window; the server keeps its own limit of 25
+  a second. The ghost then shows at that point instead of ahead of the player: on the table
+  top there when the point is on one, and turned to face out when the surface there is a
+  wall. A point on one of the pieces being moved (still standing where it was) counts as
+  what that stands on.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. Each player has
   their own list, in memory, cleared when they leave the island. A step only applies to

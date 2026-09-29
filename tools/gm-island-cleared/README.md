@@ -90,6 +90,15 @@ copies of the two files. The server has the same rows in its world database. On 
 whose players keep an older patch, `PlayerHousing.Ghosts = 0` carries pieces as they are
 instead.
 
+A building can't be a creature's model (it's a world model), so its ghost is a see-through
+block its size instead: `make_ghost_blocks.py` writes a small model for each building from
+the `ghostblock` lines of `client_items.tsv` (a box from its outline and height, in its own
+units, with the building's origin), their skins, and one shared texture (pale blue, with a
+brighter edge so each side shows its outline). They go in the patch under
+`World\PlayerHousing\`, and the building's ghost display uses them. The models were checked
+by reading them back with [pywowlib](https://github.com/wowdev/pywowlib) (WotLK's version
+264) and the texture with Pillow.
+
 `adt_sink_wmo.py` and the MPQ packing were checked against a synthetic tile (only the
 hall's placement changes, the file keeps its size, and the entry is found by the client's
 backslash path), and the whole patch was since built from a real client and checked in

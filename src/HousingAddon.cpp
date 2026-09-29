@@ -77,10 +77,20 @@ void PlayerHousingMgr::SendAddonRows(Player* player, std::string const& kind, st
         SendAddon(player, "row\t" + kind + "\t" + label + "\t" + row);
 }
 
-void PlayerHousingMgr::SetAddonClient(Player* player, bool keyOpensWindow)
+void PlayerHousingMgr::SetAddonClient(Player* player, bool keyOpensWindow, bool mouse)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     _addonClients[player->GetGUID()] = keyOpensWindow;
+    if (mouse)
+        _mouseClients.insert(player->GetGUID());
+    else
+        _mouseClients.erase(player->GetGUID());
+}
+
+bool PlayerHousingMgr::HasMouse(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    return _mouseClients.count(player->GetGUID()) > 0;
 }
 
 bool PlayerHousingMgr::KeyOpensWindow(Player const* player) const
