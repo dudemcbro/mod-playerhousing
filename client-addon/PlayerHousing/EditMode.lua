@@ -2,7 +2,8 @@
 -- then: arrows slide it, the mouse wheel turns it, Ctrl+wheel and Page Up and Page Down raise
 -- and lower it, Shift makes any of those finer, R makes the plain wheel raise instead, G
 -- moves it with the targeting circle, Delete picks it up, Ctrl+Z and Ctrl+Y undo and redo,
--- Escape leaves edit mode. The banner says what each key just did.
+-- Escape leaves edit mode. The banner says what each key just did. Ctrl-click more pieces to
+-- move them all together (the server hears when Ctrl goes down and up, while decorating).
 --
 -- The keys are override bindings, active only in edit mode, so the usual ones come back
 -- afterwards. Bindings can't change in combat; they wait for it to end.
@@ -14,6 +15,8 @@ local owner = CreateFrame("Frame", "PlayerHousingEditKeys", UIParent)
 local bound = false
 local held = {}   -- action -> { next = time of the next step, stop = time it gives up }
 local hud, hudName, hudHelp, hudLast, gridButton, wheelButton, undoButton, redoButton
+local groupHudButtons = {}
+local ctrlSent = false      -- what the server last heard about Ctrl
 local wheelRaises = false   -- R: the plain wheel raises and lowers instead of turning
 local lastShown = 0         -- when the banner's last line was set
 local GRID_SIZES = { 0, 0.25, 0.5, 1, 2 }
@@ -136,7 +139,7 @@ local ONCE = {
     end,
     PickUp = function()
         API.PickUp(false)
-        Feedback("Delete", "pick up")
+        Feedback("Delete", API.state.groupSize > 1 and ("pick up the %d selected pieces"):format(API.state.groupSize) or "pick up")
     end,
     Undo = function()
         API.Command("undo")
@@ -184,6 +187,13 @@ end
 
 owner:SetScript("OnUpdate", function(self, elapsed)
     local now = GetTime()
+    -- While decorating, Ctrl down means a click adds the piece to the selection (or takes it
+    -- out): the click itself reaches the server without the key.
+    local ctrl = API.state.decorating and API.CanEdit() and IsControlKeyDown() and true or false
+    if ctrl ~= ctrlSent then
+        ctrlSent = ctrl
+        API.Command(ctrl and "group hold on" or "group hold off")
+    end
     if hudLast and lastShown > 0 and now - lastShown > 6 then
         hudLast:SetText("")
         lastShown = 0
@@ -217,7 +227,7 @@ end
 local function CreateHud()
     hud = CreateFrame("Frame", "PlayerHousingEditHud", UIParent)
     hud:SetWidth(470)
-    hud:SetHeight(114)
+    hud:SetHeight(138)
     hud:EnableMouse(true)
     hud:SetPoint("TOP", UIParent, "TOP", 0, -96)
     hud:SetFrameStrata("HIGH")
@@ -254,12 +264,43 @@ local function CreateHud()
     wheelButton = HudButton("Wheel", "Wheel: turn", 96, function() SetWheelRaises(not wheelRaises) end, "What the wheel does",
         "Turn the piece, or raise and lower it (R does this too). Ctrl+wheel always raises and lowers.")
     wheelButton:SetPoint("LEFT", gridButton, "RIGHT", 4, 0)
-    undoButton = HudButton("Undo", "Undo", 80, ONCE.Undo, "Undo", "Ctrl+Z")
+    undoButton = HudButton("Undo", "Undo", 80, function(self, mouseButton)
+        if mouseButton == "RightButton" and API.ShowHistory then
+            API.ShowHistory(self)
+        else
+            ONCE.Undo()
+        end
+    end, "Undo", "Ctrl+Z. Right-click: the last changes, to undo back to any of them.")
+    undoButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     undoButton:SetPoint("LEFT", wheelButton, "RIGHT", 4, 0)
     redoButton = HudButton("Redo", "Redo", 80, ONCE.Redo, "Redo", "Ctrl+Y")
     redoButton:SetPoint("LEFT", undoButton, "RIGHT", 4, 0)
     local done = HudButton("Done", "Done", 80, function() API.Command("edit off") end, "Done", "Leaves edit mode. Escape does too.")
     done:SetPoint("LEFT", redoButton, "RIGHT", 4, 0)
+
+    -- Rows, and several pieces at once: Ctrl-click them first.
+    local specs = {
+        { "Row", "Row...", 1, function() if API.ShowRowDialog then API.ShowRowDialog() end end, "A row of copies",
+          "Copies of the selected piece in a straight row: how many, how far apart, which way." },
+        { "Height", "Height", 2, function() API.Command("match height") end, "Same height", "The others go to the first piece's height." },
+        { "Turn", "Turn", 2, function() API.Command("match turn") end, "Same turn", "The others turn the way the first piece faces." },
+        { "Line", "Line up", 2, function() API.Command("match line") end, "Line up", "A straight row across your view, through the first piece." },
+        { "Space", "Space", 3, function() API.Command("match space") end, "Space evenly", "Spread out evenly between the two at the ends." },
+        { "Set", "Save set", 1, function() StaticPopup_Show("PLAYERHOUSING_SAVE_SET") end, "Save as a set",
+          "The selected pieces and what stands on them, to set down anywhere (Layouts tab, Sets)." },
+    }
+    local previous
+    for index, spec in ipairs(specs) do
+        local button = HudButton(spec[1], spec[2], 72, spec[4], spec[5], spec[6])
+        if previous then
+            button:SetPoint("LEFT", previous, "RIGHT", 3, 0)
+        else
+            button:SetPoint("TOPLEFT", 10, -110)
+        end
+        button.needs = spec[3]
+        groupHudButtons[index] = button
+        previous = button
+    end
     hud:Hide()
 end
 
@@ -269,7 +310,9 @@ function UpdateHud()
         hud:Hide()
         return
     end
-    if state.selected > 0 then
+    if state.selected > 0 and state.groupSize > 1 then
+        hudName:SetText(("%s and %d more"):format(state.selectedName, state.groupSize - 1))
+    elseif state.selected > 0 then
         hudName:SetText(state.selectedName)
     else
         hudName:SetText("|cffa0a0a0Right-click a piece, or press Tab|r")
@@ -278,7 +321,10 @@ function UpdateHud()
         "   Ctrl+wheel, Page Up/Down: raise, lower   Shift: finer\n" ..
         "Tab: next piece   G: move it with the mouse   R: " .. (wheelRaises and "wheel turns" or "wheel raises") ..
         "   Delete: pick up\n" ..
-        "Ctrl+Z/Y: undo, redo   Alt+wheel: zoom   Escape: done")
+        "Ctrl-click: more pieces   Ctrl+Z/Y: undo, redo   Alt+wheel: zoom   Escape: done")
+    for _, button in ipairs(groupHudButtons) do
+        if state.selected > 0 and math.max(state.groupSize, 1) >= button.needs then button:Enable() else button:Disable() end
+    end
     gridButton:SetText(state.grid > 0 and ("Grid: " .. state.grid .. " yd") or "Grid: off")
     wheelButton:SetText(wheelRaises and "Wheel: raise" or "Wheel: turn")
     if state.undo ~= "" then undoButton:Enable() else undoButton:Disable() end

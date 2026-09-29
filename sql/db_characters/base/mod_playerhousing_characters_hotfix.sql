@@ -267,3 +267,58 @@ SET @ph_stmt = (
 PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `door_set` tinyint unsigned NOT NULL DEFAULT 0 AFTER `last_home`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'door_set'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `door_x` float NOT NULL DEFAULT 0 AFTER `door_set`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'door_x'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `door_y` float NOT NULL DEFAULT 0 AFTER `door_x`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'door_y'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `door_z` float NOT NULL DEFAULT 0 AFTER `door_y`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'door_z'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_house` ADD COLUMN `door_o` float NOT NULL DEFAULT 0 AFTER `door_z`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_house' AND column_name = 'door_o'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;

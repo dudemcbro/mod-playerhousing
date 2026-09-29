@@ -20,6 +20,9 @@ namespace
 {
     constexpr size_t ROW_LIMIT = 200;   // characters of list data in one row
     constexpr size_t PLACED_ROWS = 250;
+    constexpr size_t RECENT_PIECES = 12;
+    constexpr uint32 HISTORY_ROWS = 15;
+    constexpr uint32 GUESTBOOK_ROWS = 30;
 
     std::string Clean(std::string text)
     {
@@ -50,8 +53,10 @@ void PlayerHousingMgr::SendAddon(Player* player, std::string const& text) const
     if (!player || !player->GetSession() || player->GetSession()->IsBot())
         return;
 
+    // A whisper to themselves, always the plain kind: for a GM in GM mode the core would send
+    // the GM variant, which the test client (and, it may be, some addons) doesn't read.
     WorldPacket data;
-    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, "HOUSING\t" + text);
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player->GetGUID(), player->GetGUID(), "HOUSING\t" + text, 0);
     player->SendDirectMessage(&data);
 }
 
@@ -123,6 +128,22 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
             } while (result->NextRow());
         }
         SendAddonRows(player, "collection", "placed", placed);
+
+        // The last pieces placed on the player's island, newest first.
+        std::vector<std::string> recent;
+        if (QueryResult result = CharacterDatabase.Query(
+                "SELECT source_item_entry FROM mod_playerhousing_placement WHERE owner_guid={} AND map_id={} ORDER BY placement_id DESC LIMIT 80",
+                self, _layout.mapId))
+        {
+            std::set<uint32> seen;
+            do
+            {
+                uint32 itemEntry = (*result)[0].Get<uint32>();
+                if (itemEntry && seen.insert(itemEntry).second)
+                    recent.push_back(std::to_string(itemEntry));
+            } while (result->NextRow() && recent.size() < RECENT_PIECES);
+        }
+        SendAddonRows(player, "collection", "recent", recent);
         SendAddon(player, "end\tcollection");
         return true;
     }
@@ -179,8 +200,9 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
         HouseRecord house;
         GetHouseRecord(self, house);
         SendAddon(player, "begin\tisland");
-        SendAddon(player, Acore::StringFormat("row\tisland\tsettings\t{}\t{}\t{}\t{}\t{}\t{}\t{}", house.privacy, house.weather, house.timeOfDay,
-            house.music, HasMusicBox(self) ? 1 : 0, CountLikes(self), CountVisitorsThisWeek(self)));
+        SendAddon(player, Acore::StringFormat("row\tisland\tsettings\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", house.privacy, house.weather,
+            house.timeOfDay, house.music, HasMusicBox(self) ? 1 : 0, CountLikes(self), CountVisitorsThisWeek(self), house.hasDoor ? 1 : 0,
+            CountNewNotes(self)));
         SendAddon(player, "row\tisland\tgreeting\t" + Clean(house.greeting));
         for (uint8 i = 0; i < WeatherCount(); ++i)
             SendAddon(player, Acore::StringFormat("row\tisland\tweather\t{}\t{}", i, WeatherName(i)));
@@ -192,21 +214,55 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
         return true;
     }
 
-    reason = "Usage: .house data <collection|placed|layouts|guests|visits <list>|island>";
+    if (kind == "history")
+    {
+        // Undo and redo, newest first: the addon's list under its Undo button.
+        SendAddon(player, "begin\thistory");
+        for (std::string const& label : JournalLabels(player, false, HISTORY_ROWS))
+            SendAddon(player, "row\thistory\tundo\t" + Clean(label));
+        for (std::string const& label : JournalLabels(player, true, HISTORY_ROWS))
+            SendAddon(player, "row\thistory\tredo\t" + Clean(label));
+        SendAddon(player, "end\thistory");
+        return true;
+    }
+
+    if (kind == "sets")
+    {
+        SendAddon(player, "begin\tsets");
+        SendAddon(player, Acore::StringFormat("row\tsets\tlimit\t{}", GetMaxSavedSets()));
+        for (SavedSet const& set : GetSavedSets(self))
+            SendAddon(player, Acore::StringFormat("row\tsets\tset\t{}\t{}\t{}\t{}", set.id, Clean(set.name), set.pieces, set.savedAt));
+        SendAddon(player, "end\tsets");
+        return true;
+    }
+
+    if (kind == "guestbook")
+    {
+        // The owner reading it marks the notes read.
+        SendAddon(player, "begin\tguestbook");
+        for (GuestbookNote const& note : GetGuestbook(self, GUESTBOOK_ROWS))
+            SendAddon(player, Acore::StringFormat("row\tguestbook\tnote\t{}\t{}\t{}\t{}\t{}", note.id, Clean(note.author), note.when,
+                note.fresh ? 1 : 0, Clean(note.text)));
+        SendAddon(player, "end\tguestbook");
+        MarkGuestbookRead(self);
+        return true;
+    }
+
+    reason = "Usage: .house data <collection|placed|layouts|guests|visits <list>|island|history|sets|guestbook>";
     return false;
 }
 
-bool PlayerHousingMgr::TakeFromStorageCommand(Player* player, std::string const& what, std::string& reason)
+bool PlayerHousingMgr::TakeFromStorageCommand(Player* player, std::string const& what, uint32 count, std::string& reason)
 {
     if (what == "all")
         return TakeFromStorage(player, 0, true, reason);
     uint32 itemEntry = Acore::StringTo<uint32>(what).value_or(0);
     if (!itemEntry)
     {
-        reason = "Usage: .house take <item entry|all>";
+        reason = "Usage: .house take <item entry|all> [count]";
         return false;
     }
-    return TakeFromStorage(player, itemEntry, false, reason);
+    return TakeFromStorage(player, itemEntry, false, reason, count);
 }
 
 void PlayerHousingMgr::MarkAllSeen(Player* player) const

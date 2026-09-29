@@ -188,6 +188,13 @@ can't change anything. The owner is told when someone arrives.
 - Island settings, **Visitor log**: the last visitors with the date and time, how many
   came this week, and your likes. Coming home, Krook says how many visits there were
   since you were last there.
+- **The guestbook**: visitors sign it from the Home menu (Sign the guestbook...) or with
+  `.house sign <note>`, once a day per island (and five notes an hour per account). Coming
+  home, Krook says how many new notes there are; Island settings, Guestbook lists them, and a
+  click throws one out. The last 100 notes are kept.
+- **The door**: Island settings, "make where you stand the door": visitors (roommates too)
+  arrive there, facing the way you faced, instead of at the landing spot, until you set it
+  back.
 
 ### Roommates
 
@@ -212,7 +219,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house decorate [on\|off]` | Start or stop decorating |
 | `.house edit [on\|off]` | Edit mode (the addon's keys): decorating, and a click on a piece only selects it |
 | `.house shift <forward> <left> <up> <degrees> [id]` | Move and turn a piece in one go, relative to your facing; quick runs on one piece are one undo step |
-| `.house undo`, `redo` | Undo or redo the last change |
+| `.house undo [steps]`, `redo` | Undo the last change (or that many, up to 20), or redo |
 | `.house select [id\|next\|previous]` | Select a piece by number, the nearest one, or the next one out by distance |
 | `.house list` | The pieces within 40 yards, with their numbers |
 | `.house rotate <degrees> [id]` | Turn a piece (positive is left) |
@@ -223,13 +230,18 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
 | `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
 | `.house another [id]` | One more of this piece, placed with its turn, size and tilt |
+| `.house row <count> [yards] [right\|left\|forward\|back] [id]` | Copies of a piece in a straight row beside it (spacing: its own length unless given), turned the same, one undo step |
+| `.house group [add\|remove <id> \| clear]` | Several pieces selected at once (Ctrl-click them with the addon): they slide, turn about their middle, move with the circle and get picked up together |
+| `.house match <height\|turn\|line\|space>` | The selected pieces take the first one's height or turn, line up across your view, or spread out evenly |
+| `.house set [save <name> \| place <name> \| delete <name> \| list]` | Saved sets: the selected pieces (and what stands on them), set down anywhere with the circle, facing you |
+| `.house goto <id>` | Walk over to a piece on the island and select it |
 | `.house layout [save <name>\|load <name>\|delete <name>\|send <name> <player>\|list]` | Saved layouts; without more, the menu |
 | `.house grid <off\|yards>` | Snap to a grid of 0.25 to 4 yards |
 | `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
 | `.house packup` | Pick up everything (undoable) |
 | `.house collection [search]`, `storage`, `visit [name]` | Open those menus, search the Collection, or visit someone by name |
 | `.house get <item> [count]` | A copy (or up to 20) of an unlocked piece, paid for unless FreeMode |
-| `.house take <item\|all>` | Take a piece, or everything that fits, out of House Storage |
+| `.house take <item\|all> [count]` | Take a piece (all of it, or that many), or everything that fits, out of House Storage |
 | `.house weather <name>`, `time <name>`, `music <sound id\|off>` | The island's weather, time of day and music |
 | `.house data <kind>`, `addon`, `seen` | Quiet ones for the addon's window: its lists, that it's there, new unlocks seen |
 | `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
@@ -237,12 +249,15 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house like`, `visitors` | Like the island you're visiting (or take it back); your visitor log |
 | `.house privacy <private\|friends\|public>` | Who can visit |
 | `.house greeting <text\|clear>` | The message visitors see |
+| `.house door [here\|reset]` | Where visitors arrive: where you stand, facing your way, or the landing spot again |
+| `.house sign <note>`, `guestbook [delete <id>]` | Sign the guestbook of the island you're visiting (once a day); read yours, or throw a note out |
 | `.house adjust <all\|buildings\|off>` | When a piece's menu opens by itself after placing |
 
 Without an id, commands act on the selected piece (the one you last clicked).
 
 GMs also have `.house unlock <item|name|all> [player]`, `.house relock ...`,
-`.house unlocks [player]` and `.house add` (Krook next to you for ten minutes).
+`.house unlocks [player]`, `.house add` (Krook next to you for ten minutes) and
+`.house phototour <start|next|stop|item>` (see Pictures of buildings, below).
 
 ### Moderation
 
@@ -269,31 +284,39 @@ House Key menus do everything without it. With the addon, the House Key opens th
 (`/housing key` switches back to the menu, which the window's Menu button also opens).
 
 The window has a toolbar (go home or leave, Edit, Undo and Redo, whose tooltips say what
-they'd undo, and the full menu) and eight tabs:
+they'd undo, and the full menu; right-click Undo for the last 15 changes, to undo back to any
+of them) and seven tabs:
 
-- **Bags**: your furnishings and buildings as icons, with filters and search. Click one,
-  then click where it goes. Drag one to an action bar to keep it handy. Hover an icon to
-  preview the piece next to the window: its model, slowly turning and centered in the
-  frame, and its size. Buildings made of world models can't be drawn in a window, so they
-  show a floor plan to scale instead, with you next to it.
-- **Collection**: every piece there is, unlocked ones in color and locked ones grey, by
-  category, favorites, unlocked only, or by name. The tooltip says how to unlock a piece,
-  what a copy costs, and how many you have in your bags, House Storage and on the island.
-  Click a piece to keep it in the preview with its details and buttons: Place (click, then
-  click the spot; with none in your bags the first click gets one), Get 1, Get 5 and Take
-  from storage. Hovering other pieces shows them for a moment. Right-click a piece to star
-  it as a favorite. New unlocks are marked until you leave the tab.
-- **Storage**: House Storage, one piece or everything at once back to the bags.
-- **Placed**: the pieces on the island, nearest first: select one, bring it to where you
+- **Collection**: every piece there is, unlocked ones in color and locked ones grey, with
+  how many you have in your bags on each icon. Show all of them, your favorites, the ones
+  you placed last, or a category; only unlocked ones, or only the ones in your bags; by name;
+  sorted as the Collection lists them, by name, by cost, or bags first. On your island, a
+  click on a piece in your bags places it: the targeting circle comes up, click the spot.
+  Any other click keeps the piece in the preview next to the window with its details and
+  buttons: Place (with none in your bags, the first click gets one, from House Storage if
+  it has one), Get 1, Get 5 and Take from storage. Hover an icon to preview the piece: its
+  model, slowly turning and centered in the frame, and its size. Buildings made of world
+  models can't be drawn in a window, so they show a picture (see Pictures of buildings) or
+  else a floor plan to scale, with you next to it. Right-click a piece to star it as a
+  favorite; drag one from your bags to an action bar to keep it handy. New unlocks are
+  marked until you leave the tab.
+- **Storage**: House Storage: take a piece out, place one straight from there, or take
+  everything back to the bags.
+- **Placed**: the pieces on the island, nearest first, and a search: go to one (you walk
+  over and it's selected), select it, add it to the selection, bring it to where you
   stand, or pick it up.
 - **Layouts**: save the island under a name, set a layout out again, send it to someone,
-  delete it.
+  delete it. Its second page has sets: a few pieces saved together (select them, name the
+  set, Save selection), set down anywhere with the targeting circle, facing you.
 - **Guests**: invite by name, your target or your party; make a guest a roommate (who
-  can decorate) or remove them.
+  can decorate) or remove them. Its second page is the guestbook: the notes visitors left
+  (hover one to read it all), newest first, to throw out if you like.
 - **Visit**: the islands of your party, guild and friends, the ones you're invited to,
-  public ones and the most liked; or visit someone by name. Like the island you're on.
-- **Island**: who can visit, the greeting, and the island's weather, time of day and
-  music (with a Music Box placed).
+  public ones and the most liked; or visit someone by name. On someone's island, like it
+  and sign its guestbook.
+- **Island**: who can visit, the greeting, the island's weather, time of day and music
+  (with a Music Box placed), where visitors arrive (stand there and click Door here, or
+  back to the landing spot), and the guestbook with its new notes.
 
 In the preview, drag the model to turn it, use the mouse wheel to zoom and right-drag to move
 it up or down. If previews sit too high or too low on your client, `/housing framing`
@@ -302,7 +325,17 @@ tries the other way of centering them.
 For the selected piece, a panel below the tabs has turn (Shift-click for 5 degrees,
 Ctrl-click for 90, or the mouse wheel over the window), face me, move here, nudge, bigger
 and smaller, tilt, pick up, Move and Another. Move and Another bring up a button that uses
-the right item for you: click it, then click the spot.
+the right item for you: click it, then click the spot. Row... places copies in a straight
+row: how many, how far apart (its own length unless you say), and toward your right, left,
+front or back.
+
+**Several pieces at once**: while decorating (or in edit mode), Ctrl-click more pieces to
+add them to the selection (Ctrl-click again takes one out), or use + on the Placed tab.
+They slide, turn about their middle, move with the circle and get picked up together, each
+with what stands on it, and each change is one undo step. The panel (and edit mode's
+banner) then has Height and Turn (the others take the first piece's), Line up (a straight
+row across your view, through the first piece), Space (evenly between the two at the ends)
+and Save set. Every selected piece has a ring under it.
 
 **Edit mode** (the Edit button, a key binding, or `/housing edit`): right-click a piece (or
 press Tab for the next one nearby), then:
@@ -316,14 +349,16 @@ press Tab for the next one nearby), then:
 | Shift with any of those | Finer steps |
 | Tab, Shift+Tab | Next or previous piece nearby |
 | G | The targeting circle, at once: click the new spot |
-| Delete | Pick it up |
+| Delete | Pick it up (several: after asking) |
+| Ctrl-click a piece | Add it to the selection, or take it out |
 | Ctrl+Z, Ctrl+Y | Undo, redo |
 | Alt+wheel | Zoom the camera |
 | Escape | Cancel the circle, or leave edit mode |
 
 A banner at the top of the screen names the selected piece, lists the keys, says what the
-last key did (so a key that does the wrong thing shows itself) and has Grid, Wheel, Undo,
-Redo and Done buttons. The selected piece has a ring under it. While a piece is selected,
+last key did (so a key that does the wrong thing shows itself) and has Grid, Wheel, Undo
+(right-click: the history), Redo and Done buttons, and Row, Height, Turn, Line up, Space
+and Save set for the selection. While a piece is selected,
 edit mode keeps a Move a Piece item in your bags for G, and takes it away afterwards. With
 the grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
 undo step. The keys are only bound in edit mode, so the usual ones come back afterwards;
@@ -347,11 +382,27 @@ a `row` a message, `end`). The piece list with names, icons and unlock hints
 addon outside the game against stubbed WoW functions:
 
 ```
-lua5.1 client-addon/test/harness.lua client-addon/PlayerHousing/PieceModels.lua \
-    client-addon/PlayerHousing/PieceInfo.lua client-addon/PlayerHousing/PlayerHousing.lua \
-    client-addon/PlayerHousing/EditMode.lua client-addon/PlayerHousing/Window.lua \
-    client-addon/PlayerHousing/Minimap.lua
+lua5.1 client-addon/test/harness.lua $(sed -n 's|^\([A-Za-z]*\.lua\)$|client-addon/PlayerHousing/\1|p' \
+    client-addon/PlayerHousing/PlayerHousing.toc)
 ```
+
+### Pictures of buildings
+
+A model window can't draw buildings made of world models, so the preview shows a floor
+plan, unless the addon has a picture. The pictures come from your own client, once:
+
+1. As a GM, go home and type `/housing phototour`. The island turns clear and sunny, the
+   camera goes to first person, and each building is set up in front of you in turn: the
+   interface hides for a moment while the addon takes a screenshot. Leave the mouse and keys
+   alone until it says it's done (`/housing phototour stop` ends it early).
+2. Log out (or `/reload`), so the addon saves which screenshot shows which building.
+3. Run `tools/pictures/make_pictures.py --wow "<your client folder>"` (it needs Pillow:
+   `apt install python3-pil`). It cuts a square from the middle of each screenshot, writes
+   `Interface/AddOns/PlayerHousing/Pictures/<item>.tga` and lists them in `Pictures.lua`.
+4. `/reload`: buildings show their pictures.
+
+Copying a new version of the addon over the old one keeps the pictures but resets
+`Pictures.lua`: run the script again (it only needs a moment) to list them.
 
 ## Install
 
@@ -499,9 +550,10 @@ Limits, per player (GMs are exempt from the first):
 - 1 second between weather, time of day and music changes, which everyone on the island
   receives.
 - A like every 10 seconds, and one message of each kind a minute from one player to the
-  same other player (an invite, roommate news, a like). Five reports an hour per account.
+  same other player (an invite, roommate news, a like, a guestbook note). Five reports an
+  hour per account; guestbook notes as above.
 
-Player text (greetings, layout names, reports) is escaped for SQL, stripped of control
+Player text (greetings, layout names, set names, guestbook notes, reports) is escaped for SQL, stripped of control
 characters and link codes, and cut to length without splitting a character. `nan` and `inf`
 aren't accepted as numbers. Players who aren't on an island cost the module one check per
 update, without taking its lock, and the visit lists look up guests and friends once per

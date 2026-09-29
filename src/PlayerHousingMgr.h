@@ -9,6 +9,7 @@
 #include <atomic>
 #include <ctime>
 #include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -33,7 +34,7 @@ namespace Housing
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 HOOK_MARKER_GO = 903990;
-    constexpr uint32 SELECTION_RING_GO = 903991;  // edit mode: under the selected piece
+    constexpr uint32 SELECTION_RING_GO = 903991;  // decorating: under the selected pieces
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
@@ -270,6 +271,27 @@ namespace Housing
         uint8 weather{0};    // PlayerHousingMgr::WeatherName
         uint8 timeOfDay{0};  // PlayerHousingMgr::TimeOfDayName; 0 follows the server's clock
         uint32 music{0};     // SoundEntries id, 0 for none
+        bool hasDoor{false}; // visitors arrive at the door instead of the landing spot
+        Position door;
+    };
+
+    // A note a visitor left in an island's guestbook.
+    struct GuestbookNote
+    {
+        uint32 id{0};
+        std::string author;
+        std::string when;    // YYYY-MM-DD HH:MM
+        std::string text;
+        bool fresh{false};   // the owner hasn't read it yet
+    };
+
+    // A few pieces saved together, to set down anywhere with the targeting circle.
+    struct SavedSet
+    {
+        uint32 id{0};
+        std::string name;
+        uint32 pieces{0};
+        std::string savedAt;  // YYYY-MM-DD
     };
 
     struct IslandReport
@@ -395,12 +417,45 @@ public:
     uint32 GetMaxFurnishings() const { return _maxFurnishings; }
     uint32 GetMaxBuildings() const { return _maxBuildings; }
     std::map<uint32, uint32> GetStorage(ObjectGuid::LowType ownerGuid) const;
-    bool TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason);
+    // limit: at most that many (0: all of them).
+    bool TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason, uint32 limit = 0);
     std::string CountsText(ObjectGuid::LowType ownerGuid) const;
     void SelectPlacement(Player const* player, uint32 placementId);
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
     void ProcessPendingConsumes(Player* player);
     bool HasPendingConsumes() const { return _pendingConsumeCount.load(std::memory_order_relaxed) != 0; }
+
+    // ---- groups, rows, sets and helpers (HousingGroups.cpp)
+    // Several pieces selected at once: the selected piece first, then the others, which
+    // move, turn and get picked up with it. A plain click selects one piece again.
+    std::vector<uint32> GetGroup(Player const* player) const;
+    // Ctrl-click (the addon says when Ctrl is down): in or out of the group.
+    bool ToggleGroupMember(Player* player, uint32 placementId, std::string& reason);
+    bool SetGroupMember(Player* player, uint32 placementId, bool member, std::string& reason);
+    void ClearGroup(Player* player);
+    void SetGroupHold(Player* player, bool held);
+    bool IsGroupHold(Player const* player) const;
+    // count copies of a piece in a row next to it, spacing yards apart (0: its own length),
+    // toward the player's right, left, forward or back.
+    bool PlaceRow(Player* player, uint32 placementId, uint32 count, float spacing, std::string const& direction, std::string& reason);
+    // The group lines up with its first piece: height, turn, line (a straight row across
+    // the player's view) or space (evenly along that row).
+    bool MatchGroup(Player* player, std::string const& how, std::string& reason);
+    std::vector<Housing::SavedSet> GetSavedSets(ObjectGuid::LowType ownerGuid) const;
+    std::optional<Housing::SavedSet> FindSavedSet(ObjectGuid::LowType ownerGuid, std::string const& nameOrNumber) const;
+    uint32 GetMaxSavedSets() const { return MAX_SAVED_SETS; }
+    bool SaveSet(Player* player, std::string const& name, std::string& reason);
+    bool DeleteSet(Player* player, uint32 setId, std::string& reason);
+    // Hands over Move a Piece: the circle sets the set down.
+    bool StartSetPlacement(Player* player, uint32 setId, std::string& reason);
+    // Undo several steps at once, newest first.
+    bool UndoSteps(Player* player, uint32 steps, std::string& reason);
+    std::vector<std::string> JournalLabels(Player const* player, bool redo, uint32 limit) const;
+    // Walks the player over to a piece on the island, and selects it.
+    bool GoTo(Player* player, uint32 placementId, std::string& reason);
+    // GM: a building set up in front of the camera, one after another, for the addon's
+    // pictures. what: start, next, stop, or an item entry.
+    bool PhotoTour(Player* gm, std::string const& what, std::string& reason);
 
     // ---- the client addon's housing window (HousingAddon.cpp)
     void SendAddon(Player* player, std::string const& text) const;
@@ -409,7 +464,8 @@ public:
     // The addon says it's there; with keyOpensWindow the House Key opens its window instead of the menu.
     void SetAddonClient(Player* player, bool keyOpensWindow);
     bool KeyOpensWindow(Player const* player) const;
-    bool TakeFromStorageCommand(Player* player, std::string const& what, std::string& reason);
+    // count: at most that many (0: all of that piece).
+    bool TakeFromStorageCommand(Player* player, std::string const& what, uint32 count, std::string& reason);
     void MarkAllSeen(Player* player) const;
 
     // ---- moderation (HousingModeration.cpp)
@@ -513,6 +569,14 @@ public:
     uint32 CountVisitorsThisWeek(ObjectGuid::LowType ownerGuid) const;
     bool SetGreeting(Player* player, std::string const& greeting, std::string& reason);
     static char const* PrivacyName(uint8 privacy);
+    // The guestbook: visitors leave notes; the owner reads them and can throw them out.
+    bool SignGuestbook(Player* visitor, std::string const& text, std::string& reason);
+    std::vector<Housing::GuestbookNote> GetGuestbook(ObjectGuid::LowType ownerGuid, uint32 limit) const;
+    uint32 CountNewNotes(ObjectGuid::LowType ownerGuid) const;
+    void MarkGuestbookRead(ObjectGuid::LowType ownerGuid) const;
+    bool DeleteNote(Player* owner, uint32 noteId, std::string& reason);
+    // Where visitors arrive: where the owner stands now, or (reset) the landing spot.
+    bool SetDoor(Player* player, bool reset, std::string& reason);
 
     // ---- misc helpers shared by the scripts
     void Say(Player* player, std::string const& text) const;
@@ -550,6 +614,7 @@ public:
         NOTICE_INVITE = 0,
         NOTICE_ROOMMATE,
         NOTICE_LIKE,
+        NOTICE_GUESTBOOK,
     };
     bool MayNotify(Player const* sender, ObjectGuid::LowType target, uint8 kind);
     static char const* CategoryName(uint8 category);
@@ -561,11 +626,10 @@ private:
         bool editCopy{false};
     };
 
-    // Edit mode: the ring under a player's selected piece, and where it was put.
+    // Decorating: a ring under each of a player's selected pieces, and where it was put.
     struct SelectionRing
     {
         ObjectGuid guid;
-        uint32 placementId{0};
         float x{0.0f};
         float y{0.0f};
         float z{0.0f};
@@ -583,12 +647,14 @@ private:
         bool decorating{false};
         uint32 nextPlacementId{1};
         std::unordered_map<ObjectGuid::LowType, uint32> selected;  // per player decorating
+        std::unordered_map<ObjectGuid::LowType, std::vector<uint32>> groups;  // selected with it (Ctrl-click)
         std::unordered_set<ObjectGuid::LowType> roommates;         // guests who may decorate
         std::unordered_set<ObjectGuid> occupants;
         std::map<uint32, Housing::Placement> placements;
         std::unordered_map<uint32, SpawnedPiece> spawned;
         std::unordered_map<uint32, ObjectGuid> markers;  // surface placement id -> hook marker
-        std::unordered_map<ObjectGuid::LowType, SelectionRing> rings;  // edit mode, per player
+        std::unordered_map<ObjectGuid::LowType, std::map<uint32, SelectionRing>> rings;  // per player: placement -> ring
+        ObjectGuid photoGuid;  // the photo tour's building
         ObjectGuid stewardGuid;
     };
 
@@ -674,8 +740,8 @@ private:
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);
     void SpawnMarkers(Session& session, Map* map);
     void DespawnMarkers(Session& session, Map* map);
-    // Edit mode, each update: the ring under the selected piece, and its Move a Piece item
-    // waiting in the bags so the addon's G starts the circle at once.
+    // Each update: rings under the selected pieces while decorating, and in edit mode the
+    // Move a Piece item waiting in the bags so the addon's G starts the circle at once.
     void UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid);
     void StageMover(Player* player, Session& session);
     void SpawnSteward(Session& session, Map* map);
@@ -701,8 +767,9 @@ private:
         std::string& reason, bool merge = false);
     // Checks the island, applies the changes and records them as one step; the first change
     // is the piece the label names.
+    // labelIsFinal: the label is used as it is, instead of naming the first piece in it.
     bool Commit(Player* player, Session& session, std::string const& label, std::vector<Housing::Change> changes, std::string& reason,
-        bool merge = false);
+        bool merge = false, bool labelIsFinal = false);
     void SnapToGrid(ObjectGuid::LowType guid, float& x, float& y) const;
     // Pieces that go wherever this one goes: what stands on it, and for a building (when
     // includeInside) what's inside it; each with what stands on them in turn.
@@ -720,6 +787,27 @@ private:
     std::string DescribeReturns() const;
     std::string DescribeItemReturns() const;
 
+
+    // HousingGroups.cpp
+    // The group's pieces that nothing else in it carries (the rest move with them), and what
+    // each of those carries.
+    void GroupRoots(Session const& session, std::vector<uint32> const& members, std::vector<uint32>& roots, std::vector<uint32>& carried) const;
+    // Moves every root as told (after is filled in from before) and carries the rest along;
+    // one undo step.
+    bool CommitGroup(Player* player, Session& session, std::vector<uint32> const& members, std::string const& label,
+        std::function<void(Housing::Placement const& before, Housing::Placement& after)> const& move, std::string& reason, bool merge = false);
+    bool ShiftGroup(Player* player, Session& session, std::vector<uint32> const& members, float forward, float left, float up, float degrees,
+        std::string& reason);
+    bool PickUpGroup(Player* player, Session& session, std::vector<uint32> const& members, std::string& reason);
+    bool MoveGroupTo(Player* player, Session& session, std::vector<uint32> const& members, Position const& target, std::string& reason);
+    // The items new pieces need, from the bags and House Storage; FreeMode hands over the
+    // missing ones (unlocked only) into House Storage first.
+    bool EnsurePieces(Player* player, std::map<uint32, uint32> const& needed, std::string& reason);
+    bool FitsLimits(Session const& session, std::map<uint32, uint32> const& adding, std::string& reason) const;
+    bool StampSet(Player* player, Session& session, uint32 setId, Position const& target, std::string& reason);
+    uint32 MoverForRadius(float radius) const;
+    float GroundHeightNear(Player* player, float x, float y, float z) const;
+    void DespawnPhoto(Session& session, Map* map);
 
     // HousingLayouts.cpp
     std::vector<Housing::Placement> LoadSavedPieces(ObjectGuid::LowType ownerGuid, uint32 layoutId) const;
@@ -782,8 +870,10 @@ private:
     std::unordered_map<ObjectGuid, CommandWindow> _commandWindows;
     std::unordered_map<ObjectGuid, CommandWindow> _shiftWindows;
     std::unordered_set<ObjectGuid> _editMode;  // asked for edit mode; it holds while they decorate here
+    std::unordered_set<ObjectGuid> _groupHold;  // the addon says Ctrl is down: clicks add to the group
     std::unordered_map<ObjectGuid, bool> _addonClients;  // has the addon -> the House Key opens its window
     mutable std::unordered_set<ObjectGuid::LowType> _knownHouses;  // have a house row (EnsureHouse); until logout
+    mutable std::unordered_map<ObjectGuid::LowType, float> _gridSizes;  // read once a login: the addon's state has it
     void SendAddonRows(Player* player, std::string const& kind, std::string const& label, std::vector<std::string> const& parts) const;
     std::unordered_map<ObjectGuid::LowType, std::unordered_map<uint64, uint64>> _notified;  // sender -> target << 8 | kind -> sent at (ms)
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
@@ -799,6 +889,7 @@ private:
         uint32 placementId{0};
         uint32 moverItem{0};
         bool staged{false};  // edit mode's, kept ready for the selected piece
+        uint32 setId{0};     // not a piece: a saved set to set down
     };
     std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
     std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
@@ -810,7 +901,6 @@ private:
     };
     std::unordered_map<ObjectGuid, StageRetry> _stageRetries;
 
-    // "Place another like this": the next one placed takes the original's turn, size and tilt.
     // Players on an island: when their clock is resent, and their music replayed.
     struct AmbienceTimers
     {
@@ -819,6 +909,7 @@ private:
     };
     std::unordered_map<ObjectGuid, AmbienceTimers> _ambienceTimers;
 
+    // "Place another like this": the next one placed takes the original's turn, size and tilt.
     struct PendingCopy
     {
         uint32 itemEntry{0};
@@ -828,7 +919,9 @@ private:
         float roll{0.0f};
     };
     std::unordered_map<ObjectGuid, PendingCopy> _pendingCopies;
+    std::unordered_map<ObjectGuid, uint32> _photoTours;  // GM -> the building on show
     ApplyReport _report;
+    static constexpr uint32 MAX_SAVED_SETS = 20;
 };
 
 #define sPlayerHousingMgr PlayerHousingMgr::instance()

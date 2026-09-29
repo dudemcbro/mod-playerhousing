@@ -500,60 +500,79 @@ void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType own
             ++itr;
             continue;
         }
-        if (GameObject* ring = map->GetGameObject(itr->second.guid))
-            ring->AddObjectToRemoveList();
+        for (auto const& [id, ring] : itr->second)
+            if (GameObject* object = map->GetGameObject(ring.guid))
+                object->AddObjectToRemoveList();
         itr = session.rings.erase(itr);
     }
 
-    bool editing = IsInEditMode(player);
-    auto selectedItr = session.selected.find(self);
-    auto placementItr = editing && selectedItr != session.selected.end() ? session.placements.find(selectedItr->second) : session.placements.end();
-    Placement const* placement = placementItr != session.placements.end() ? &placementItr->second : nullptr;
-    PieceDefinition const* piece = placement ? GetPiece(placement->itemEntry) : nullptr;
-
-    // As wide as the piece: the rune model is about 3.4 yards across at size 1.
-    float scale = 0.0f;
-    if (piece)
-        scale = std::clamp(piece->footprint * (piece->scale > 0.0f ? placement->scale / piece->scale : 1.0f) / 1.5f, 0.3f, 12.0f);
-
-    auto ringItr = session.rings.find(self);
-    if (ringItr != session.rings.end())
+    // While decorating, a ring under each selected piece: as wide as the piece (the rune
+    // model is about 3.4 yards across at size 1).
+    std::map<uint32, SelectionRing> wanted;
+    if (CanDecorate(player) && IsDecorating(player))
     {
-        SelectionRing const& ring = ringItr->second;
-        if (placement && ring.placementId == placement->id && std::fabs(ring.x - placement->x) < 0.001f && std::fabs(ring.y - placement->y) < 0.001f
-                && std::fabs(ring.z - placement->z) < 0.001f && std::fabs(ring.scale - scale) < 0.001f)
+        std::vector<uint32> members;
+        auto selectedItr = session.selected.find(self);
+        if (selectedItr != session.selected.end() && selectedItr->second)
+            members.push_back(selectedItr->second);
+        auto groupItr = session.groups.find(self);
+        if (groupItr != session.groups.end())
+            members.insert(members.end(), groupItr->second.begin(), groupItr->second.end());
+        for (uint32 id : members)
         {
-            StageMover(player, session);
-            return;
+            auto placementItr = session.placements.find(id);
+            PieceDefinition const* piece = placementItr != session.placements.end() ? GetPiece(placementItr->second.itemEntry) : nullptr;
+            if (!piece)
+                continue;
+            Placement const& placement = placementItr->second;
+            float scale = std::clamp(piece->footprint * (piece->scale > 0.0f ? placement.scale / piece->scale : 1.0f) / 1.5f, 0.3f, 12.0f);
+            wanted[id] = SelectionRing{ ObjectGuid::Empty, placement.x, placement.y, placement.z, scale };
+        }
+    }
+
+    std::map<uint32, SelectionRing>& rings = session.rings[self];
+    for (auto itr = rings.begin(); itr != rings.end();)
+    {
+        auto want = wanted.find(itr->first);
+        SelectionRing const& ring = itr->second;
+        if (want != wanted.end() && std::fabs(ring.x - want->second.x) < 0.001f && std::fabs(ring.y - want->second.y) < 0.001f
+                && std::fabs(ring.z - want->second.z) < 0.001f && std::fabs(ring.scale - want->second.scale) < 0.001f)
+        {
+            wanted.erase(want);  // already there
+            ++itr;
+            continue;
         }
         if (GameObject* old = map->GetGameObject(ring.guid))
             old->AddObjectToRemoveList();
-        session.rings.erase(ringItr);
+        itr = rings.erase(itr);
     }
-
-    if (placement && piece)
+    for (auto const& [id, want] : wanted)
     {
         GameObject* ring = new GameObject();
-        if (ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), SELECTION_RING_GO, map, PHASEMASK_NORMAL,
-                placement->x, placement->y, placement->z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
+        if (!ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), SELECTION_RING_GO, map, PHASEMASK_NORMAL,
+                want.x, want.y, want.z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
         {
-            ring->SetObjectScale(scale);
-            ring->SetRespawnTime(0);
-            ring->SetSpawnedByDefault(false);
-            if (map->AddToMap(ring))
-            {
-                ring->SetPhaseMask(session.phaseMask, true);
-                ring->EnableCollision(false);
-                session.rings[self] = SelectionRing{ ring->GetGUID(), placement->id, placement->x, placement->y, placement->z, scale };
-            }
-            else
-                delete ring;
-        }
-        else
             delete ring;
+            continue;
+        }
+        ring->SetObjectScale(want.scale);
+        ring->SetRespawnTime(0);
+        ring->SetSpawnedByDefault(false);
+        if (!map->AddToMap(ring))
+        {
+            delete ring;
+            continue;
+        }
+        ring->SetPhaseMask(session.phaseMask, true);
+        ring->EnableCollision(false);
+        SelectionRing placed = want;
+        placed.guid = ring->GetGUID();
+        rings[id] = placed;
     }
+    if (rings.empty())
+        session.rings.erase(self);
 
-    if (editing)
+    if (IsInEditMode(player))
         StageMover(player, session);
     else
     {
@@ -573,8 +592,12 @@ void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType own
 
 void PlayerHousingMgr::StageMover(Player* player, Session& session)
 {
-    // A copy waiting for its spot ("Another") has G until it's placed.
+    // A copy waiting for its spot ("Another") has G until it's placed; so does a move the
+    // player asked for (Move, or setting down a saved set) while its item is there.
     if (_pendingCopies.count(player->GetGUID()))
+        return;
+    auto asked = _pendingMoves.find(player->GetGUID());
+    if (asked != _pendingMoves.end() && !asked->second.staged && player->GetItemCount(asked->second.moverItem))
         return;
 
     auto selectedItr = session.selected.find(player->GetGUID().GetCounter());
@@ -822,6 +845,8 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         for (auto& [who, selected] : session.selected)
             if (selected == placementId)
                 selected = 0;
+        for (auto& [who, group] : session.groups)
+            group.erase(std::remove(group.begin(), group.end(), placementId), group.end());
 
         // A piece goes back to whoever placed it: the owner, or a roommate.
         if (itemOwner != player->GetGUID().GetCounter())
@@ -1301,6 +1326,14 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     if (!session)
         return false;
 
+    // Several pieces selected: all of them.
+    if (!placementId)
+    {
+        std::vector<uint32> group = GetGroup(player);
+        if (group.size() > 1)
+            return PickUpGroup(player, *session, group, reason);
+    }
+
     placementId = ResolvePlacementArgument(player, placementId);
     auto itr = session->placements.find(placementId);
     if (itr == session->placements.end())
@@ -1397,7 +1430,7 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
 }
 
 bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string const& label, std::vector<Change> changes, std::string& reason,
-    bool merge)
+    bool merge, bool labelIsFinal)
 {
     for (Change const& change : changes)
     {
@@ -1414,6 +1447,11 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
         }
     }
 
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    auto selectedItr = session.selected.find(self);
+    uint32 selectedBefore = selectedItr != session.selected.end() ? selectedItr->second : 0;
+    std::vector<uint32> groupBefore = session.groups.count(self) ? session.groups[self] : std::vector<uint32>{};
+
     _report = {};
     std::string failure;
     if (!ApplyChanges(player, session, changes, true, failure))
@@ -1422,17 +1460,32 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
         return false;
     }
 
-    // "turned 45° left" becomes "turned Westfall Chair 45° left".
-    Placement const& before = *changes.front().before;
-    std::string name = PieceName(before.itemEntry);
-    size_t space = label.find(' ');
-    std::string verb = label.substr(0, space);
-    std::string rest = space == std::string::npos ? "" : label.substr(space);
-    std::string entryLabel = verb + " " + name + rest;
-    if (changes.size() == 2)
-        entryLabel += Acore::StringFormat(" with the {}", PieceName(changes[1].before->itemEntry));
-    else if (changes.size() > 2)
-        entryLabel += Acore::StringFormat(" with {} pieces", changes.size() - 1);
+    // Applying the changes selected each piece in turn: the step is about the first one (or,
+    // moving a group, the group as it was).
+    uint32 subject = changes.front().after ? changes.front().placementId : 0;
+    if (!groupBefore.empty() && session.placements.count(selectedBefore))
+    {
+        session.selected[self] = selectedBefore;
+        session.groups[self] = groupBefore;
+    }
+    else if (subject && session.placements.count(subject))
+        session.selected[self] = subject;
+
+    std::string entryLabel = label;
+    if (!labelIsFinal)
+    {
+        // "turned 45° left" becomes "turned Westfall Chair 45° left".
+        Placement const& before = changes.front().before ? *changes.front().before : *changes.front().after;
+        std::string name = PieceName(before.itemEntry);
+        size_t space = label.find(' ');
+        std::string verb = label.substr(0, space);
+        std::string rest = space == std::string::npos ? "" : label.substr(space);
+        entryLabel = verb + " " + name + rest;
+        if (changes.size() == 2)
+            entryLabel += Acore::StringFormat(" with the {}", PieceName(changes[1].before ? changes[1].before->itemEntry : changes[1].after->itemEntry));
+        else if (changes.size() > 2)
+            entryLabel += Acore::StringFormat(" with {} pieces", changes.size() - 1);
+    }
     Record(player, entryLabel, std::move(changes), merge);
 
     reason = entryLabel + ".";
@@ -1552,6 +1605,25 @@ bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position c
         return false;
     }
 
+    if (!IsSpotOnIsland(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ()))
+    {
+        reason = "That spot is off your island.";
+        return false;
+    }
+
+    // A saved set, set down where the circle was clicked.
+    if (uint32 setId = pending->second.setId)
+    {
+        Session* session = GetOwnerSession(player, reason);
+        if (!session || !StampSet(player, *session, setId, target, reason))
+            return false;
+        _pendingMoves.erase(player->GetGUID());
+        ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
+        _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
+        SendAddonState(player);
+        return true;
+    }
+
     uint32 placementId = pending->second.placementId;
     std::optional<Placement> placement = GetPlacement(player, placementId);
     if (!placement || !CanDecorate(player))
@@ -1561,10 +1633,18 @@ bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position c
         return false;
     }
 
-    if (!IsSpotOnIsland(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ()))
+    // Several pieces selected, this one first: they all go, keeping their places around it.
+    std::vector<uint32> group = GetGroup(player);
+    if (group.size() > 1 && group.front() == placementId)
     {
-        reason = "That spot is off your island.";
-        return false;
+        Session* session = GetOwnerSession(player, reason);
+        if (!session || !MoveGroupTo(player, *session, group, target, reason))
+            return false;
+        _pendingMoves.erase(player->GetGUID());
+        ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
+        _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
+        SendAddonState(player);
+        return true;
     }
 
     float tx = target.GetPositionX();
@@ -1618,7 +1698,10 @@ void PlayerHousingMgr::SelectPlacement(Player const* player, uint32 placementId)
         return;
     auto itr = _sessionsByOwner.find(GetIslandOwner(player));
     if (itr != _sessionsByOwner.end() && itr->second.placements.count(placementId))
+    {
         itr->second.selected[player->GetGUID().GetCounter()] = placementId;
+        itr->second.groups.erase(player->GetGUID().GetCounter());  // one piece again
+    }
 }
 
 ObjectGuid PlayerHousingMgr::GetObjectForPlacement(Player const* player, uint32 placementId) const
@@ -1671,6 +1754,18 @@ bool PlayerHousingMgr::Nudge(Player* player, uint32 placementId, float forward, 
 
 bool PlayerHousingMgr::Shift(Player* player, uint32 placementId, float forward, float left, float up, float degrees, std::string& reason)
 {
+    // Several pieces selected: they move and turn together, about their middle.
+    if (!placementId)
+    {
+        std::vector<uint32> group = GetGroup(player);
+        if (group.size() > 1)
+        {
+            std::lock_guard<std::recursive_mutex> guard(_lock);
+            Session* session = GetOwnerSession(player, reason);
+            return session && ShiftGroup(player, *session, group, forward, left, up, degrees, reason);
+        }
+    }
+
     std::optional<Placement> placement = GetPlacement(player, ResolvePlacementArgument(player, placementId));
     if (!placement)
     {
@@ -2175,7 +2270,7 @@ bool PlayerHousingMgr::SetDecorating(Player* player, bool on, std::string& reaso
     return true;
 }
 
-bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason)
+bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason, uint32 limit)
 {
     std::map<uint32, uint32> storage = GetStorage(player->GetGUID().GetCounter());
     if (storage.empty())
@@ -2192,7 +2287,8 @@ bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool al
             continue;
 
         uint32 added = 0;
-        for (; added < count; ++added)
+        uint32 wanted = limit ? std::min(count, limit - taken) : count;
+        for (; added < wanted; ++added)
         {
             if (!player->AddItem(entry, 1))
             {
@@ -2205,7 +2301,7 @@ bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool al
             AddToStorage(player->GetGUID().GetCounter(), entry, -int32(added));
         taken += added;
 
-        if (bagsFull)
+        if (bagsFull || (limit && taken >= limit))
             break;
     }
 

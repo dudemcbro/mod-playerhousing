@@ -564,9 +564,18 @@ void PlayerHousingMgr::QuestEvent(Player* player, uint32 questId)
 
 float PlayerHousingMgr::GetGridSize(ObjectGuid::LowType guid) const
 {
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto itr = _gridSizes.find(guid);
+        if (itr != _gridSizes.end())
+            return itr->second;
+    }
+    float yards = 0.0f;
     if (QueryResult result = CharacterDatabase.Query("SELECT grid FROM mod_playerhousing_character WHERE guid={}", guid))
-        return float(result->Fetch()[0].Get<uint8>()) / 4.0f;
-    return 0.0f;
+        yards = float(result->Fetch()[0].Get<uint8>()) / 4.0f;
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    _gridSizes[guid] = yards;
+    return yards;
 }
 
 void PlayerHousingMgr::SetGridSize(Player* player, float yards, std::string& reason) const
@@ -576,6 +585,10 @@ void PlayerHousingMgr::SetGridSize(Player* player, float yards, std::string& rea
     CharacterDatabase.DirectExecute(
         "INSERT INTO mod_playerhousing_character (guid, flags, tips, grid) VALUES ({}, 0, 0, {}) ON DUPLICATE KEY UPDATE grid = {}",
         player->GetGUID().GetCounter(), quarters, quarters);
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        _gridSizes[player->GetGUID().GetCounter()] = float(quarters) / 4.0f;
+    }
     if (!quarters)
         reason = "Grid off: pieces go exactly where you click.";
     else
@@ -729,6 +742,7 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         _editMode.erase(player->GetGUID());
         _addonClients.erase(player->GetGUID());
         _knownHouses.erase(player->GetGUID().GetCounter());
+        _gridSizes.erase(player->GetGUID().GetCounter());
         _notified.erase(player->GetGUID().GetCounter());
     }
 
@@ -918,6 +932,9 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
                 Say(player, Acore::StringFormat("{} since you were last home. Island settings, Visitor log.",
                     visits == 1 ? std::string("One visit") : Acore::StringFormat("{} visits", visits)));
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET last_home=NOW() WHERE owner_guid={}", ownerGuid);
+        if (uint32 notes = CountNewNotes(ownerGuid))
+            Say(player, Acore::StringFormat("{} in your guestbook. Island settings, Guestbook.",
+                notes == 1 ? std::string("A new note") : Acore::StringFormat("{} new notes", notes)));
 
         if (!(GetCharacterFlags(guid) & CHAR_FLAG_GREETED))
         {
@@ -1026,6 +1043,9 @@ void PlayerHousingMgr::RemoveHousingOf(ObjectGuid::LowType guidLow)
     trans->Append("DELETE FROM mod_playerhousing_report WHERE owner_guid={}", guidLow);
     trans->Append("DELETE FROM mod_playerhousing_visit_log WHERE owner_guid={} OR visitor_guid={}", guidLow, guidLow);
     trans->Append("DELETE FROM mod_playerhousing_saved_layout WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_set_piece WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_set WHERE owner_guid={}", guidLow);
+    trans->Append("DELETE FROM mod_playerhousing_guestbook WHERE owner_guid={} OR author_guid={}", guidLow, guidLow);
     trans->Append("DELETE FROM mod_playerhousing_collection WHERE guid={}", guidLow);
     trans->Append("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);
     trans->Append("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);
@@ -1071,7 +1091,8 @@ void PlayerHousingMgr::PurgeLeftovers()
     // Characters removed for good while the module wasn't running, or before it was up.
     QueryResult result = CharacterDatabase.Query(
         "SELECT h.guid FROM (SELECT owner_guid AS guid FROM mod_playerhousing_house UNION SELECT owner_guid FROM mod_playerhousing_placement "
-        "UNION SELECT owner_guid FROM mod_playerhousing_storage UNION SELECT guid FROM mod_playerhousing_character) h "
+        "UNION SELECT owner_guid FROM mod_playerhousing_storage UNION SELECT guid FROM mod_playerhousing_character "
+        "UNION SELECT owner_guid FROM mod_playerhousing_set UNION SELECT author_guid FROM mod_playerhousing_guestbook) h "
         "LEFT JOIN characters c ON c.guid = h.guid WHERE c.guid IS NULL");
     if (!result)
         return;
@@ -1202,10 +1223,12 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
         RemoveSpawned(map, spawned.guid);
 
     DespawnMarkers(session, map);
-    for (auto const& [who, ring] : session.rings)
-        if (GameObject* object = map->GetGameObject(ring.guid))
-            object->AddObjectToRemoveList();
+    for (auto const& [who, rings] : session.rings)
+        for (auto const& [id, ring] : rings)
+            if (GameObject* object = map->GetGameObject(ring.guid))
+                object->AddObjectToRemoveList();
     session.rings.clear();
+    DespawnPhoto(session, map);
 
     if (session.stewardGuid)
         if (Creature* steward = map->GetCreature(session.stewardGuid))
@@ -1254,6 +1277,7 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
                 sessionItr->second.initialized = false;
             }
             sessionItr->second.selected.erase(playerGuid.GetCounter());
+            sessionItr->second.groups.erase(playerGuid.GetCounter());
             _journals.erase(playerGuid.GetCounter());
         }
 
@@ -1262,6 +1286,8 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
 
     _arrivals.erase(playerGuid);
     _editMode.erase(playerGuid);  // or it would come back with decorating, next visit
+    _groupHold.erase(playerGuid);
+    _photoTours.erase(playerGuid);
     if (eraseReturnLocation)
         _returnLocations.erase(playerGuid);
 
@@ -1406,8 +1432,12 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
     ApplyHousePhase(player, phaseMask);
 
     // The island itself is spawned by the first occupant's update once they are on the map.
-    Position const& landing = _layout.landing;
-    if (!player->TeleportTo(_layout.mapId, landing.GetPositionX(), landing.GetPositionY(), landing.GetPositionZ() + 0.35f, landing.GetOrientation()))
+    // Visitors come in at the owner's door, if there is one.
+    Position arrival = _layout.landing;
+    if (house.hasDoor && ownerGuid != player->GetGUID().GetCounter()
+            && IsSpotOnIsland(house.door.GetPositionX(), house.door.GetPositionY(), house.door.GetPositionZ()))
+        arrival = house.door;
+    if (!player->TeleportTo(_layout.mapId, arrival.GetPositionX(), arrival.GetPositionY(), arrival.GetPositionZ() + 0.35f, arrival.GetOrientation()))
     {
         EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), !wasOnIsland));
         RestoreNormalPhase(player);
@@ -1565,11 +1595,13 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         moverStaged = pending != _pendingMoves.end() && pending->second.staged;
     }
 
-    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    size_t groupSize = (own || roommate) ? GetGroup(player).size() : 0;
+
+    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
         owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
         GetPendingCopy(player), roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
-        FormatYards(GetGridSize(player->GetGUID().GetCounter())), moverStaged ? 1 : 0);
+        FormatYards(GetGridSize(player->GetGUID().GetCounter())), moverStaged ? 1 : 0, groupSize);
     SendAddon(player, message);
 }

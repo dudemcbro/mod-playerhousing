@@ -98,6 +98,11 @@ namespace
         CMD_LIKE,
         CMD_VISITOR_LOG,
         CMD_REPORT,           // coded: what's wrong
+        CMD_GUESTBOOK,
+        CMD_NOTE_DELETE,      // action: note id
+        CMD_SIGN,             // coded: the note
+        CMD_DOOR_HERE,
+        CMD_DOOR_RESET,
         CMD_CLOSE
     };
 
@@ -505,6 +510,14 @@ namespace
         Add(player, GOSSIP_ICON_INTERACT_1, "Island ambience: weather, time of day, music", CMD_AMBIENCE);
         Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Visitor log ({} this week, {} likes)", sPlayerHousingMgr->CountVisitorsThisWeek(self),
             sPlayerHousingMgr->CountLikes(self)), CMD_VISITOR_LOG);
+        uint32 newNotes = sPlayerHousingMgr->CountNewNotes(self);
+        Add(player, GOSSIP_ICON_CHAT, newNotes ? Acore::StringFormat("Guestbook ({} new)", newNotes) : std::string("Guestbook"), CMD_GUESTBOOK);
+        if (sPlayerHousingMgr->IsOnOwnIsland(player))
+            Confirm(player, GOSSIP_ICON_INTERACT_1, house.hasDoor ? "Visitors arrive at your door: move it to where you stand"
+                                                                  : "Visitors arrive at the landing spot: make where you stand the door",
+                CMD_DOOR_HERE, 0, "Visitors will arrive where you stand now, facing the way you face.");
+        if (house.hasDoor)
+            Add(player, GOSSIP_ICON_INTERACT_1, "Visitors arrive at the landing spot again", CMD_DOOR_RESET);
         if (sPlayerHousingMgr->GetMaxSavedLayouts())
         {
             Add(player, GOSSIP_ICON_VENDOR, Acore::StringFormat("Saved layouts ({} of {})", sPlayerHousingMgr->GetSavedLayouts(self).size(),
@@ -933,6 +946,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
         Add(player, GOSSIP_ICON_CHAT, "Unstuck: back to the landing spot", CMD_UNSTUCK);
         Add(player, GOSSIP_ICON_TAXI, "Leave the island", CMD_LEAVE);
         Add(player, GOSSIP_ICON_CHAT, "How housing works", CMD_HELP);
+        Ask(player, GOSSIP_ICON_CHAT, "Sign the guestbook...", CMD_SIGN);
         Ask(player, GOSSIP_ICON_DOT, "Report this island to a GM...", CMD_REPORT);
     }
     else
@@ -1274,6 +1288,39 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             Say(player, reason);
             ShowHome(player, source);
             return;
+        case CMD_SIGN:
+            sPlayerHousingMgr->SignGuestbook(player, text, reason);
+            Say(player, reason);
+            ShowHome(player, source);
+            return;
+        case CMD_DOOR_HERE:
+        case CMD_DOOR_RESET:
+            sPlayerHousingMgr->SetDoor(player, sender == CMD_DOOR_RESET, reason);
+            Say(player, reason);
+            ShowSettings(player, source);
+            return;
+        case CMD_NOTE_DELETE:
+            sPlayerHousingMgr->DeleteNote(player, action, reason);
+            Say(player, reason);
+            [[fallthrough]];
+        case CMD_GUESTBOOK:
+        {
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            std::vector<GuestbookNote> notes = sPlayerHousingMgr->GetGuestbook(self, PAGE_SIZE);
+            ClearGossipMenuFor(player);
+            if (notes.empty())
+                Add(player, GOSSIP_ICON_DOT, "No notes yet: visitors sign it from their House Key", CMD_GUESTBOOK);
+            for (GuestbookNote const& note : notes)
+            {
+                std::string text = note.text.size() > 60 ? note.text.substr(0, 57) + "..." : note.text;
+                Confirm(player, GOSSIP_ICON_DOT, Acore::StringFormat("{}{}, {}: {}", note.fresh ? "(new) " : "", note.author, note.when, text),
+                    CMD_NOTE_DELETE, note.id, Acore::StringFormat("Throw out {}'s note?\n\n{}", note.author, note.text));
+            }
+            sPlayerHousingMgr->MarkGuestbookRead(self);
+            Add(player, GOSSIP_ICON_CHAT, "Back to Island settings", CMD_SETTINGS);
+            Send(player, source, TEXT_SETTINGS);
+            return;
+        }
         case CMD_VISITOR_LOG:
         {
             ObjectGuid::LowType self = player->GetGUID().GetCounter();

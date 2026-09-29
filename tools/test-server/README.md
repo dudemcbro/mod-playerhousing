@@ -138,6 +138,14 @@ checking the database and what the client sees after each step (247 checks, 248 
   Piece item kept ready for the addon's G that moves it and comes back for the next move,
   both gone when edit mode ends or you leave the island; a copy waiting for its spot
   ("Another") keeps G meanwhile; full bags keep it quiet; the grid size reaches the addon
+- several pieces at once: the undo history newest first and `undo 2`, adding a piece to
+  the selection (a ring under each), sliding and turning the group with what stands on
+  it, one undo for the run, match height, line up, Ctrl-click taking a piece out and
+  putting it back, a plain click selecting just one, picking the group up and undoing
+  that; a row of three chairs and one undo for it; saving the selection as a set, the
+  window's list of sets, setting it down with Move a Piece where the circle was clicked
+  and deleting it; going to a piece; the Collection's recently placed pieces; taking one
+  piece out of House Storage
 - the addon's window: its lists (Collection, Placed, Island, Layouts, Guests, Visit),
   getting copies, weather by name, House Storage, and the House Key opening the window
   (or its menu when the player prefers)
@@ -179,8 +187,10 @@ checking the database and what the client sees after each step (247 checks, 248 
 - ambience: rain and night set from Island settings reaching the client, a Music Box
   playing Grizzly Hills; the guest arriving to the same rain, night and music, hearing
   what the music box plays, and getting the real clock and weather back on leaving
-- visitors: greeting, private islands refusing strangers, invites, the visit menu, a
-  guest arriving with one click, saving a copy of the island's layout and getting the
+- visitors: greeting, private islands refusing strangers, invites, the visit menu, the
+  owner setting the door and a guest arriving there with one click, facing the door's way;
+  signing the guestbook (once a day), the owner reading it (new, then read) and throwing a
+  note out; saving a copy of the island's layout and getting the
   missing pieces, becoming a roommate (decorating, placing their own chair, moving the
   owner's table with their own undo, refused packing up; the owner picking up their
   chair sends it to their House Storage and undo takes it back; picking it up
@@ -196,6 +206,8 @@ checking the database and what the client sees after each step (247 checks, 248 
   unfinished move's item is gone)
 - a GM packing up the island: every piece in House Storage, the mannequin's sword in the
   mail, and the owner's undo list gone with the pieces
+- a GM's photo tour: the first building set up with the addon told which, then the next,
+  then stopping
 - last, deleting a character: a fourth account's character makes the guest a roommate,
   the guest places a chair there, the character is deleted, and the chair is in the
   guest's House Storage while the island is gone

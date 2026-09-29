@@ -19,6 +19,23 @@ namespace
 {
     constexpr uint32 SOCIAL_FLAG_FRIEND = 0x01;
     constexpr size_t MAX_GREETING = 200;
+    constexpr size_t MAX_NOTE = 200;
+    constexpr uint32 NOTES_KEPT = 100;  // per island; the oldest go
+
+    // Printable, no chat codes, trimmed, not too long.
+    std::string CleanNote(std::string const& text)
+    {
+        std::string clean;
+        for (char c : text)
+            if (static_cast<unsigned char>(c) >= 32 && c != '|' && c != 127)
+                clean += c;
+        size_t begin = clean.find_first_not_of(' ');
+        if (begin == std::string::npos)
+            return "";
+        clean = clean.substr(begin, clean.find_last_not_of(' ') - begin + 1);
+        PlayerHousingMgr::TruncateUtf8(clean, MAX_NOTE);
+        return clean;
+    }
 
     char const* PrivacyDescription(uint8 privacy)
     {
@@ -48,7 +65,8 @@ bool PlayerHousingMgr::GetHouseRecord(ObjectGuid::LowType ownerGuid, HouseRecord
         return false;
 
     QueryResult result = CharacterDatabase.Query(
-        "SELECT owner_guid, is_private, flags, greeting, weather, time_of_day, music FROM mod_playerhousing_house WHERE owner_guid={}", ownerGuid);
+        "SELECT owner_guid, is_private, flags, greeting, weather, time_of_day, music, door_set, door_x, door_y, door_z, door_o "
+        "FROM mod_playerhousing_house WHERE owner_guid={}", ownerGuid);
     if (!result)
         return false;
 
@@ -60,6 +78,8 @@ bool PlayerHousingMgr::GetHouseRecord(ObjectGuid::LowType ownerGuid, HouseRecord
     outRecord.weather = fields[4].Get<uint8>();
     outRecord.timeOfDay = fields[5].Get<uint8>();
     outRecord.music = fields[6].Get<uint32>();
+    outRecord.hasDoor = fields[7].Get<uint8>() != 0;
+    outRecord.door.Relocate(fields[8].Get<float>(), fields[9].Get<float>(), fields[10].Get<float>(), fields[11].Get<float>());
     return true;
 }
 
@@ -522,5 +542,126 @@ bool PlayerHousingMgr::SetGreeting(Player* player, std::string const& greeting, 
     CharacterDatabase.EscapeString(text);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET greeting='{}' WHERE owner_guid={}", text, owner);
     reason = text.empty() ? "Greeting cleared." : "Visitors will now be greeted with your message.";
+    return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The guestbook
+
+bool PlayerHousingMgr::SignGuestbook(Player* visitor, std::string const& text, std::string& reason)
+{
+    ObjectGuid::LowType owner = GetIslandOwner(visitor);
+    ObjectGuid::LowType self = visitor->GetGUID().GetCounter();
+    if (!owner || owner == self)
+    {
+        reason = owner ? "It's your own guestbook: visitors write in it." : "Visit an island to sign its guestbook.";
+        return false;
+    }
+
+    std::string note = CleanNote(text);
+    if (note.empty())
+    {
+        reason = "Write something to leave in the guestbook.";
+        return false;
+    }
+
+    // One note per island a day, and five an hour in all, per account.
+    uint32 account = visitor->GetSession()->GetAccountId();
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM mod_playerhousing_guestbook WHERE author_account={} AND written_at > NOW() - INTERVAL 1 HOUR", account))
+        if ((*result)[0].Get<uint64>() >= 5)
+        {
+            reason = "You've written a lot of notes this hour. Try again later.";
+            return false;
+        }
+    if (CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_guestbook WHERE owner_guid={} AND author_account={} "
+            "AND written_at > NOW() - INTERVAL 1 DAY", owner, account))
+    {
+        reason = "You've already signed this guestbook today.";
+        return false;
+    }
+
+    std::string escaped = note;
+    CharacterDatabase.EscapeString(escaped);
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    trans->Append("INSERT INTO mod_playerhousing_guestbook (owner_guid, author_guid, author_account, text) VALUES ({}, {}, {}, '{}')",
+        owner, self, account, escaped);
+    trans->Append("DELETE FROM mod_playerhousing_guestbook WHERE owner_guid={} AND id NOT IN "
+                  "(SELECT id FROM (SELECT id FROM mod_playerhousing_guestbook WHERE owner_guid={} ORDER BY id DESC LIMIT {}) newest)",
+        owner, owner, NOTES_KEPT);
+    CharacterDatabase.CommitTransaction(trans);
+
+    std::string ownerName = NameOf(owner);
+    if (Player* ownerPlayer = ObjectAccessor::FindPlayerByLowGUID(owner))
+        if (ownerPlayer != visitor && MayNotify(visitor, owner, NOTICE_GUESTBOOK))
+            Say(ownerPlayer, Acore::StringFormat("{} signed your guestbook.", visitor->GetName()));
+    reason = Acore::StringFormat("You signed {}'s guestbook.", ownerName);
+    return true;
+}
+
+std::vector<GuestbookNote> PlayerHousingMgr::GetGuestbook(ObjectGuid::LowType ownerGuid, uint32 limit) const
+{
+    std::vector<GuestbookNote> notes;
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT id, author_guid, DATE_FORMAT(written_at, '%Y-%m-%d %H:%i'), text, seen FROM mod_playerhousing_guestbook "
+            "WHERE owner_guid={} ORDER BY id DESC LIMIT {}", ownerGuid, limit))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            notes.push_back(GuestbookNote{ fields[0].Get<uint32>(), NameOf(fields[1].Get<uint32>()), fields[2].Get<std::string>(),
+                fields[3].Get<std::string>(), fields[4].Get<uint8>() == 0 });
+        } while (result->NextRow());
+    }
+    return notes;
+}
+
+uint32 PlayerHousingMgr::CountNewNotes(ObjectGuid::LowType ownerGuid) const
+{
+    if (QueryResult result = CharacterDatabase.Query("SELECT COUNT(*) FROM mod_playerhousing_guestbook WHERE owner_guid={} AND seen=0", ownerGuid))
+        return uint32((*result)[0].Get<uint64>());
+    return 0;
+}
+
+void PlayerHousingMgr::MarkGuestbookRead(ObjectGuid::LowType ownerGuid) const
+{
+    CharacterDatabase.Execute("UPDATE mod_playerhousing_guestbook SET seen=1 WHERE owner_guid={} AND seen=0", ownerGuid);
+}
+
+bool PlayerHousingMgr::DeleteNote(Player* owner, uint32 noteId, std::string& reason)
+{
+    ObjectGuid::LowType self = owner->GetGUID().GetCounter();
+    if (!CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_guestbook WHERE owner_guid={} AND id={}", self, noteId))
+    {
+        reason = "That note is gone.";
+        return false;
+    }
+    CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_guestbook WHERE owner_guid={} AND id={}", self, noteId);
+    reason = "Threw the note out.";
+    return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The door: where visitors arrive
+
+bool PlayerHousingMgr::SetDoor(Player* player, bool reset, std::string& reason)
+{
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    EnsureHouse(self);
+    if (reset)
+    {
+        CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET door_set=0 WHERE owner_guid={}", self);
+        reason = "Visitors arrive at the landing spot again.";
+        return true;
+    }
+
+    if (!IsOnOwnIsland(player) || !IsSpotOnIsland(player->GetPositionX(), player->GetPositionY(), player->GetPositionZ()))
+    {
+        reason = "Stand where visitors should arrive, on your own island.";
+        return false;
+    }
+    CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET door_set=1, door_x={}, door_y={}, door_z={}, door_o={} WHERE owner_guid={}",
+        player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation(), self);
+    reason = "Visitors will arrive here, facing the way you face now.";
     return true;
 }

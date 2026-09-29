@@ -306,6 +306,14 @@ public:
         if (!placementId)
             return false;
 
+        // Ctrl held (the addon says so) while decorating: the piece joins the group, or leaves it.
+        if (sPlayerHousingMgr->IsDecorating(player) && sPlayerHousingMgr->IsGroupHold(player))
+        {
+            std::string reason;
+            sPlayerHousingMgr->ToggleGroupMember(player, placementId, reason);
+            return true;
+        }
+
         // Edit mode: a click only picks the piece; the keys do the rest.
         if (sPlayerHousingMgr->IsInEditMode(player))
         {
@@ -410,11 +418,15 @@ public:
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
         handler->SendSysMessage(".house get <item> [count] | take <item|all> | weather <name> | time <name> | music <sound id|off>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
+        handler->SendSysMessage(".house group [add|remove <id> | clear] | match <height|turn|line|space> | row <count> [yards] [right|left|forward|back]");
+        handler->SendSysMessage(".house set [save <name> | place <name> | delete <name> | list] | undo [steps] | goto <id>");
+        handler->SendSysMessage(".house sign <note> (while visiting) | guestbook [delete <id>] | door [here|reset]");
         handler->SendSysMessage(".house report <what's wrong> (while visiting)");
         if (gm)
         {
             handler->SendSysMessage("GM: .house unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
             handler->SendSysMessage("GM: .house reports [all] | close <id> | inspect <player> | hide|unhide <player> | cleargreeting <player> | gmpackup <player>");
+            handler->SendSysMessage("GM: .house phototour <start|next|stop|item> (the addon's /housing phototour takes the pictures)");
         }
     }
 
@@ -477,12 +489,13 @@ public:
 
         // The addon's state request is quiet and cheap; edit mode's moves have their own
         // window; everything else counts.
+        bool holdMessage = sub == "group" && tokens.size() > 1 && Lower(tokens[1]) == "hold";
         if (sub == "shift")
         {
             if (!gm && mgr->ShiftFlood(player))
                 return true;
         }
-        else if (sub != "state" && !gm && mgr->CommandFlood(player))
+        else if (sub != "state" && !holdMessage && !gm && mgr->CommandFlood(player))
         {
             Reply(player, "Too many housing commands at once: give it a moment.");
             return true;
@@ -539,7 +552,7 @@ public:
                 mgr->GetCopies(player, item, count, reason);
         }
         else if (sub == "take")
-            mgr->TakeFromStorageCommand(player, tokens.size() > 1 ? Lower(tokens[1]) : "", reason);
+            mgr->TakeFromStorageCommand(player, tokens.size() > 1 ? Lower(tokens[1]) : "", number(2), reason);
         else if (sub == "weather" || sub == "time")
         {
             // By number, or by name: .house weather light rain
@@ -581,7 +594,7 @@ public:
                 reason.clear();
         }
         else if (sub == "undo")
-            mgr->Undo(player, reason);
+            mgr->UndoSteps(player, std::max<uint32>(1, number(1)), reason);
         else if (sub == "redo")
             mgr->Redo(player, reason);
         else if (sub == "packup")
@@ -757,6 +770,105 @@ public:
         }
         else if (sub == "another" || sub == "copy")
             mgr->PlaceAnother(player, number(1), reason);
+        else if (sub == "group")
+        {
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (what == "hold")
+            {
+                // Quiet: the addon says Ctrl went down or up.
+                mgr->SetGroupHold(player, tokens.size() > 2 && Lower(tokens[2]) == "on");
+                return true;
+            }
+            if (what == "add" || what == "remove")
+                mgr->SetGroupMember(player, number(2), what == "add", reason);
+            else if (what == "clear")
+            {
+                mgr->ClearGroup(player);
+                reason = "One piece selected again.";
+            }
+            else
+            {
+                size_t count = mgr->GetGroup(player).size();
+                reason = count > 1 ? Acore::StringFormat("{} pieces selected. Ctrl-click a piece (in edit mode or while decorating) to add or remove it.", count)
+                                   : "One piece selected. Ctrl-click others (in edit mode or while decorating) to move them together.";
+            }
+        }
+        else if (sub == "match")
+            mgr->MatchGroup(player, tokens.size() > 1 ? Lower(tokens[1]) : "", reason);
+        else if (sub == "row")
+        {
+            // .house row <count> [yards] [right|left|forward|back] [id]
+            uint32 count = number(1);
+            float spacing = 0.0f;
+            std::string direction = "right";
+            bool sawDirection = false;
+            uint32 id = 0;
+            for (size_t i = 2; i < tokens.size(); ++i)
+            {
+                std::string word = Lower(tokens[i]);
+                if (word == "right" || word == "left" || word == "forward" || word == "back")
+                {
+                    direction = word;
+                    sawDirection = true;
+                }
+                else if (!sawDirection && spacing == 0.0f)
+                    spacing = decimal(i, 0.0f);
+                else
+                    id = number(i);
+            }
+            if (!count)
+                reason = "Usage: .house row <count> [yards apart] [right|left|forward|back] [id]";
+            else
+                mgr->PlaceRow(player, id, count, spacing, direction, reason);
+        }
+        else if (sub == "set" || sub == "sets")
+        {
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "list";
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            std::optional<SavedSet> set = tokens.size() > 2 ? mgr->FindSavedSet(self, restFrom(2)) : std::nullopt;
+            if (what == "save")
+                mgr->SaveSet(player, restFrom(2), reason);
+            else if ((what == "place" || what == "delete") && !set)
+                reason = tokens.size() > 2 ? "You have no set called " + restFrom(2) + "." : "Which set? .house set list shows them.";
+            else if (what == "place")
+                mgr->StartSetPlacement(player, set->id, reason);
+            else if (what == "delete")
+                mgr->DeleteSet(player, set->id, reason);
+            else
+            {
+                std::vector<SavedSet> sets = mgr->GetSavedSets(self);
+                if (sets.empty())
+                    reason = "No saved sets yet: select pieces (Ctrl-click), then .house set save <name>.";
+                for (SavedSet const& saved : sets)
+                    handler->PSendSysMessage("#{} {} ({} pieces, {})", saved.id, saved.name, saved.pieces, saved.savedAt);
+            }
+        }
+        else if (sub == "goto")
+            mgr->GoTo(player, number(1), reason);
+        else if (sub == "sign")
+            mgr->SignGuestbook(player, restFrom(1), reason);
+        else if (sub == "guestbook")
+        {
+            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            if (tokens.size() > 2 && Lower(tokens[1]) == "delete")
+                mgr->DeleteNote(player, number(2), reason);
+            else
+            {
+                std::vector<GuestbookNote> notes = mgr->GetGuestbook(self, 10);
+                if (notes.empty())
+                    reason = "Your guestbook is empty: visitors sign it with .house sign <note>.";
+                for (GuestbookNote const& note : notes)
+                    handler->PSendSysMessage("#{} {}, {}{}: {}", note.id, note.author, note.when, note.fresh ? " (new)" : "", note.text);
+                mgr->MarkGuestbookRead(self);
+            }
+        }
+        else if (sub == "door")
+        {
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "here";
+            mgr->SetDoor(player, what == "reset" || what == "off" || what == "landing", reason);
+        }
+        else if (gm && sub == "phototour")
+            mgr->PhotoTour(player, tokens.size() > 1 ? Lower(tokens[1]) : "start", reason);
         else if (sub == "grid")
         {
             std::string size = tokens.size() > 1 ? Lower(tokens[1]) : "";

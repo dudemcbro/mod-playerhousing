@@ -21,7 +21,7 @@ HOUSING_MAP = 1
 STEWARD = 900200
 HOUSE_KEY, KEY_SPELL = 902000, 18282
 MARKER_GO = 903990
-RING_GO = 903991                                          # edit mode: under the selected piece
+RING_GO = 903991                                          # under each selected piece while decorating
 
 CHAIR, TABLE, LANTERN = 901105, 901106, 901104          # first-login gifts
 CART, SHREDDED_TENT = 902200, 902201                    # wreckage on the island
@@ -262,6 +262,18 @@ def krook_turn_in(wc, quest_id, next_quest=None):
         wait_for(lambda: wc.quest_offered == next_quest, 3, wc)
         wc.accept_quest(krook.guid, next_quest)
     return done
+
+
+def destroy_all(wc, entry):
+    """Every stack of this item out of the backpack."""
+    for _ in range(10):
+        if not wc.count_item(entry):
+            return
+        wc.destroy_item(entry)
+
+
+def rings_in_sight(wc):
+    return [o for o in wc.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == RING_GO]
 
 
 def angle_diff(a, b):
@@ -759,6 +771,165 @@ def main():
     wait_for(lambda: nearest_go(owner, RING_GO) is None and not any(owner.count_item(e) for e in MOVERS), 3, owner)
     check("and the ring and the ready Move a Piece go", nearest_go(owner, RING_GO) is None and not any(owner.count_item(e) for e in MOVERS),
           str([owner.count_item(e) for e in MOVERS]))
+    owner.command(".house decorate on")
+
+    # ------------------------------------------------------------- several pieces at once
+    log("== groups, rows, sets, history")
+    owner.command(".house edit on")
+    chair = placement_of(owner_guid, CHAIR)
+    table = placement_of(owner_guid, TABLE)
+    lantern = placement_of(owner_guid, LANTERN)
+    if chair and table:
+        move(owner, chair["x"] - 3.0, chair["y"], L["ground"], 0.0)  # facing east: forward is +x, right is -y
+
+        # Undo history: two steps, listed newest first, both undone at once.
+        owner.command(".house nudge forward 0.25 %d" % chair["id"])
+        owner.command(".house nudge forward 0.25 %d" % chair["id"])
+        owner.addon_messages.clear()
+        owner.command(".house data history")
+        undo_rows = [r for r in (addon_list(owner, "history") or []) if r[0] == "undo"]
+        check("the undo history lists the last steps, newest first", len(undo_rows) >= 2 and undo_rows[0][1].startswith("nudged Westfall Chair")
+              and undo_rows[1][1].startswith("nudged Westfall Chair"), str(undo_rows[:3]))
+        msgs = owner.command(".house undo 2")
+        back = placement_of(owner_guid, CHAIR)
+        check("undo 2 takes both steps back", back is not None and abs(back["x"] - chair["x"]) < 0.01 and has(msgs, "Undid 2 steps"),
+              joined(msgs) + " " + str(back))
+
+        # A group: the selected piece and a Ctrl-clicked one, each with a ring.
+        owner.command(".house select %d" % chair["id"])
+        owner.addon_messages.clear()
+        msgs = owner.command(".house group add %d" % table["id"])
+        state = addon_state(owner)
+        wait_for(lambda: len(rings_in_sight(owner)) == 2, 3, owner)
+        check("adding a piece to the selection: two selected, a ring under each", state is not None and len(state) > 20 and state[20] == "2"
+              and len(rings_in_sight(owner)) == 2, joined(msgs) + " %s rings=%d" % (state and state[19:], len(rings_in_sight(owner))))
+
+        msgs = owner.command(".house shift 1 0 0 0")
+        c2, t2, l2 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE), placement_of(owner_guid, LANTERN)
+        check("the selection slides together, with what stands on it", c2 and t2 and abs(c2["x"] - chair["x"] - 1) < 0.06
+              and abs(t2["x"] - table["x"] - 1) < 0.06 and (lantern is None or (l2 and abs(l2["x"] - lantern["x"] - 1) < 0.06)) and not msgs,
+              joined(msgs) + " %s %s" % (c2, t2))
+        owner.command(".house shift 0 0 0 90")
+        c3, t3 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
+        mid2 = ((c2["x"] + t2["x"]) / 2, (c2["y"] + t2["y"]) / 2) if c2 and t2 else (0, 0)
+        mid3 = ((c3["x"] + t3["x"]) / 2, (c3["y"] + t3["y"]) / 2) if c3 and t3 else (9, 9)
+        check("and turns about its middle", c3 and t3 and math.dist(mid2, mid3) < 0.08
+              and abs(math.dist((c3["x"], c3["y"]), (t3["x"], t3["y"])) - math.dist((chair["x"], chair["y"]), (table["x"], table["y"]))) < 0.08
+              and angle_diff(c3["o"], chair["o"] + math.pi / 2) < 0.02, "%s %s" % (c3, t3))
+        state = addon_state(owner)
+        check("still both selected after moving", state is not None and state[4] == str(chair["id"]) and state[20] == "2", str(state and state[19:]))
+        owner.command(".house undo")
+        c4, t4 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
+        check("one undo takes the whole run back", c4 and t4 and math.dist((c4["x"], c4["y"]), (chair["x"], chair["y"])) < 0.01
+              and math.dist((t4["x"], t4["y"]), (table["x"], table["y"])) < 0.01, "%s %s" % (c4, t4))
+
+        # Match height: the others take the first piece's height.
+        owner.command(".house shift 0 0 0.5 0 %d" % chair["id"])
+        msgs = owner.command(".house match height")
+        c5, t5 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
+        check("match height", c5 and t5 and abs(c5["z"] - chair["z"] - 0.5) < 0.06 and abs(t5["z"] - c5["z"]) < 0.06, joined(msgs) + " %s %s" % (c5, t5))
+        owner.command(".house undo")
+        owner.command(".house undo")
+        msgs = owner.command(".house match line")
+        c6, t6 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
+        check("line up: a straight row across the view", c6 and t6 and abs(c6["x"] - t6["x"]) < 0.06 and abs(t6["y"] - table["y"]) < 0.06,
+              joined(msgs) + " %s %s" % (c6, t6))
+        owner.command(".house undo")
+
+        # Ctrl held: a click takes a piece out of the selection (and puts it back).
+        table_go = nearest_go(owner, live(TABLE))
+        if table_go:
+            owner.command(".house group hold on", wait=0.3)
+            owner.use_gameobject(table_go.guid)
+            state = addon_state(owner)
+            check("Ctrl-click takes a piece out of the selection", state is not None and state[20] == "1" and state[4] == str(chair["id"]), str(state and state[19:]))
+            owner.use_gameobject(table_go.guid)
+            state = addon_state(owner)
+            check("and puts it back", state is not None and state[20] == "2", str(state and state[19:]))
+            owner.command(".house group hold off", wait=0.3)
+            owner.use_gameobject(table_go.guid)
+            state = addon_state(owner)
+            check("a plain click selects just that piece", state is not None and state[4] == str(table["id"]) and state[20] == "1", str(state and state[19:]))
+
+        # Picking up the selection.
+        owner.command(".house select %d" % chair["id"])
+        owner.command(".house group add %d" % table["id"])
+        count = len(placements(owner_guid))
+        msgs = owner.command(".house pickup")
+        gone = count - len(placements(owner_guid))
+        check("picking up the selection takes all of it", placement_of(owner_guid, CHAIR) is None and placement_of(owner_guid, TABLE) is None
+              and gone == (3 if lantern else 2) and has(msgs, "Picked up %d pieces" % gone), joined(msgs))
+        msgs = owner.command(".house undo")
+        check("and undo puts it all back", len(placements(owner_guid)) == count, joined(msgs))
+
+        # A row of copies to the right, 1.5 yards apart.
+        owner.command(".house select %d" % chair["id"])
+        msgs = owner.command(".house row 3 1.5 right")
+        copies = sorted((p for p in placements(owner_guid) if p["item"] == CHAIR and p["id"] != chair["id"]), key=lambda p: -p["y"])
+        offsets = [round(chair["y"] - p["y"], 2) for p in copies]
+        check("a row of three chairs, 1.5 yards apart to the right, turned the same", len(copies) == 3
+              and all(abs(o - e) < 0.06 for o, e in zip(offsets, (1.5, 3.0, 4.5))) and all(abs(p["x"] - chair["x"]) < 0.06 for p in copies)
+              and all(angle_diff(p["o"], chair["o"]) < 0.01 for p in copies), joined(msgs) + " " + str(offsets))
+        msgs = owner.command(".house undo")
+        check("one undo takes the row back", len([p for p in placements(owner_guid) if p["item"] == CHAIR]) == 1, joined(msgs))
+        destroy_all(owner, CHAIR)
+
+        # A saved set: the chair, the table and what stands on it, set down elsewhere.
+        owner.command(".house select %d" % chair["id"])
+        owner.command(".house group add %d" % table["id"])
+        expected = 3 if lantern else 2
+        msgs = owner.command(".house set save Dining")
+        saved = db("SELECT COUNT(*) FROM mod_playerhousing_set_piece WHERE owner_guid=%d" % owner_guid)
+        check("save the selection as a set", has(msgs, "as the set Dining") and saved == [[str(expected)]], joined(msgs) + " " + str(saved))
+        owner.addon_messages.clear()
+        owner.command(".house data sets")
+        rows = addon_list(owner, "sets") or []
+        check("the window's list of sets", any(r[0] == "set" and r[2] == "Dining" and r[3] == str(expected) for r in rows), str(rows))
+        before_ids = {p["id"] for p in placements(owner_guid)}
+        msgs = owner.command(".house set place Dining")
+        wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
+        mover = next((e for e in MOVERS if owner.count_item(e)), None)
+        state = addon_state(owner)
+        check("setting it down hands over Move a Piece, not the one edit mode keeps", mover is not None and state is not None
+              and state[14] == str(mover) and state[19] == "0", joined(msgs) + " " + str(state and state[13:]))
+        spot = (chair["x"] + 7.0, chair["y"] + 5.0, L["ground"])
+        msgs = owner.use_item(mover, spell_of(mover), spot) if mover else []
+        new = [p for p in placements(owner_guid) if p["id"] not in before_ids]
+        new_chair = next((p for p in new if p["item"] == CHAIR), None)
+        new_table = next((p for p in new if p["item"] == TABLE), None)
+        check("the set goes down where the circle was clicked, as it was saved", len(new) == expected and new_chair and new_table
+              and math.dist((new_chair["x"], new_chair["y"]), spot[:2]) < 0.1
+              and abs(math.dist((new_chair["x"], new_chair["y"]), (new_table["x"], new_table["y"]))
+                      - math.dist((chair["x"], chair["y"]), (table["x"], table["y"]))) < 0.08, joined(msgs) + " " + str(new))
+        owner.command(".house undo")
+        for item in (CHAIR, TABLE, LANTERN):
+            destroy_all(owner, item)
+        msgs = owner.command(".house set delete Dining")
+        check("delete a set", has(msgs, "Deleted the set Dining")
+              and db("SELECT COUNT(*) FROM mod_playerhousing_set WHERE owner_guid=%d" % owner_guid) == [["0"]], joined(msgs))
+
+        # Go to a piece.
+        msgs = owner.command(".house goto %d" % table["id"], wait=1.5)
+        state = addon_state(owner)
+        check("go to a piece: next to it, and it's selected", math.dist(owner.pos[:2], (table["x"], table["y"])) < 4.0
+              and state is not None and state[4] == str(table["id"]), joined(msgs) + " pos=%s" % (owner.pos,))
+
+        # The Collection's recent pieces: what was placed last.
+        owner.addon_messages.clear()
+        owner.command(".house data collection")
+        recent = [r for r in (addon_list(owner, "collection") or []) if r[0] == "recent"]
+        check("the Collection lists the pieces placed last", recent and str(CHAIR) in recent[0][1].split(","), str(recent))
+
+        # One piece out of House Storage, not all of that kind.
+        db("INSERT INTO mod_playerhousing_storage (owner_guid, item_entry, count) VALUES (%d, %d, 2) ON DUPLICATE KEY UPDATE count=2"
+           % (owner_guid, CHAIR))
+        msgs = owner.command(".house take %d 1" % CHAIR)
+        wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+        check("take one piece out of House Storage", owner.count_item(CHAIR) == 1 and storage(owner_guid).get(CHAIR) == 1, joined(msgs))
+        owner.command(".house take %d" % CHAIR)
+        wait_for(lambda: owner.count_item(CHAIR) == 2, 3, owner)
+        destroy_all(owner, CHAIR)
+    owner.command(".house edit off")
     owner.command(".house decorate on")
 
     # ------------------------------------------------------------- the addon's window
@@ -1343,6 +1514,12 @@ def main():
 
     # Out of decorate mode, so guests find working furniture.
     owner.command(".house decorate off")
+    # A door: where visitors come in.
+    door = (L["landing"][0] + 6.0, L["landing"][1] - 4.0, L["ground"])
+    move(owner, door[0], door[1], door[2], 1.0)
+    msgs = owner.command(".house door here")
+    check("the owner sets the door where visitors arrive", has(msgs, "Visitors will arrive here")
+          and db("SELECT door_set FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["1"]], joined(msgs))
     guest.command(".house visit")
     menu = guest.last_gossip
     check("the visit menu counts invitations", any(o.startswith("Islands you're invited to (1)") for o in options(menu)), str(options(menu)))
@@ -1352,6 +1529,28 @@ def main():
     arrived = wait_for_map(guest, HOUSING_MAP)
     check("the guest visits with one click", arrived, "map=%s" % guest.map_id)
     guest.pump(1.5)
+    check("and comes in at the door, facing the way the owner faced", math.dist(guest.pos[:2], door[:2]) < 1.5 and angle_diff(guest.pos[3], 1.0) < 0.1,
+          "pos=%s" % (guest.pos,))
+
+    # The guestbook: a note from the guest, for the owner to read.
+    msgs = guest.command(".house sign What a lovely island!")
+    check("a visitor signs the guestbook", has(msgs, "You signed"), joined(msgs))
+    msgs = guest.command(".house sign Me again!")
+    check("once a day per island", has(msgs, "already signed"), joined(msgs))
+    owner.addon_messages.clear()
+    owner.command(".house data guestbook")
+    notes = [r for r in (addon_list(owner, "guestbook") or []) if r[0] == "note"]
+    check("the owner reads it, marked new", len(notes) == 1 and notes[0][2] == args.guest_char and notes[0][4] == "1"
+          and notes[0][5] == "What a lovely island!", str(notes))
+    owner.addon_messages.clear()
+    owner.command(".house data island")
+    settings = next((r for r in (addon_list(owner, "island") or []) if r[0] == "settings"), None)
+    check("read, it's no longer new; the door shows as set", settings is not None and len(settings) > 9 and settings[8] == "1" and settings[9] == "0",
+          str(settings))
+    msgs = owner.command(".house guestbook delete %s" % (notes[0][1] if notes else "0"))
+    check("the owner throws a note out", has(msgs, "Threw the note out")
+          and db("SELECT COUNT(*) FROM mod_playerhousing_guestbook WHERE owner_guid=%d" % owner_guid) == [["0"]], joined(msgs))
+    owner.command(".house door reset")
     check("the guest sees the greeting", has(guest.messages_since(0), "Mind the coffins."), joined(guest.messages_since(0)[-5:]))
     check("the owner hears the guest arrive", has(owner.messages_since(owner_mark), "arrived on your island"), joined(owner.messages_since(owner_mark)))
     check("the guest sees the owner's farmhouse", live(FARMHOUSE) in go_entries(guest), str(sorted(go_entries(guest))))
@@ -1620,10 +1819,31 @@ def main():
     msgs = owner.command(".house undo")
     check("and the owner's undo list went with the pieces", has(msgs, "Nothing to undo"), joined(msgs))
 
+    log("== photo tour")
+    # The GM's photo tour: each building set up in front of the camera, for the addon's pictures.
+    admin.command(".house home", wait=1.0)
+    wait_for_map(admin, HOUSING_MAP)
+    admin.addon_messages.clear()
+    msgs = admin.command(".house phototour start", wait=1.5)
+    photo = [m.split("\t") for m in admin.addon_messages if m.startswith("HOUSING\tphoto\t")]
+    first = int(photo[0][2]) if photo and len(photo[0]) > 4 else 0
+    wait_for(lambda: first and nearest_go(admin, live(first)) is not None, 4, admin)
+    check("a GM's photo tour sets up the first building and tells the addon", first and photo[0][3] == "1"
+          and nearest_go(admin, live(first)) is not None, joined(msgs) + " " + str(photo))
+    admin.addon_messages.clear()
+    admin.command(".house phototour next", wait=1.5)
+    photo = [m.split("\t") for m in admin.addon_messages if m.startswith("HOUSING\tphoto\t")]
+    check("then the next", photo and len(photo[0]) > 4 and photo[0][3] == "2" and int(photo[0][2]) != first, str(photo))
+    admin.addon_messages.clear()
+    msgs = admin.command(".house phototour stop", wait=1.5)
+    check("and stops", "HOUSING\tphoto\tdone" in admin.addon_messages and has(msgs, "Photo tour over"), joined(msgs))
+    admin.command(".house leave", wait=1.0)
+
     # Deleting a character closes their island, and what a roommate put there goes back to
     # the roommate.
     log("== deleting a character")
     ensure_account("housetemp", "housetemp")
+
     temp = connect(args, "housetemp", "housetemp")
     for stale in [c for c in temp.enum_chars() if c["name"] == "Krooktemp"]:
         temp.delete_char(stale["guid"])  # left by an aborted run

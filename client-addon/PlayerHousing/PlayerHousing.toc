@@ -7,7 +7,9 @@
 
 PieceModels.lua
 PieceInfo.lua
+Pictures.lua
 PlayerHousing.lua
 EditMode.lua
 Window.lua
 Minimap.lua
+Extras.lua

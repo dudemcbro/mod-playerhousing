@@ -1,26 +1,30 @@
--- The housing window's tabs besides Bags: Collection, Storage, Placed, Layouts, Guests, Visit
--- and Island. Each asks the server for its list when shown (.house data <kind>, answered in
--- addon messages) and acts through .house commands, so the window can't do anything a
--- player couldn't type. The House Key menu still has all of it too.
+-- The housing window's tabs: Collection, Storage, Placed, Layouts (and sets), Guests (and the
+-- guestbook), Visit and Island. Each asks the server for its list when shown (.house data
+-- <kind>, answered in addon messages) and acts through .house commands, so the window can't
+-- do anything a player couldn't type. The House Key menu still has most of it too.
 
 local API = PlayerHousingAPI
-local TABS = { "Bags", "Collection", "Storage", "Placed", "Layouts", "Guests", "Visit", "Island" }
+local TABS = { "Collection", "Storage", "Placed", "Layouts", "Guests", "Visit", "Island" }
 local ROW_HEIGHT = 22
 local GRID_COLUMNS, GRID_ROWS, SLOT = 9, 4, 40
 local VISIT_LISTS = { "Party", "Guild", "Friends", "Invited", "Public", "Most liked" }
 local PRIVACY = { "Private", "Friends", "Public" }   -- friends and guild, on the server
+local FAVORITES, RECENT = "favorites", "recent"      -- the category picker's own entries, after All
+local SORTS = { { "order", "Sort: collection" }, { "name", "Sort: name" }, { "cost", "Sort: cost" }, { "bags", "Sort: in bags" } }
 
 local frame
 local tabButtons, panels = {}, {}
-local current = "Bags"
-local pieceById = {}
-local collection = { unlocked = {}, fresh = {}, storage = {}, placed = {}, free = false, catalog = false, unlockAll = false }
-local collectionView = { category = 0, unlockedOnly = false, search = "", page = 1 }
-local island = { weathers = {}, times = {}, tracks = {}, privacy = 0, weather = 0, time = 0, music = 0, musicBox = false }
+local current = "Collection"
+local pieceById, pieceOrder = {}, {}
+local collection = { unlocked = {}, fresh = {}, storage = {}, placed = {}, recent = {}, free = false, catalog = false, unlockAll = false }
+local collectionView = { category = 0, unlockedOnly = false, inBags = false, search = "", page = 1, sort = 1 }
+local island = { weathers = {}, times = {}, tracks = {}, privacy = 0, weather = 0, time = 0, music = 0, musicBox = false, door = false, newNotes = 0 }
 local visitList = 1
+local collectionPending = false  -- the grid's secure buttons wait for combat to end
 
-for _, info in ipairs(PlayerHousing_Pieces or {}) do
+for index, info in ipairs(PlayerHousing_Pieces or {}) do
     pieceById[info[1]] = info
+    pieceOrder[info[1]] = index
 end
 
 ---------------------------------------------------------------------------------------------
@@ -108,8 +112,26 @@ local function InputBox(parent, name, width, x, y)
     return box
 end
 
+local function CheckBox(parent, name, label, x, y, onClick)
+    local check = CreateFrame("CheckButton", name, parent, "UICheckButtonTemplate")
+    check:SetWidth(20)
+    check:SetHeight(20)
+    check:SetPoint("TOPLEFT", x, y + 1)
+    Label(parent, label, x + 20, y - 3, "GameFontHighlightSmall")
+    check:SetScript("OnClick", function(self) onClick(self:GetChecked() and true or false) end)
+    return check
+end
+
+local function Popup(which, text, data)
+    local dialog = StaticPopup_Show(which, text)
+    if dialog then
+        dialog.data = data
+    end
+end
+
 -- A list of rows, a page at a time: an icon, a line of text and buttons on the right.
-local function MakeList(panel, top, rows, buttons)
+-- tooltip: optional function(item) returning the text shown while hovering a row.
+local function MakeList(panel, top, rows, buttons, tooltip)
     local list = { rows = {}, items = {}, page = 1 }
     local width = API.WIDTH - 24
     for index = 1, rows do
@@ -132,12 +154,23 @@ local function MakeList(panel, top, rows, buttons)
                 if row.item then
                     spec[3](row.item)
                 end
-            end)
+            end, spec[4], spec[5])
             button:SetPoint("RIGHT", row, "RIGHT", -right, 0)
             right = right + spec[2] + 2
             row.buttons[position] = button
         end
         row.text:SetWidth(width - 22 - right - 4)
+        if tooltip then
+            row:EnableMouse(true)
+            row:SetScript("OnEnter", function(self)
+                if self.item then
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    GameTooltip:SetText(tooltip(self.item), 1, 1, 1, 1, true)
+                    GameTooltip:Show()
+                end
+            end)
+            row:SetScript("OnLeave", GameTooltip_Hide)
+        end
         row:Hide()
         list.rows[index] = row
     end
@@ -169,17 +202,24 @@ local function MakeList(panel, top, rows, buttons)
         for index, row in ipairs(self.rows) do
             local item = self.items[(self.page - 1) * rows + index]
             row.item = item
-            if item then
+            if item and not self.hidden then
                 self.render(row, item)
                 row:Show()
             else
                 row:Hide()
             end
         end
-        self.empty:SetText(#self.items == 0 and (self.emptyText or "") or "")
-        self.pageText:SetText(pages > 1 and ("Page %d of %d"):format(self.page, pages) or "")
+        self.empty:SetText(#self.items == 0 and not self.hidden and (self.emptyText or "") or "")
+        self.pageText:SetText(pages > 1 and not self.hidden and ("Page %d of %d"):format(self.page, pages) or "")
         if self.page > 1 then self.prev:Enable() else self.prev:Disable() end
         if self.page < pages then self.next:Enable() else self.next:Disable() end
+        if self.hidden then self.prev:Hide() self.next:Hide() else self.prev:Show() self.next:Show() end
+    end
+
+    -- Two lists can share a panel, one shown at a time.
+    function list:SetHidden(hidden)
+        self.hidden = hidden
+        self:Refresh()
     end
 
     return list
@@ -195,8 +235,25 @@ local function MakePanel(name)
     return panel
 end
 
+-- Two buttons that switch a tab between its two pages.
+local function PageSwitch(panel, prefix, names, onSwitch)
+    local buttons = {}
+    for index, text in ipairs(names) do
+        local button = SmallButton(panel, prefix .. index, text, 110, function() onSwitch(index) end)
+        button:SetPoint("TOPLEFT", 12 + (index - 1) * 112, 0)
+        buttons[index] = button
+    end
+    return function(which)
+        for index, button in ipairs(buttons) do
+            if index == which then button:LockHighlight() else button:UnlockHighlight() end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------------------------
 -- Tabs
+
+local layoutsPage, guestsPage = 1, 1  -- 1: layouts, guests; 2: sets, the guestbook
 
 local function Request(name)
     if name == "Collection" or name == "Storage" then
@@ -206,9 +263,9 @@ local function Request(name)
             API.RequestData("placed")
         end
     elseif name == "Layouts" then
-        API.RequestData("layouts")
+        API.RequestData(layoutsPage == 1 and "layouts" or "sets")
     elseif name == "Guests" then
-        API.RequestData("guests")
+        API.RequestData(guestsPage == 1 and "guests" or "guestbook")
     elseif name == "Visit" then
         API.RequestData("visits", visitList - 1)
     elseif name == "Island" then
@@ -243,13 +300,15 @@ function PlayerHousing_SelectTab(name)
 end
 
 ---------------------------------------------------------------------------------------------
--- Collection: everything there is, unlocked or not, and a copy of what's unlocked.
+-- Collection: everything there is, unlocked or not. A piece in the bags goes down with a
+-- click (on the island); any piece shows in the preview with its buttons.
 
-local collectionSlots, categoryText, collectionPageText, collectionStatus, collectionPrev, collectionNext = {}, nil, nil, nil, nil, nil
-local FAVORITES = "favorites"   -- the category picker's own entry, after All
+local collectionSlots, categoryText, collectionPageText, collectionStatus, collectionPrev, collectionNext, sortButton, collectionCount =
+    {}, nil, nil, nil, nil, nil, nil, nil
 
 -- Right-click stars a piece; the stars are kept per character.
 local function Favorites()
+    PlayerHousingDB = PlayerHousingDB or {}
     PlayerHousingDB.favorites = PlayerHousingDB.favorites or {}
     return PlayerHousingDB.favorites
 end
@@ -258,29 +317,69 @@ local function CollectionPieces()
     local list = {}
     local search = collectionView.search
     local favorites = Favorites()
+    local category = collectionView.category
+    local recentRank = {}
+    for rank, id in ipairs(collection.recent) do
+        recentRank[id] = rank
+    end
     for _, info in ipairs(PlayerHousing_Pieces or {}) do
-        local id, category = info[1], info[3]
-        local catalog = PlayerHousing_Categories[category] == "Catalog"
+        local id = info[1]
+        local catalog = PlayerHousing_Categories[info[3]] == "Catalog"
         if (not catalog or collection.catalog)
-            and (collectionView.category == 0 or collectionView.category == category
-                 or (collectionView.category == FAVORITES and favorites[id]))
+            and (category == 0 or category == info[3] or (category == FAVORITES and favorites[id]) or (category == RECENT and recentRank[id]))
             and (not collectionView.unlockedOnly or collection.unlocked[id])
+            and (not collectionView.inBags or GetItemCount(id) > 0)
             and (search == "" or info[2]:lower():find(search, 1, true)) then
             list[#list + 1] = info
         end
     end
+
+    local sort = SORTS[collectionView.sort][1]
+    if category == RECENT then
+        table.sort(list, function(left, right) return recentRank[left[1]] < recentRank[right[1]] end)
+    elseif sort == "name" then
+        table.sort(list, function(left, right) return left[2] < right[2] end)
+    elseif sort == "cost" then
+        table.sort(list, function(left, right)
+            if left[5] ~= right[5] then return left[5] < right[5] end
+            return pieceOrder[left[1]] < pieceOrder[right[1]]
+        end)
+    elseif sort == "bags" then
+        table.sort(list, function(left, right)
+            local leftHave, rightHave = GetItemCount(left[1]) > 0, GetItemCount(right[1]) > 0
+            if leftHave ~= rightHave then return leftHave end
+            return pieceOrder[left[1]] < pieceOrder[right[1]]
+        end)
+    end
     return list
 end
 
+local function CategoryName(category)
+    if category == 0 then
+        return "All categories"
+    elseif category == FAVORITES then
+        return "Favorites"
+    elseif category == RECENT then
+        return "Recently placed"
+    end
+    return PlayerHousing_Categories[category]
+end
+
+-- The grid holds secure buttons (a piece in the bags is used with a click), which change
+-- out of combat only: in combat it waits.
 local function UpdateCollection()
     if not categoryText then
         return
     end
-    local name = collectionView.category == 0 and "All categories"
-        or (collectionView.category == FAVORITES and "Favorites" or PlayerHousing_Categories[collectionView.category])
-    categoryText:SetText(name)
-    local favorites = Favorites()
+    if InCombatLockdown() then
+        collectionPending = true
+        return
+    end
+    collectionPending = false
+    categoryText:SetText(CategoryName(collectionView.category))
+    sortButton:SetText(SORTS[collectionView.sort][2])
 
+    local favorites = Favorites()
     local list = CollectionPieces()
     local perPage = GRID_COLUMNS * GRID_ROWS
     local pages = math.max(1, math.ceil(#list / perPage))
@@ -298,8 +397,16 @@ local function UpdateCollection()
             button.count:SetText(have > 0 and have or "")
             button.new:SetText(collection.fresh[id] and "New" or "")
             if favorites[id] then button.star:Show() else button.star:Hide() end
+            -- On the island, a click on a piece in the bags uses it: the targeting circle.
+            local location = API.CanEdit() and API.PieceLocation(id) or nil
+            button.location = location
+            button:SetAttribute("type1", location and "item" or nil)
+            button:SetAttribute("item1", location)
             button:Show()
         else
+            button.location = nil
+            button:SetAttribute("type1", nil)
+            button:SetAttribute("item1", nil)
             button:Hide()
         end
     end
@@ -316,16 +423,22 @@ local function UpdateCollection()
             end
         end
     end
-    if collectionView.category == FAVORITES and #list == 0 then
+    collectionCount:SetText(("%d of %d unlocked"):format(unlocked, total))
+    if #list == 0 and collectionView.category == FAVORITES then
         collectionStatus:SetText("No favorites yet: right-click a piece to star it.")
+    elseif #list == 0 and collectionView.inBags then
+        collectionStatus:SetText("None in your bags: click a piece, then Get 1.")
+    elseif #list == 0 and collectionView.category == RECENT then
+        collectionStatus:SetText("Nothing placed yet.")
     else
-        collectionStatus:SetText(("%d of %d unlocked. Click: place or get copies. Right-click: favorite."):format(unlocked, total))
+        collectionStatus:SetText("Click: place it (in your bags) or show it. Right-click: favorite.")
     end
 end
 
--- All, Favorites, then each category (the Catalog only when the server offers it).
+-- All, Favorites, Recently placed, then each category (the Catalog only when the server
+-- offers it).
 local function CycleCategory(step)
-    local order = { 0, FAVORITES }
+    local order = { 0, FAVORITES, RECENT }
     for index, name in ipairs(PlayerHousing_Categories) do
         if name ~= "Catalog" or collection.catalog then
             order[#order + 1] = index
@@ -358,7 +471,11 @@ local function CollectionTooltip(button)
     end
     GameTooltip:AddLine(("In your bags: %d. In House Storage: %d. Placed: %d."):format(GetItemCount(id), collection.storage[id] or 0,
         collection.placed[id] or 0), 1, 1, 1, true)
-    GameTooltip:AddLine("Click: show it next to the window, to place it or get copies.", 0.4, 1, 0.4, true)
+    if button.location then
+        GameTooltip:AddLine("Click: place one (then click the spot). Drag: onto an action bar.", 0.4, 1, 0.4, true)
+    else
+        GameTooltip:AddLine("Click: show it next to the window, to place it or get copies.", 0.4, 1, 0.4, true)
+    end
     GameTooltip:AddLine(Favorites()[id] and "Right-click: take the star off." or "Right-click: star it as a favorite.", 0.7, 0.7, 0.7)
     GameTooltip:Show()
     API.ShowPreview({ id = id, name = info[2] })
@@ -369,21 +486,16 @@ local function CreateCollection()
     SmallButton(panel, "PlayerHousingCategoryPrev", "<", 24, function() CycleCategory(-1) end):SetPoint("TOPLEFT", 12, 0)
     categoryText = panel:CreateFontString("PlayerHousingCategoryText", "OVERLAY", "GameFontHighlightSmall")
     categoryText:SetPoint("TOPLEFT", 38, -3)
-    categoryText:SetWidth(100)
-    SmallButton(panel, "PlayerHousingCategoryNext", ">", 24, function() CycleCategory(1) end):SetPoint("TOPLEFT", 140, 0)
-
-    local unlockedOnly = CreateFrame("CheckButton", "PlayerHousingUnlockedOnly", panel, "UICheckButtonTemplate")
-    unlockedOnly:SetWidth(20)
-    unlockedOnly:SetHeight(20)
-    unlockedOnly:SetPoint("TOPLEFT", 168, 1)
-    Label(panel, "Unlocked", 188, -3, "GameFontHighlightSmall")
-    unlockedOnly:SetScript("OnClick", function(self)
-        collectionView.unlockedOnly = self:GetChecked() and true or false
+    categoryText:SetWidth(96)
+    SmallButton(panel, "PlayerHousingCategoryNext", ">", 24, function() CycleCategory(1) end):SetPoint("TOPLEFT", 136, 0)
+    sortButton = SmallButton(panel, "PlayerHousingCollectionSort", "Sort: collection", 92, function()
+        collectionView.sort = collectionView.sort % #SORTS + 1
         collectionView.page = 1
         UpdateCollection()
-    end)
+    end, "Sort", "The Collection's own order, by name, by what a copy costs, or the ones in your bags first.")
+    sortButton:SetPoint("TOPLEFT", 164, 0)
 
-    local search = InputBox(panel, "PlayerHousingCollectionSearch", API.WIDTH - 260, 246, 0)
+    local search = InputBox(panel, "PlayerHousingCollectionSearch", API.WIDTH - 280, 266, 0)
     search:SetScript("OnEnterPressed", search.ClearFocus)
     search:SetScript("OnTextChanged", function(self)
         collectionView.search = (self:GetText() or ""):lower()
@@ -391,13 +503,27 @@ local function CreateCollection()
         UpdateCollection()
     end)
 
+    CheckBox(panel, "PlayerHousingUnlockedOnly", "Unlocked", 12, -22, function(on)
+        collectionView.unlockedOnly = on
+        collectionView.page = 1
+        UpdateCollection()
+    end)
+    CheckBox(panel, "PlayerHousingInBags", "In my bags", 96, -22, function(on)
+        collectionView.inBags = on
+        collectionView.page = 1
+        UpdateCollection()
+    end)
+    collectionCount = panel:CreateFontString("PlayerHousingCollectionCount", "OVERLAY", "GameFontDisableSmall")
+    collectionCount:SetPoint("TOPRIGHT", -14, -25)
+
     for index = 1, GRID_COLUMNS * GRID_ROWS do
-        local button = CreateFrame("Button", "PlayerHousingCollectionSlot" .. index, panel)
+        local button = CreateFrame("Button", "PlayerHousingCollectionSlot" .. index, panel, "SecureActionButtonTemplate")
         button:SetWidth(36)
         button:SetHeight(36)
         local column, row = (index - 1) % GRID_COLUMNS, math.floor((index - 1) / GRID_COLUMNS)
-        button:SetPoint("TOPLEFT", 14 + column * SLOT, -28 - row * SLOT)
+        button:SetPoint("TOPLEFT", 14 + column * SLOT, -46 - row * SLOT)
         button:RegisterForClicks("AnyUp")
+        button:RegisterForDrag("LeftButton")
         button.icon = button:CreateTexture(nil, "ARTWORK")
         button.icon:SetAllPoints()
         button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
@@ -410,13 +536,15 @@ local function CreateCollection()
         button.star:SetPoint("TOPRIGHT", 1, 1)
         button.star:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
         button.star:Hide()
+        button:SetPushedTexture("Interface\\Buttons\\UI-Quickslot-Depress")
         button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         button:SetScript("OnEnter", CollectionTooltip)
         button:SetScript("OnLeave", function()
             GameTooltip_Hide()
             API.HidePreview()
         end)
-        button:SetScript("OnClick", function(self, mouseButton)
+        -- After the secure click (which placed it, if it was in the bags): show it, or star it.
+        button:SetScript("PostClick", function(self, mouseButton)
             if not self.info then
                 return
             end
@@ -431,6 +559,13 @@ local function CreateCollection()
                 API.Pin({ id = id, name = self.info[2] })
             end
         end)
+        -- Onto an action bar, like dragging it out of the bag.
+        button:SetScript("OnDragStart", function(self)
+            if self.location and not InCombatLockdown() then
+                local bag, slot = self.location:match("^(%d+) (%d+)$")
+                PickupContainerItem(tonumber(bag), tonumber(slot))
+            end
+        end)
         button:Hide()
         collectionSlots[index] = button
     end
@@ -439,18 +574,26 @@ local function CreateCollection()
         collectionView.page = collectionView.page - 1
         UpdateCollection()
     end)
-    collectionPrev:SetPoint("TOPLEFT", 12, -192)
+    collectionPrev:SetPoint("TOPLEFT", 12, -210)
     collectionNext = SmallButton(panel, "PlayerHousingCollectionNext", ">", 26, function()
         collectionView.page = collectionView.page + 1
         UpdateCollection()
     end)
-    collectionNext:SetPoint("TOPRIGHT", -12, -192)
+    collectionNext:SetPoint("TOPRIGHT", -12, -210)
     collectionPageText = panel:CreateFontString("PlayerHousingCollectionPageText", "OVERLAY", "GameFontHighlightSmall")
-    collectionPageText:SetPoint("TOP", 0, -195)
+    collectionPageText:SetPoint("TOP", 0, -213)
     collectionStatus = panel:CreateFontString("PlayerHousingCollectionStatus", "OVERLAY", "GameFontNormalSmall")
-    collectionStatus:SetPoint("TOPLEFT", 14, -218)
-    collectionStatus:SetPoint("TOPRIGHT", -14, -218)
+    collectionStatus:SetPoint("TOPLEFT", 14, -236)
+    collectionStatus:SetPoint("TOPRIGHT", -14, -236)
     panel:SetScript("OnShow", UpdateCollection)
+    panel:EnableMouseWheel(true)
+    panel:SetScript("OnMouseWheel", function(self, delta)
+        -- Over the grid with nothing selected: pages.
+        if API.state.selected == 0 or not API.CanEdit() then
+            collectionView.page = collectionView.page - delta
+            UpdateCollection()
+        end
+    end)
 end
 
 ---------------------------------------------------------------------------------------------
@@ -480,29 +623,61 @@ local function CreateStorage()
     storageStatus = Label(panel, "", 14, -3, "GameFontHighlightSmall")
     SmallButton(panel, "PlayerHousingTakeAll", "Take all", 80, function() Do("take all", "collection") end,
         "Take all", "Everything in House Storage that fits in your bags."):SetPoint("TOPRIGHT", -12, 0)
-    storageList = MakeList(panel, -26, 8, {
-        { "Take", 50, function(item) Do("take " .. item.id, "collection") end },
+    storageList = MakeList(panel, -26, 9, {
+        { "Place", 50, function(item)
+            -- One out of storage, and the preview's Place lights up for it.
+            API.Pin({ id = item.id, name = item.name })
+            API.FetchPinned()
+        end, "Place one", "Takes one out, then Place (next to the window) puts it down." },
+        { "Take", 50, function(item) Do("take " .. item.id, "collection") end, "Take them all", "Back to your bags." },
     })
 end
 
 ---------------------------------------------------------------------------------------------
--- Placed: the pieces on the island, nearest first.
+-- Placed: the pieces on the island, nearest first, to find, select and fetch.
 
-local placedList, placedStatus
+local placedList, placedStatus, placedItems, placedSearch = nil, nil, {}, ""
+
+local function ShowPlaced()
+    if not placedList then
+        return
+    end
+    local items = {}
+    for _, item in ipairs(placedItems) do
+        if placedSearch == "" or PieceName(item.item):lower():find(placedSearch, 1, true) then
+            items[#items + 1] = item
+        end
+    end
+    placedList:SetItems(items, function(row, item)
+        row.icon:SetTexture(PieceIcon(item.item))
+        row.text:SetText(("%s |cffa0a0a0%.0f yd|r"):format(PieceName(item.item), item.distance))
+    end, placedSearch == "" and "Nothing placed yet." or "Nothing placed matches.")
+end
 
 local function CreatePlaced()
     local panel = MakePanel("Placed")
-    placedStatus = Label(panel, "", 14, -3, "GameFontHighlightSmall")
+    local search = InputBox(panel, "PlayerHousingPlacedSearch", 150, 18, 0)
+    search:SetScript("OnEnterPressed", search.ClearFocus)
+    search:SetScript("OnTextChanged", function(self)
+        placedSearch = (self:GetText() or ""):lower()
+        placedList.page = 1
+        ShowPlaced()
+    end)
     SmallButton(panel, "PlayerHousingPlacedRefresh", "Refresh", 70, function() Request("Placed") end,
         "Refresh", "Nearest first, from where you stand now."):SetPoint("TOPRIGHT", -12, 0)
-    placedList = MakeList(panel, -26, 8, {
-        { "Select", 50, function(item) API.Command("select " .. item.id) end },
-        { "Here", 42, function(item) Do("here " .. item.id, "placed") end },
-        { "Pick up", 54, function(item) API.PickUpPlacement(item.id, PieceName(item.item), IsBuilding(item.item)) end },
+    placedStatus = Label(panel, "", 14, -24, "GameFontHighlightSmall")
+    placedList = MakeList(panel, -42, 8, {
+        { "Go", 30, function(item) API.Command("goto " .. item.id) end, "Go to it", "Takes you next to it, and selects it." },
+        { "Select", 46, function(item) API.Command("select " .. item.id) end, "Select it" },
+        { "+", 20, function(item) API.Command("group add " .. item.id) end, "Add it to the selection",
+          "Selected with the others, it moves with them (like Ctrl-clicking it)." },
+        { "Here", 40, function(item) Do("here " .. item.id, "placed") end, "Bring it here", "Moves it to where you're standing." },
+        { "Pick up", 50, function(item) API.PickUpPlacement(item.id, PieceName(item.item), IsBuilding(item.item)) end },
     })
     panel:SetScript("OnShow", function()
         if not API.CanEdit() then
             placedStatus:SetText("")
+            wipe(placedItems)
             placedList:SetItems({}, function() end, "Go home (or to an island where you're a roommate) to see its pieces.")
         end
     end)
@@ -512,21 +687,18 @@ API.OnData("placed", function(list)
     if not placedList then
         return
     end
-    local items = {}
+    wipe(placedItems)
     for _, row in ipairs(list.rows) do
-        items[#items + 1] = { id = tonumber(row[1]), item = tonumber(row[2]), distance = tonumber(row[3]) or 0 }
+        placedItems[#placedItems + 1] = { id = tonumber(row[1]), item = tonumber(row[2]), distance = tonumber(row[3]) or 0 }
     end
-    placedStatus:SetText(("%d pieces on the island, nearest first."):format(list.total or #items))
-    placedList:SetItems(items, function(row, item)
-        row.icon:SetTexture(PieceIcon(item.item))
-        row.text:SetText(("%s |cffa0a0a0%.0f yd|r"):format(PieceName(item.item), item.distance))
-    end, "Nothing placed yet.")
+    placedStatus:SetText(("%d pieces on the island, nearest first."):format(list.total or #placedItems))
+    ShowPlaced()
 end)
 
 ---------------------------------------------------------------------------------------------
--- Layouts: whole islands, saved and set out again.
+-- Layouts: whole islands, saved and set out again. Sets: a few pieces saved together.
 
-local layoutList, layoutStatus, layoutName
+local layoutList, setList, layoutStatus, layoutName, layoutSave, showLayoutsPage
 
 StaticPopupDialogs["PLAYERHOUSING_LAYOUT_LOAD"] = {
     text = "Set out %s?\n\nThe pieces on your island now are put away first.",
@@ -553,36 +725,65 @@ StaticPopupDialogs["PLAYERHOUSING_LAYOUT_SEND"] = {
     end,
     timeout = 0, whileDead = 1, hideOnEscape = 1,
 }
-
-local function Popup(which, text, data)
-    local dialog = StaticPopup_Show(which, text)
-    if dialog then
-        dialog.data = data
-    end
-end
+StaticPopupDialogs["PLAYERHOUSING_SET_DELETE"] = {
+    text = "Delete the set %s?",
+    button1 = DELETE or "Delete", button2 = CANCEL,
+    OnAccept = function(self, data) Do("set delete " .. data, "sets") end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
 
 local function CreateLayouts()
     local panel = MakePanel("Layouts")
-    layoutName = InputBox(panel, "PlayerHousingLayoutName", 180, 18, 0)
+    local highlight = PageSwitch(panel, "PlayerHousingLayoutsPage", { "Island layouts", "Sets" }, function(which) showLayoutsPage(which) end)
+    layoutName = InputBox(panel, "PlayerHousingLayoutName", 180, 18, -24)
     local function Save()
         local name = strtrim(layoutName:GetText() or "")
         if name == "" then
-            API.Print("give the layout a name first.")
+            API.Print(layoutsPage == 1 and "give the layout a name first." or "give the set a name first.")
             return
         end
         layoutName:SetText("")
         layoutName:ClearFocus()
-        Do("layout save " .. name, "layouts")
+        if layoutsPage == 1 then
+            Do("layout save " .. name, "layouts")
+        else
+            Do("set save " .. name, "sets")
+        end
     end
     layoutName:SetScript("OnEnterPressed", Save)
-    SmallButton(panel, "PlayerHousingLayoutSave", "Save as new", 90, Save,
-        "Save the island", "Every piece where it stands, under the name on the left."):SetPoint("TOPLEFT", 206, 0)
-    layoutStatus = Label(panel, "", 14, -24, "GameFontHighlightSmall")
-    layoutList = MakeList(panel, -44, 7, {
+    layoutSave = SmallButton(panel, "PlayerHousingLayoutSave", "Save as new", 110, Save, function()
+        if layoutsPage == 1 then
+            return "Save the island", "Every piece where it stands, under the name on the left."
+        end
+        return "Save the selection", "The selected pieces (Ctrl-click to select several) and what stands on them, as a set."
+    end)
+    layoutSave:SetPoint("TOPLEFT", 206, -24)
+    layoutStatus = Label(panel, "", 14, -48, "GameFontHighlightSmall")
+    layoutList = MakeList(panel, -66, 7, {
         { "Set out", 56, function(item) Popup("PLAYERHOUSING_LAYOUT_LOAD", item.name, item.id) end },
         { "Send", 42, function(item) Popup("PLAYERHOUSING_LAYOUT_SEND", item.name, item.id) end },
         { "Delete", 50, function(item) Popup("PLAYERHOUSING_LAYOUT_DELETE", item.name, item.id) end },
     })
+    local setsPage = CreateFrame("Frame", "PlayerHousingSetsPage", panel)
+    setsPage:SetAllPoints()
+    setList = MakeList(setsPage, -66, 7, {
+        { "Place", 50, function(item) API.Command("set place " .. item.id) end, "Set it down",
+          "Move a Piece comes to your bags (G in edit mode): click where it goes. It faces you." },
+        { "Delete", 50, function(item) Popup("PLAYERHOUSING_SET_DELETE", item.name, item.id) end },
+    })
+
+    function showLayoutsPage(which)
+        layoutsPage = which
+        highlight(which)
+        layoutList:SetHidden(which ~= 1)
+        setList:SetHidden(which ~= 2)
+        layoutSave:SetText(which == 1 and "Save as new" or "Save selection")
+        layoutStatus:SetText("")
+        if API.IsKnown() and current == "Layouts" then
+            Request("Layouts")
+        end
+    end
+    showLayoutsPage(1)
 end
 
 API.OnData("layouts", function(list)
@@ -597,21 +798,55 @@ API.OnData("layouts", function(list)
             items[#items + 1] = { id = tonumber(row[2]), name = row[3], pieces = tonumber(row[4]) or 0, savedAt = row[5] or "", source = row[6] or "" }
         end
     end
-    layoutStatus:SetText(("%d of %d layouts saved."):format(#items, limit))
+    if layoutsPage == 1 then
+        layoutStatus:SetText(("%d of %d layouts saved."):format(#items, limit))
+    end
     layoutList:SetItems(items, function(row, item)
         row.icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
         row.text:SetText(("%s |cffa0a0a0(%d pieces, %s)|r"):format(item.name, item.pieces, item.savedAt))
     end, "No saved layouts yet.")
 end)
 
----------------------------------------------------------------------------------------------
--- Guests: who may visit when the island is private, and which of them may decorate.
+API.OnData("sets", function(list)
+    if not setList then
+        return
+    end
+    local items, limit = {}, 0
+    for _, row in ipairs(list.rows) do
+        if row[1] == "limit" then
+            limit = tonumber(row[2]) or 0
+        elseif row[1] == "set" then
+            items[#items + 1] = { id = tonumber(row[2]), name = row[3], pieces = tonumber(row[4]) or 0, savedAt = row[5] or "" }
+        end
+    end
+    if layoutsPage == 2 then
+        layoutStatus:SetText(("%d of %d sets. Select pieces (Ctrl-click), name them, Save selection."):format(#items, limit))
+    end
+    setList:SetItems(items, function(row, item)
+        row.icon:SetTexture("Interface\\Icons\\INV_Crate_02")
+        row.text:SetText(("%s |cffa0a0a0(%d pieces, %s)|r"):format(item.name, item.pieces, item.savedAt))
+    end, "No sets yet.")
+end)
 
-local guestList, guestName
+---------------------------------------------------------------------------------------------
+-- Guests: who may visit when the island is private, and which of them may decorate. The
+-- guestbook: notes visitors left.
+
+local guestList, noteList, guestName, guestControls, guestbookStatus, showGuestsPage
+
+StaticPopupDialogs["PLAYERHOUSING_NOTE_DELETE"] = {
+    text = "Throw out %s's note?",
+    button1 = DELETE or "Delete", button2 = CANCEL,
+    OnAccept = function(self, data) Do("guestbook delete " .. data, "guestbook") end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
 
 local function CreateGuests()
     local panel = MakePanel("Guests")
-    guestName = InputBox(panel, "PlayerHousingGuestName", 130, 18, 0)
+    local highlight = PageSwitch(panel, "PlayerHousingGuestsPage", { "Guests", "Guestbook" }, function(which) showGuestsPage(which) end)
+    guestControls = CreateFrame("Frame", "PlayerHousingGuestControls", panel)
+    guestControls:SetAllPoints()
+    guestName = InputBox(guestControls, "PlayerHousingGuestName", 130, 18, -24)
     local function Invite()
         local name = strtrim(guestName:GetText() or "")
         if name ~= "" then
@@ -621,15 +856,35 @@ local function CreateGuests()
         end
     end
     guestName:SetScript("OnEnterPressed", Invite)
-    SmallButton(panel, "PlayerHousingInvite", "Invite", 56, Invite, "Invite", "Adds them to your guest list; they can visit whatever your privacy."):SetPoint("TOPLEFT", 154, 0)
-    SmallButton(panel, "PlayerHousingInviteTarget", "Target", 56, function() Do("invite target", "guests") end,
-        "Invite your target"):SetPoint("TOPLEFT", 212, 0)
-    SmallButton(panel, "PlayerHousingInviteParty", "Party", 56, function() Do("invite party", "guests") end,
-        "Invite your party"):SetPoint("TOPLEFT", 270, 0)
-    guestList = MakeList(panel, -26, 8, {
+    SmallButton(guestControls, "PlayerHousingInvite", "Invite", 56, Invite, "Invite", "Adds them to your guest list; they can visit whatever your privacy."):SetPoint("TOPLEFT", 154, -24)
+    SmallButton(guestControls, "PlayerHousingInviteTarget", "Target", 56, function() Do("invite target", "guests") end,
+        "Invite your target"):SetPoint("TOPLEFT", 212, -24)
+    SmallButton(guestControls, "PlayerHousingInviteParty", "Party", 56, function() Do("invite party", "guests") end,
+        "Invite your party"):SetPoint("TOPLEFT", 270, -24)
+    guestList = MakeList(panel, -48, 8, {
         { "Roommate", 70, function(item) Do((item.roommate and "unroommate " or "roommate ") .. item.name, "guests") end },
         { "Remove", 56, function(item) Do("uninvite " .. item.name, "guests") end },
     })
+
+    local notesPage = CreateFrame("Frame", "PlayerHousingGuestbookPage", panel)
+    notesPage:SetAllPoints()
+    guestbookStatus = Label(notesPage, "", 14, -27, "GameFontHighlightSmall")
+    noteList = MakeList(notesPage, -48, 8, {
+        { "Delete", 50, function(item) Popup("PLAYERHOUSING_NOTE_DELETE", item.author, item.id) end },
+    }, function(item) return ("%s, %s:\n%s"):format(item.author, item.when, item.text) end)
+
+    function showGuestsPage(which)
+        guestsPage = which
+        highlight(which)
+        if which == 1 then guestControls:Show() else guestControls:Hide() end
+        guestList:SetHidden(which ~= 1)
+        noteList:SetHidden(which ~= 2)
+        guestbookStatus:SetText("")
+        if API.IsKnown() and current == "Guests" then
+            Request("Guests")
+        end
+    end
+    showGuestsPage(1)
 end
 
 API.OnData("guests", function(list)
@@ -649,10 +904,32 @@ API.OnData("guests", function(list)
     end, "No guests yet. Invite someone by name.")
 end)
 
----------------------------------------------------------------------------------------------
--- Visit: islands you can go to.
+API.OnData("guestbook", function(list)
+    if not noteList then
+        return
+    end
+    local items, fresh = {}, 0
+    for _, row in ipairs(list.rows) do
+        if row[1] == "note" then
+            items[#items + 1] = { id = tonumber(row[2]), author = row[3], when = row[4], fresh = row[5] == "1", text = row[6] or "" }
+            if row[5] == "1" then
+                fresh = fresh + 1
+            end
+        end
+    end
+    island.newNotes = 0
+    guestbookStatus:SetText(#items == 0 and "" or (fresh > 0 and ("%d notes, %d new. Hover one to read it all."):format(#items, fresh)
+        or ("%d notes. Hover one to read it all."):format(#items)))
+    noteList:SetItems(items, function(row, item)
+        row.icon:SetTexture("Interface\\Icons\\INV_Misc_Note_02")
+        row.text:SetText(("%s%s: |cffffffff%s|r"):format(item.fresh and "|cff40ff40new|r " or "", item.author, item.text))
+    end, "No notes yet: visitors sign it from their House Key, or this window's Visit tab.")
+end)
 
-local visitButtons, visitResults, visitName, likeButton = {}, nil, nil, nil
+---------------------------------------------------------------------------------------------
+-- Visit: islands you can go to, and (while visiting) the island's guestbook and likes.
+
+local visitButtons, visitResults, visitName, likeButton, signBox, signButton, signLabel = {}, nil, nil, nil, nil, nil, nil
 
 local function ShowVisitList(index)
     visitList = index
@@ -661,6 +938,16 @@ local function ShowVisitList(index)
     end
     if API.IsKnown() then
         API.RequestData("visits", index - 1)
+    end
+end
+
+local function UpdateVisitControls()
+    if not likeButton then
+        return
+    end
+    local visiting = API.state.islandOwner ~= "" and not API.state.own
+    for _, region in ipairs({ likeButton, signBox, signButton, signLabel }) do
+        if visiting then region:Show() else region:Hide() end
     end
 end
 
@@ -686,13 +973,26 @@ local function CreateVisit()
     likeButton = SmallButton(panel, "PlayerHousingLike", "Like", 60, function() API.Command("like") end,
         "Like this island", "Once per account per island; click again to take it back.")
     likeButton:SetPoint("TOPRIGHT", -12, -44)
-    visitResults = MakeList(panel, -68, 6, {
+
+    signLabel = Label(panel, "Guestbook", 14, -71, "GameFontNormalSmall")
+    signBox = InputBox(panel, "PlayerHousingSignNote", 214, 82, -68)
+    local function Sign()
+        local note = strtrim(signBox:GetText() or "")
+        if note ~= "" then
+            signBox:SetText("")
+            signBox:ClearFocus()
+            API.Command("sign " .. note)
+        end
+    end
+    signBox:SetScript("OnEnterPressed", Sign)
+    signButton = SmallButton(panel, "PlayerHousingSign", "Sign", 50, Sign, "Sign the guestbook",
+        "A short note for the island's owner, once a day.")
+    signButton:SetPoint("TOPRIGHT", -12, -68)
+
+    visitResults = MakeList(panel, -92, 5, {
         { "Visit", 50, function(item) API.Command("visit " .. item.name) end },
     })
-    panel:SetScript("OnShow", function()
-        local visiting = API.state.islandOwner ~= "" and not API.state.own
-        if visiting then likeButton:Show() else likeButton:Hide() end
-    end)
+    panel:SetScript("OnShow", UpdateVisitControls)
 end
 
 API.OnData("visits", function(list)
@@ -716,9 +1016,10 @@ API.OnData("visits", function(list)
 end)
 
 ---------------------------------------------------------------------------------------------
--- Island: privacy, greeting, weather, time of day, music.
+-- Island: privacy, greeting, weather, time of day, music, the door and the guestbook.
 
-local privacyButtons, greetingBox, weatherText, timeText, musicText, islandStats = {}, nil, nil, nil, nil, nil
+local privacyButtons, greetingBox, weatherText, timeText, musicText, islandStats, doorText, guestbookButton =
+    {}, nil, nil, nil, nil, nil, nil, nil
 
 local function UpdateIsland()
     if not weatherText then
@@ -742,6 +1043,8 @@ local function UpdateIsland()
         end
         musicText:SetText(name)
     end
+    doorText:SetText(island.door and "Visitors arrive at your door." or "Visitors arrive at the landing spot.")
+    guestbookButton:SetText(island.newNotes > 0 and ("Guestbook (%d new)"):format(island.newNotes) or "Guestbook")
 end
 
 local function Cycle(which, step)
@@ -803,10 +1106,21 @@ local function CreateIsland()
     timeText = Chooser(panel, "Time", "Time of day", -82, "time")
     musicText = Chooser(panel, "Music", "Music", -106, "music")
 
-    islandStats = Label(panel, "", 14, -140, "GameFontHighlightSmall")
+    doorText = Label(panel, "", 14, -137, "GameFontHighlightSmall")
+    SmallButton(panel, "PlayerHousingDoorHere", "Door here", 76, function() Do("door here", "island") end,
+        "The door", "Visitors arrive where you stand now, facing the way you face."):SetPoint("TOPRIGHT", -92, -134)
+    SmallButton(panel, "PlayerHousingDoorReset", "Landing", 76, function() Do("door reset", "island") end,
+        "The landing spot", "Visitors arrive at the landing spot again."):SetPoint("TOPRIGHT", -12, -134)
+
+    islandStats = Label(panel, "", 14, -165, "GameFontHighlightSmall")
+    guestbookButton = SmallButton(panel, "PlayerHousingGuestbookButton", "Guestbook", 110, function()
+        PlayerHousing_SelectTab("Guests")
+        showGuestsPage(2)
+    end, "Guestbook", "Notes visitors left.")
+    guestbookButton:SetPoint("TOPRIGHT", -94, -162)
     SmallButton(panel, "PlayerHousingVisitorLog", "Visitor log", 80, function() API.Command("visitors") end,
-        "Visitor log", "Who came lately, in your chat."):SetPoint("TOPRIGHT", -12, -136)
-    Label(panel, "These are your island's; visitors see and hear them there.", 14, -170, "GameFontDisableSmall")
+        "Visitor log", "Who came lately, in your chat."):SetPoint("TOPRIGHT", -12, -162)
+    Label(panel, "These are your island's; visitors see and hear them there.", 14, -194, "GameFontDisableSmall")
 end
 
 API.OnData("island", function(list)
@@ -820,6 +1134,8 @@ API.OnData("island", function(list)
             island.time = tonumber(row[4]) or 0
             island.music = tonumber(row[5]) or 0
             island.musicBox = row[6] == "1"
+            island.door = row[9] == "1"
+            island.newNotes = tonumber(row[10] or "") or 0
             if islandStats then
                 islandStats:SetText(("%s likes, %s visitors this week."):format(row[7] or "0", row[8] or "0"))
             end
@@ -847,6 +1163,7 @@ API.OnData("collection", function(list)
     wipe(collection.fresh)
     wipe(collection.storage)
     wipe(collection.placed)
+    wipe(collection.recent)
     for _, row in ipairs(list.rows) do
         local label = row[1]
         if label == "settings" then
@@ -861,6 +1178,10 @@ API.OnData("collection", function(list)
             Counts(row[2], collection.storage)
         elseif label == "placed" then
             Counts(row[2], collection.placed)
+        elseif label == "recent" then
+            for id in (row[2] or ""):gmatch("%d+") do
+                collection.recent[#collection.recent + 1] = tonumber(id)
+            end
         end
     end
     UpdateCollection()
@@ -889,21 +1210,32 @@ function API.DescribePiece(id)
     }
 end
 
--- The Placed tab keeps up with pieces placed and picked up.
-local lastCounts
+-- The Placed tab keeps up with pieces placed and picked up; the Collection with arriving on
+-- an island (its clicks place pieces there) and the bags.
+local lastCounts, lastCanEdit
 API.OnState(function(state)
     local counts = state.furnishings .. "/" .. state.buildings
     if current == "Placed" and panels.Placed and panels.Placed:IsShown() and lastCounts and counts ~= lastCounts and API.CanEdit() then
         API.RequestData("placed")
     end
     lastCounts = counts
+    if lastCanEdit ~= API.CanEdit() then
+        lastCanEdit = API.CanEdit()
+        UpdateCollection()
+    end
+    UpdateVisitControls()
+end)
+API.OnBags(function() UpdateCollection() end)
+API.OnCombatEnd(function()
+    if collectionPending then
+        UpdateCollection()
+    end
 end)
 
 ---------------------------------------------------------------------------------------------
 
 API.OnWindow(function(window)
     frame = window
-    panels.Bags = API.GetBagsPanel()
     local width = (API.WIDTH - 24 - 3 * 4) / 4
     for index, name in ipairs(TABS) do
         local button = CreateFrame("Button", "PlayerHousingTab" .. name, frame, "UIPanelButtonTemplate")
@@ -923,7 +1255,7 @@ API.OnWindow(function(window)
     CreateVisit()
     CreateIsland()
     ShowVisitList(1)
-    PlayerHousing_SelectTab("Bags")
+    PlayerHousing_SelectTab("Collection")
     frame:HookScript("OnShow", function()
         if API.IsKnown() then
             Request(current)

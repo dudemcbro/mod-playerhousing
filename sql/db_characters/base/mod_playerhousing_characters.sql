@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_house` (
   `time_of_day` tinyint unsigned NOT NULL DEFAULT 0,  -- 0: the server's clock
   `music` int unsigned NOT NULL DEFAULT 0,             -- SoundEntries id
   `last_home` timestamp NULL DEFAULT NULL,             -- the owner's last arrival, for "visits since"
+  `door_set` tinyint unsigned NOT NULL DEFAULT 0,      -- visitors arrive at the door, not the landing spot
+  `door_x` float NOT NULL DEFAULT 0,
+  `door_y` float NOT NULL DEFAULT 0,
+  `door_z` float NOT NULL DEFAULT 0,
+  `door_o` float NOT NULL DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`owner_guid`),
@@ -127,6 +132,46 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_piece` (
   `look` int unsigned NOT NULL DEFAULT 0,
   `parent_id` int unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_guid`,`layout_id`,`placement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Saved sets: a few pieces saved together (relative to the first), to set down anywhere.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_set` (
+  `owner_guid` int unsigned NOT NULL,
+  `set_id` int unsigned NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `saved_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`owner_guid`,`set_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_set_piece` (
+  `owner_guid` int unsigned NOT NULL,
+  `set_id` int unsigned NOT NULL,
+  `piece_index` int unsigned NOT NULL,
+  `item_entry` int unsigned NOT NULL,
+  `pos_x` float NOT NULL,             -- yards from the first piece, in its own frame (x forward)
+  `pos_y` float NOT NULL,
+  `pos_z` float NOT NULL,
+  `orientation` float NOT NULL,       -- turn from the first piece's
+  `scale` float NOT NULL DEFAULT 1,
+  `pitch` float NOT NULL DEFAULT 0,
+  `roll` float NOT NULL DEFAULT 0,
+  `look` int unsigned NOT NULL DEFAULT 0,
+  `parent_index` int unsigned NOT NULL DEFAULT 0,  -- 1 + index of the piece it stands on; 0: the ground
+  PRIMARY KEY (`owner_guid`,`set_id`,`piece_index`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Guestbooks: notes visitors leave; the last 100 per island are kept.
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_guestbook` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `owner_guid` int unsigned NOT NULL,
+  `author_guid` int unsigned NOT NULL,
+  `author_account` int unsigned NOT NULL,
+  `text` varchar(255) NOT NULL DEFAULT '',
+  `written_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `seen` tinyint unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_mod_playerhousing_guestbook_owner` (`owner_guid`,`id`),
+  KEY `idx_mod_playerhousing_guestbook_author` (`author_account`,`written_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Likes: one per account per island.
