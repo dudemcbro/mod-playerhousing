@@ -136,7 +136,8 @@ checking the database and what the client sees after each step (241 checks, 242 
   piece relative to your facing, a quick run of shifts is one undo step, a flood of them
   is capped, Tab picks the next piece; a ring under the selected piece, and a Move a
   Piece item kept ready for the addon's G that moves it and comes back for the next move,
-  both gone when edit mode ends
+  both gone when edit mode ends or you leave the island; a copy waiting for its spot
+  ("Another") keeps G meanwhile; full bags keep it quiet; the grid size reaches the addon
 - the addon's window: its lists (Collection, Placed, Island, Layouts, Guests, Visit),
   getting copies, weather by name, House Storage, and the House Key opening the window
   (or its menu when the player prefers)
