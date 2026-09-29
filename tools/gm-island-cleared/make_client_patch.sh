@@ -86,21 +86,27 @@ trap 'rm -rf "$work"' EXIT
 
 # Copies the client's current version of a file (from the last archive that has it) to $2.
 latest() {
-    local wanted="$1" out="$2" base found="" archive file
+    local wanted="$1" out="$2" base found="" archive file errors=""
     base="$(basename "${wanted//\\//}")"
     for archive in "${archives[@]}"; do
         rm -rf "$work/extract"
         mkdir -p "$work/extract"
-        if (cd "$work/extract" && smpq -x -q "$archive" "$wanted" >/dev/null 2>&1); then
-            file="$(find "$work/extract" -type f -iname "$base" | head -n 1)"
-            if [ -n "$file" ]; then
-                cp "$file" "$out"
-                found="$archive"
-            fi
+        # Whatever smpq's exit code, the file is either there afterwards or not.
+        (cd "$work/extract" && smpq -x -q "$archive" "$wanted") >"$work/smpq.log" 2>&1 || true
+        file="$(find "$work/extract" -type f -iname "$base" | head -n 1)"
+        if [ -n "$file" ]; then
+            cp "$file" "$out"
+            found="$archive"
+        elif [ -s "$work/smpq.log" ]; then
+            errors+="  $(basename "$archive"): $(tail -n 1 "$work/smpq.log")"$'\n'
         fi
     done
     if [ -z "$found" ]; then
-        echo "$base not found in the client archives" >&2
+        echo "$base not found in the client archives (${#archives[@]} searched)" >&2
+        if [ -n "$errors" ]; then
+            echo "smpq said:" >&2
+            printf '%s' "$errors" >&2
+        fi
         exit 1
     fi
     echo "using $base from $(basename "$found")"
