@@ -41,6 +41,8 @@ SWORD, PANTS, PANTS_DISPLAY = 25, 39, 9892              # gear for the mannequin
 UNIT_VIRTUAL_ITEM_SLOT_ID = 0x06 + 0x32                 # main hand, off hand, ranged
 SLOT_LEGS, SLOT_MAIN_HAND = 6, 15
 MOVERS = range(901190, 901200)                          # "Move a Piece" items
+GHOST_NPC = 900203                                      # a see-through piece following its player
+UNIT_FIELD_DISPLAYID = 0x06 + 0x3D
 ELWYNN_ACHIEVEMENT, STORMWIND = 776, 72
 WORN_DAGGER = 2092                                      # fills bags (does not stack)
 
@@ -274,6 +276,15 @@ def destroy_all(wc, entry):
 
 def rings_in_sight(wc):
     return [o for o in wc.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == RING_GO]
+
+
+def ghosts_in_sight(wc):
+    return [o for o in wc.find_objects(type_id=TYPEID_UNIT) if o.entry == GHOST_NPC]
+
+
+def ghost_display(item):
+    """A piece's see-through model (Housing::GHOST_DISPLAY_BASE plus the item's offset)."""
+    return 60000 + item - 900000
 
 
 def angle_diff(a, b):
@@ -608,27 +619,32 @@ def main():
     else:
         check("more turns, tilt and size: 90° and 5° turns, tilts, sizes", False, "no clickable chair in sight")
 
-    # Another like this: FreeMode hands over a new chair, which lands turned, sized and
-    # tilted like the first.
+    # Another like this: a see-through chair follows the owner (FreeMode hands one over), and
+    # is set down turned, sized and tilted like the first.
     source = placement_of(owner_guid, CHAIR)
     source_shape = shape_of(owner_guid, source["id"])
     owner.addon_messages.clear()
     _, msgs = owner.gossip_select("Place another like this") if owner.last_gossip else (None, [])
-    wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
+    wait_for(lambda: len(ghosts_in_sight(owner)) == 1, 3, owner)
+    ghosts = ghosts_in_sight(owner)
     state = addon_state(owner)
-    check("another like this: a chair in the bags, and the addon knows which", owner.count_item(CHAIR) == 1 and state is not None
-          and len(state) > 15 and state[15] == str(CHAIR) and has(msgs, "this one's turn, size and tilt"), joined(msgs) + " " + str(state))
-    move(owner, *L["landing"])
-    copy_spot = (L["chair"][0] - 2.0, L["chair"][1] - 2.0, L["ground"])
-    msgs = owner.use_item(CHAIR, spell_of(CHAIR), copy_spot)
+    check("another like this: a see-through chair follows the owner, and the addon knows", len(ghosts) == 1
+          and ghosts[0].fields.get(UNIT_FIELD_DISPLAYID) == ghost_display(CHAIR) and state is not None and len(state) > 23
+          and state[21] == str(CHAIR) and state[22] == "new" and state[23] == "1" and has(msgs, "follows you"),
+          joined(msgs) + " %s %s" % (ghosts, state and state[20:]))
+    move(owner, *L["landing"], 0.0)
+    owner.command(".house ghost adjust 0.5 0 0 0")
+    msgs = owner.command(".house ghost place")
     copy = next((p for p in placements(owner_guid) if p["item"] == CHAIR and p["id"] != source["id"]), None)
     copy_shape = shape_of(owner_guid, copy["id"]) if copy else None
-    check("the copy lands where clicked, turned, sized and tilted like the first", copy is not None
-          and math.dist((copy["x"], copy["y"]), copy_spot[:2]) < 0.01 and angle_diff(copy["o"], source["o"]) < 0.01
+    ahead = copy and (copy["x"] - L["landing"][0], copy["y"] - L["landing"][1])
+    check("the copy is set down ahead of the owner, turned, sized and tilted like the first", copy is not None
+          and abs(ahead[1]) < 0.15 and 2.3 < ahead[0] < 3.2 and angle_diff(copy["o"], source["o"]) < 0.01
           and abs(copy_shape["scale"] - source_shape["scale"]) < 0.001 and abs(copy_shape["pitch"] - source_shape["pitch"]) < 0.001,
           joined(msgs) + " %s %s / %s %s" % (source, source_shape, copy, copy_shape))
+    wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
     state = addon_state(owner)
-    check("the next chair places normally again", state is not None and state[15] == "0", str(state))
+    check("and the ghost goes", not ghosts_in_sight(owner) and state is not None and state[21] == "0", str(state and state[20:]))
     if copy:
         owner.command(".house pickup %d" % copy["id"])
         wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
@@ -677,58 +693,62 @@ def main():
         check("in edit mode a click selects the piece, with no menu", menu is None and state is not None and state[4] == str(chair["id"]),
               str(menu) + " " + str(state))
 
-        # A ring under the selected piece, and Move a Piece waiting in the bags so the addon's
-        # G starts the circle with one press.
-        wait_for(lambda: nearest_go(owner, RING_GO) is not None and any(owner.count_item(e) for e in MOVERS), 3, owner)
+        # A ring under the selected piece. No Move a Piece in the bags: G sends a ghost.
+        wait_for(lambda: nearest_go(owner, RING_GO) is not None, 3, owner)
         ring = nearest_go(owner, RING_GO)
-        staged = next((e for e in MOVERS if owner.count_item(e)), None)
-        state = addon_state(owner)
         check("the selected piece gets a ring under it", ring is not None and math.dist((ring.x, ring.y), (chair["x"], chair["y"])) < 0.1,
               str(ring and (ring.x, ring.y)))
-        check("edit mode keeps Move a Piece ready for G", staged is not None and state is not None and len(state) > 19
-              and state[19] == "1" and state[14] == str(staged), str(state))
-        if staged:
-            spot = (chair["x"] + 1.5, chair["y"] - 1.0, L["ground"])
-            msgs = owner.use_item(staged, spell_of(staged), spot)
-            moved = placement_of(owner_guid, CHAIR)
-            check("G's circle moves the piece", moved is not None and math.dist((moved["x"], moved["y"]), spot[:2]) < 0.01,
-                  joined(msgs) + " " + str(moved))
-            wait_for(lambda: (lambda r: r is not None and moved is not None and math.dist((r.x, r.y), (moved["x"], moved["y"])) < 0.1)(
-                nearest_go(owner, RING_GO)), 3, owner)
-            owner.pump(1.0)
-            ring = nearest_go(owner, RING_GO)
-            check("the ring follows it, and another Move a Piece is ready", ring is not None and moved is not None
-                  and math.dist((ring.x, ring.y), (moved["x"], moved["y"])) < 0.1 and sum(owner.count_item(e) for e in MOVERS) == 1,
-                  str(ring and (ring.x, ring.y)) + " " + str([owner.count_item(e) for e in MOVERS]))
-            owner.command(".house undo")
+        check("no Move a Piece in the bags meanwhile", not any(owner.count_item(e) for e in MOVERS), str(owner.backpack()))
 
-            # "Another" in edit mode: the copy has G until it's placed, then Move a Piece is back.
-            owner.addon_messages.clear()
-            msgs = owner.command(".house another %d" % chair["id"])
-            wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
-            owner.pump(1.0)
-            state = addon_state(owner)
-            check("in edit mode a copy waiting for its spot has G: no Move a Piece meanwhile", state is not None
-                  and state[15] == str(CHAIR) and state[14] == "0" and not any(owner.count_item(e) for e in MOVERS),
-                  joined(msgs) + " " + str(state))
-            copy_spot = (chair["x"] - 1.5, chair["y"] + 1.5, L["ground"])
-            owner.use_item(CHAIR, spell_of(CHAIR), copy_spot)
-            copy = next((p for p in placements(owner_guid) if p["item"] == CHAIR and p["id"] != chair["id"]), None)
-            wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
-            check("the copy placed, Move a Piece is ready again", copy is not None and any(owner.count_item(e) for e in MOVERS), str(copy))
-            if copy:
-                owner.command(".house pickup %d" % copy["id"])
-                wait_for(lambda: owner.count_item(CHAIR) == 1, 3, owner)
-                owner.destroy_item(CHAIR)
-                wait_for(lambda: owner.count_item(CHAIR) == 0, 3, owner)
-            owner.command(".house select %d" % chair["id"])
+        # G: a see-through copy follows the owner, starting where the piece stands; walking
+        # takes it along, the keys push it farther and turn it, and G again sets it down.
+        owner.addon_messages.clear()
+        msgs = owner.command(".house ghost move")
+        wait_for(lambda: ghosts_in_sight(owner), 3, owner)
+        ghosts = ghosts_in_sight(owner)
+        state = addon_state(owner)
+        check("G: a see-through copy of the piece follows the owner, starting where it stands", len(ghosts) == 1
+              and ghosts[0].fields.get(UNIT_FIELD_DISPLAYID) == ghost_display(CHAIR)
+              and math.dist((ghosts[0].x, ghosts[0].y), (chair["x"], chair["y"])) < 0.15
+              and state is not None and state[21] == str(CHAIR) and state[22] == "move",
+              joined(msgs) + " %s %s" % (ghosts, state and state[20:]))
+        move(owner, chair["x"] + 1.0, chair["y"] + 1.0, chair["z"], 0.0)
+        owner.command(".house ghost adjust 0.5 0 0 90")
+        msgs = owner.command(".house ghost place")
+        moved = placement_of(owner_guid, CHAIR)
+        # It started 2 yards ahead: now 2.5 ahead of the owner's new spot, a quarter turned.
+        spot = (chair["x"] + 3.5, chair["y"] + 1.0)
+        wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
+        check("walked over, pushed out and turned, G sets it down there, and the ghost goes", moved is not None
+              and math.dist((moved["x"], moved["y"]), spot) < 0.15 and angle_diff(moved["o"], chair["o"] + math.pi / 2) < 0.02
+              and not ghosts_in_sight(owner), joined(msgs) + " %s -> %s" % (chair, moved))
+        wait_for(lambda: (lambda r: r is not None and moved is not None and math.dist((r.x, r.y), (moved["x"], moved["y"])) < 0.1)(
+            nearest_go(owner, RING_GO)), 3, owner)
+        ring = nearest_go(owner, RING_GO)
+        check("the ring follows it", ring is not None and moved is not None and math.dist((ring.x, ring.y), (moved["x"], moved["y"])) < 0.1,
+              str(ring and (ring.x, ring.y)))
+        msgs = owner.command(".house undo")
+        back = placement_of(owner_guid, CHAIR)
+        check("one undo puts it back", back is not None and math.dist((back["x"], back["y"]), (chair["x"], chair["y"])) < 0.01, joined(msgs))
 
-            # The grid button on the banner: the addon hears the new size.
-            owner.addon_messages.clear()
-            owner.command(".house grid 0.5")
-            state = addon_state(owner)
-            check("changing the grid tells the addon", state is not None and state[18] == "0.5", str(state))
-            owner.command(".house grid off")
+        # Escape: nothing moves.
+        owner.command(".house ghost move")
+        wait_for(lambda: ghosts_in_sight(owner), 3, owner)
+        move(owner, chair["x"] - 2.0, chair["y"] - 3.0, chair["z"], 0.0)
+        owner.command(".house ghost cancel")
+        wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
+        still = placement_of(owner_guid, CHAIR)
+        check("Escape: the ghost goes and the piece stays", not ghosts_in_sight(owner) and still is not None
+              and math.dist((still["x"], still["y"]), (chair["x"], chair["y"])) < 0.01, str(still))
+        move(owner, chair["x"] - 2.0, chair["y"], chair["z"], 0.0)
+        owner.command(".house select %d" % chair["id"])
+
+        # The grid button on the banner: the addon hears the new size.
+        owner.addon_messages.clear()
+        owner.command(".house grid 0.5")
+        state = addon_state(owner)
+        check("changing the grid tells the addon", state is not None and state[18] == "0.5", str(state))
+        owner.command(".house grid off")
 
         # Facing east: forward is +x, left is +y. (Positions read back with the float column's
         # six digits, so to a tenth of a yard out here.)
@@ -768,9 +788,8 @@ def main():
     msgs = owner.command(".house edit off")
     state = addon_state(owner)
     check("edit mode off stops decorating too", state is not None and state[17] == "0" and state[3] == "0", joined(msgs) + " " + str(state))
-    wait_for(lambda: nearest_go(owner, RING_GO) is None and not any(owner.count_item(e) for e in MOVERS), 3, owner)
-    check("and the ring and the ready Move a Piece go", nearest_go(owner, RING_GO) is None and not any(owner.count_item(e) for e in MOVERS),
-          str([owner.count_item(e) for e in MOVERS]))
+    wait_for(lambda: nearest_go(owner, RING_GO) is None, 3, owner)
+    check("and the ring goes", nearest_go(owner, RING_GO) is None, str(nearest_go(owner, RING_GO)))
     owner.command(".house decorate on")
 
     # ------------------------------------------------------------- several pieces at once
@@ -917,8 +936,8 @@ def main():
         wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
         mover = next((e for e in MOVERS if owner.count_item(e)), None)
         state = addon_state(owner)
-        check("setting it down hands over Move a Piece, not the one edit mode keeps", mover is not None and state is not None
-              and state[14] == str(mover) and state[19] == "0", joined(msgs) + " " + str(state and state[13:]))
+        check("setting a set down hands over Move a Piece, and the addon knows which", mover is not None and state is not None
+              and state[14] == str(mover), joined(msgs) + " " + str(state and state[13:]))
         spot = (chair["x"] + 7.0, chair["y"] + 5.0, L["ground"])
         msgs = owner.use_item(mover, spell_of(mover), spot) if mover else []
         new = [p for p in placements(owner_guid) if p["id"] not in before_ids]
@@ -1305,6 +1324,27 @@ def main():
     check("undo puts the building and the chair back", placement_of(owner_guid, FARMHOUSE) is not None and placement_of(owner_guid, CHAIR) is not None
           and placement_of(owner_guid, LANTERN) is not None and placement_of(owner_guid, TABLE) is not None, joined(msgs))
 
+    # Moving a building: carried as it is (a building can't be see-through), and what's inside
+    # comes along.
+    house = placement_of(owner_guid, FARMHOUSE)
+    inside = placement_of(owner_guid, CHAIR)
+    facing = math.atan2(house["y"] - L["farmhouse_stand"][1], house["x"] - L["farmhouse_stand"][0])
+    move(owner, L["farmhouse_stand"][0], L["farmhouse_stand"][1], L["ground"], facing)
+    msgs = owner.command(".house ghost move %d" % house["id"])
+    wait_for(lambda: len([o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]) == 2, 3, owner)
+    carried = [o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]
+    check("a building is carried as it is: its copy follows, nothing see-through", len(carried) == 2 and not ghosts_in_sight(owner),
+          joined(msgs) + " %s %s" % (carried, ghosts_in_sight(owner)))
+    owner.command(".house ghost adjust 0 2 0 0")
+    msgs = owner.command(".house ghost place")
+    moved_house, moved_chair = placement_of(owner_guid, FARMHOUSE), placement_of(owner_guid, CHAIR)
+    step = (-math.sin(facing) * 2.0, math.cos(facing) * 2.0)
+    check("set down two yards to the left, with the chair inside", moved_house and moved_chair
+          and math.dist((moved_house["x"] - house["x"], moved_house["y"] - house["y"]), step) < 0.15
+          and math.dist((moved_chair["x"] - inside["x"], moved_chair["y"] - inside["y"]), step) < 0.15, joined(msgs) + " %s %s" % (moved_house, moved_chair))
+    wait_for(lambda: len([o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]) == 1, 3, owner)
+    owner.command(".house undo")
+
     # ------------------------------------------------------------- stands
     log("== mannequin")
     owner.command(".house collection")
@@ -1418,17 +1458,22 @@ def main():
     owner.pump(1.0)
     check("with full bags, gear taken off is mailed to the owner", has(msgs, "mailed")
           and db("SELECT COUNT(*) FROM mail_items WHERE item_guid=%d AND receiver=%d" % (pants_guid or 0, owner_guid)) == [["1"]], joined(msgs))
-    # Edit mode with full bags: no Move a Piece to keep ready, and no retrying (and telling
-    # the addon) every update.
-    owner.command(".house edit on")
-    owner.command(".house select %d" % stand_id)
-    owner.pump(1.0)
-    owner.addon_messages.clear()
-    owner.pump(3.0)
-    states = [m for m in owner.addon_messages if m.startswith("HOUSING\tstate\t")]
-    check("edit mode with full bags keeps no Move a Piece ready, and stays quiet", len(states) <= 2
-          and not any(owner.count_item(e) for e in MOVERS), "%d states in 3 s" % len(states))
-    owner.command(".house edit off")
+    # Full bags don't matter to a ghost: a new piece comes out of House Storage when it's set
+    # down, and nothing waits in the bags meanwhile.
+    db("INSERT INTO mod_playerhousing_storage (owner_guid, item_entry, count) VALUES (%d, %d, 1) ON DUPLICATE KEY UPDATE count=1"
+       % (owner_guid, CHAIR))
+    have = storage(owner_guid).get(CHAIR, 0) + owner.count_item(CHAIR)
+    placed = len([p for p in placements(owner_guid) if p["item"] == CHAIR])
+    move(owner, *L["landing"], 0.0)
+    msgs = owner.command(".house ghost %d" % CHAIR)
+    wait_for(lambda: ghosts_in_sight(owner), 3, owner)
+    ghosted = len(ghosts_in_sight(owner)) == 1
+    msgs += owner.command(".house ghost place")
+    owner.pump(0.5)
+    check("with full bags, a ghost sets down all the same", ghosted and storage(owner_guid).get(CHAIR, 0) + owner.count_item(CHAIR) == have - 1
+          and len([p for p in placements(owner_guid) if p["item"] == CHAIR]) == placed + 1,
+          joined(msgs) + " had %d, now %d" % (have, storage(owner_guid).get(CHAIR, 0) + owner.count_item(CHAIR)))
+    owner.command(".house undo")
     owner.command(".house decorate on")
     admin.select(owner_char["guid"])
     admin.command(".additem %s %d -%d" % (args.owner_char, WORN_DAGGER, owner.count_item(WORN_DAGGER)), wait=2.0)
@@ -1836,15 +1881,19 @@ def main():
     check("back home, the mannequin still holds the sword", fig is not None and fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) == SWORD,
           str(fig.fields.get(UNIT_VIRTUAL_ITEM_SLOT_ID) if fig else None))
 
-    # Leaving with edit mode's Move a Piece in the bags: it stays behind, and so does edit mode.
+    # Leaving with a ghost following: it stays behind, and nothing is set down.
     owner.command(".house edit on")
     owner.command(".house select next", wait=0.8)
-    wait_for(lambda: any(owner.count_item(e) for e in MOVERS), 3, owner)
-    ready = any(owner.count_item(e) for e in MOVERS)
+    count = len(placements(owner_guid))
+    owner.command(".house ghost move")
+    wait_for(lambda: ghosts_in_sight(owner), 3, owner)
+    following = bool(ghosts_in_sight(owner))
     owner.command(".house leave", wait=1.0)
-    wait_for(lambda: not any(owner.count_item(e) for e in MOVERS), 3, owner)
-    check("leaving the island takes edit mode's Move a Piece with it", ready and not any(owner.count_item(e) for e in MOVERS),
-          str(owner.backpack()))
+    owner.addon_messages.clear()
+    owner.command(".house state")
+    state = addon_state(owner)
+    check("leaving the island ends the ghost, and nothing moves", following and len(placements(owner_guid)) == count
+          and state is not None and state[21] == "0", str(state and state[20:]))
     owner.command(".house home", wait=1.0)
     wait_for_map(owner, HOUSING_MAP)
     wait_for(lambda: math.dist(owner.pos[:2], L["landing"][:2]) < 5, 6, owner)

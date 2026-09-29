@@ -2583,7 +2583,6 @@ ghostmodel	62426	World\Goober\G_BrazierTroll.mdx	-1.256 -1.277 -0.045 1.271 1.24
 ghostmodel	62427	WORLD\GENERIC\ORC\PASSIVE DOODADS\MEATRACKS\RAWMEATRACK01.MDX	-1.297 -1.502 -0.029 1.66 1.493 3.163
 ghostmodel	62428	World\Goober\G_DragonEggFreeze.mdx	-0.44 -0.647 -0.042 0.835 0.705 1.422
 ghostmodel	62429	World\Expansion01\Doodads\HellfireCitadel\Passivedoodads\Banners\Hellfire_banner_Type01.mdx	-0.762 -0.864 -1.382 0.844 0.864 1.172
-ghostmodel	62430	WORLD\EXPANSION01\DOODADS\HELLFIRECITADEL\DEMONWING\PASSIVEDOODADS\DW_BRAIZER\HELLFIRE_DW_FLOORBRAIZER.MDX	-1.964 -1.915 -6.937 2.091 2.144 -4.757
 ghostmodel	62431	World\Goober\G_Cage02.mdx	-1.128 -1.191 0.0 1.457 1.46 3.144
 ghostmodel	62432	World\Expansion01\Doodads\Zangar\Mushroom\ZangarMushroom01.mdx	-2.041 -1.487 -0.276 1.609 1.699 4.219
 ghostmodel	62433	World\Expansion01\Doodads\Coilfang\Passivedoodads\Lights\Coilfang_Orb_Orange.mdx	-0.874 -0.765 0.036 0.904 0.767 0.805
@@ -3590,10 +3589,6 @@ ghostmodel	100855	World\KhazModan\Blackrock\PassiveDoodads\MuseumGem\MuseumGem01
 ghostmodel	100856	WORLD\GENERIC\ORC\PASSIVE DOODADS\ORCBELLOWS\ORCBELLOW.MDX	-6.068 -5.846 1.638 2.06 4.679 8.254
 ghostmodel	100857	WORLD\GENERIC\HUMAN\ACTIVEDOODADS\DOORS\DEADMINEDOOR02.MDX	-1.099 -4.406 -0.0 0.82 4.509 7.439
 ghostmodel	100858	World\Azeroth\Westfall\PassiveDoodads\Tombstones\TombStone01.mdx	-0.576 -1.179 0.0 0.523 1.187 1.563
-ghostmodel	100859	WORLD\EXPANSION01\DOODADS\HELLFIRECITADEL\DEMONWING\ACTIVEDOODADS\CRACKS\HELLFIRE_DW_LARGEFLOOR_CRACK_ONOFF.MDX	-17.285 -11.535 -0.009 -2.357 10.537 19.136
-ghostmodel	100860	WORLD\EXPANSION01\DOODADS\HELLFIRECITADEL\DEMONWING\ACTIVEDOODADS\DOORS\HELLFIRE_DW_MAINPRISONENTRY.MDX	-16.4 -3.804 -15.641 16.032 2.762 2.978
-ghostmodel	100861	WORLD\EXPANSION01\DOODADS\HELLFIRECITADEL\DEMONWING\ACTIVEDOODADS\CRACKS\HELLFIRE_DW_SMALLFLOOR_CRACK_ONOFF.MDX	-2.038 -4.603 0.022 2.038 4.603 5.624
-ghostmodel	100862	WORLD\EXPANSION01\DOODADS\HELLFIRECITADEL\DEMONWING\ACTIVEDOODADS\SUMMON_DOOR\HELLFIRE_DW_SUMMONROOMDOOR.MDX	-43.412 -23.139 -22.694 1.751 31.994 23.43
 ghostmodel	100863	World\SkillActivated\TradeskillNodes\Bush_SpineLeaf.mdx	-0.411 -0.475 -0.08 0.396 0.419 0.417
 ghostmodel	100864	world\expansion01\doodads\hellfirepeninsula\supplies\hellfiresupplies_04.mdx	-4.155 -2.581 -0.067 4.353 2.585 4.974
 ghostmodel	100865	World\Generic\Human\Passive Doodads\Books\BookSmall02.mdx	-0.063 -0.172 0.001 0.055 0.166 0.421
@@ -4434,7 +4429,6 @@ ghostmodel	101699	World\Generic\Gnome\Passive Doodads\Tools\GnomeTool02.mdx	-0.3
 ghostmodel	101700	World\Generic\Gnome\Passive Doodads\Tools\GnomeTool05.mdx	-0.22 -0.28 0.002 0.163 0.29 0.141
 ghostmodel	101701	World\Generic\Gnome\Passive Doodads\Tools\GnomeTool06.mdx	-0.391 -0.217 0.001 0.404 0.22 0.348
 ghostmodel	101702	World\Generic\Tauren\Passive Doodads\Sacks\TaurenSack02.mdx	-0.439 -0.406 -0.02 0.439 0.603 1.203
-ghostmodel	101703	World\Azeroth\BurningSteppes\PassiveDoodads\OrcAnvilStoneBurningSteppes\OrcAnvilStoneBurningSteppes.mdx	-0.726 -1.762 -0.007 1.277 1.381 1.069
 ghostmodel	101704	World\Expansion02\Doodads\GrizzlyHills\Trees\GrizzlyHills_GoldShrubs01.mdx	-1.452 -1.524 -0.259 1.59 1.472 0.465
 ghostmodel	101705	world\expansion02\doodads\generic\titan\ti_brokenroad05_small.mdx	-3.292 -3.201 -0.186 3.292 3.201 3.362
 ghostmodel	101706	WORLD\GENERIC\DWARF\PASSIVE DOODADS\CHAIRS\DWARVENCHAIR03.MDX	-0.963 -0.694 -0.001 0.934 0.982 1.479

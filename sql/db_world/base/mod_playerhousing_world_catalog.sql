@@ -7089,10 +7089,6 @@ INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `M
 (100856, 0, 'WORLD\\GENERIC\\ORC\\PASSIVE DOODADS\\ORCBELLOWS\\ORCBELLOW.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -6.068, -5.846, 1.638, 2.06, 4.679, 8.254, 1.0, 1.0, 0, 0, 0),
 (100857, 0, 'WORLD\\GENERIC\\HUMAN\\ACTIVEDOODADS\\DOORS\\DEADMINEDOOR02.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.099, -4.406, -0.0, 0.82, 4.509, 7.439, 1.0, 1.0, 0, 0, 0),
 (100858, 0, 'World\\Azeroth\\Westfall\\PassiveDoodads\\Tombstones\\TombStone01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.576, -1.179, 0.0, 0.523, 1.187, 1.563, 1.0, 1.0, 0, 0, 0),
-(100859, 0, 'WORLD\\EXPANSION01\\DOODADS\\HELLFIRECITADEL\\DEMONWING\\ACTIVEDOODADS\\CRACKS\\HELLFIRE_DW_LARGEFLOOR_CRACK_ONOFF.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -17.285, -11.535, -0.009, -2.357, 10.537, 19.136, 1.0, 1.0, 0, 0, 0),
-(100860, 0, 'WORLD\\EXPANSION01\\DOODADS\\HELLFIRECITADEL\\DEMONWING\\ACTIVEDOODADS\\DOORS\\HELLFIRE_DW_MAINPRISONENTRY.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -16.4, -3.804, -15.641, 16.032, 2.762, 2.978, 1.0, 1.0, 0, 0, 0),
-(100861, 0, 'WORLD\\EXPANSION01\\DOODADS\\HELLFIRECITADEL\\DEMONWING\\ACTIVEDOODADS\\CRACKS\\HELLFIRE_DW_SMALLFLOOR_CRACK_ONOFF.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -2.038, -4.603, 0.022, 2.038, 4.603, 5.624, 1.0, 1.0, 0, 0, 0),
-(100862, 0, 'WORLD\\EXPANSION01\\DOODADS\\HELLFIRECITADEL\\DEMONWING\\ACTIVEDOODADS\\SUMMON_DOOR\\HELLFIRE_DW_SUMMONROOMDOOR.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -43.412, -23.139, -22.694, 1.751, 31.994, 23.43, 1.0, 1.0, 0, 0, 0),
 (100863, 0, 'World\\SkillActivated\\TradeskillNodes\\Bush_SpineLeaf.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.411, -0.475, -0.08, 0.396, 0.419, 0.417, 1.0, 1.0, 0, 0, 0),
 (100864, 0, 'world\\expansion01\\doodads\\hellfirepeninsula\\supplies\\hellfiresupplies_04.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -4.155, -2.581, -0.067, 4.353, 2.585, 4.974, 1.0, 1.0, 0, 0, 0),
 (100865, 0, 'World\\Generic\\Human\\Passive Doodads\\Books\\BookSmall02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.063, -0.172, 0.001, 0.055, 0.166, 0.421, 1.0, 1.0, 0, 0, 0),
@@ -7229,12 +7225,12 @@ INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `M
 (100996, 0, 'WORLD\\GENERIC\\DWARF\\PASSIVE DOODADS\\SIGNS\\DWARFSIGN_MISC.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -3.986, -0.833, 2.388, 1.712, 0.869, 8.202, 1.0, 1.0, 0, 0, 0),
 (100997, 0, 'World\\KhazModan\\Ironforge\\PassiveDoodads\\SteamTank\\IronForgeSteamTank.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5.51, -5.164, -0.019, 9.085, 5.231, 8.801, 1.0, 1.0, 0, 0, 0),
 (100998, 0, 'World\\Kalimdor\\Silithus\\PassiveDoodads\\SilithidTankHusks\\SilithidTankHuskThorax.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.896, -0.71, -0.631, 0.957, 0.671, 0.627, 1.0, 1.0, 0, 0, 0),
-(100999, 0, 'World\\Azeroth\\Stranglethorn\\PassiveDoodads\\Detail\\StrangleThornPlant05.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.505, -2.716, -0.219, 0.373, 0.165, 3.347, 1.0, 1.0, 0, 0, 0);
-INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
+(100999, 0, 'World\\Azeroth\\Stranglethorn\\PassiveDoodads\\Detail\\StrangleThornPlant05.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.505, -2.716, -0.219, 0.373, 0.165, 3.347, 1.0, 1.0, 0, 0, 0),
 (101000, 0, 'World\\Generic\\Dwarf\\Passive Doodads\\Tables\\ReadingTable01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.733, -1.318, -0.128, 1.057, 1.32, 2.558, 1.0, 1.0, 0, 0, 0),
 (101001, 0, 'WORLD\\GENERIC\\ORC\\PASSIVE DOODADS\\SIGNS\\ORCSIGN_HERBALIST.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.516, -1.943, -0.222, 0.718, 1.927, 3.375, 1.0, 1.0, 0, 0, 0),
 (101002, 0, 'World\\ENVIRONMENT\\DOODAD\\GENERALDOODADS\\Package\\Horde_package01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.358, -0.45, 0.013, 0.348, 0.459, 0.442, 1.0, 1.0, 0, 0, 0),
-(101003, 0, 'World\\Azeroth\\Elwynn\\PassiveDoodads\\Jars\\Jar02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.22, -0.254, 0.0, 0.219, 0.254, 0.5, 1.0, 1.0, 0, 0, 0),
+(101003, 0, 'World\\Azeroth\\Elwynn\\PassiveDoodads\\Jars\\Jar02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.22, -0.254, 0.0, 0.219, 0.254, 0.5, 1.0, 1.0, 0, 0, 0);
+INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
 (101004, 0, 'World\\Azeroth\\Elwynn\\PassiveDoodads\\Jars\\Jar03.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.233, -0.269, 0.0, 0.232, 0.268, 0.528, 1.0, 1.0, 0, 0, 0),
 (101005, 0, 'World\\Generic\\Orc\\Passive Doodads\\Jars\\JarOrc01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.208, -0.246, 0.0, 0.207, 0.233, 0.551, 1.0, 1.0, 0, 0, 0),
 (101006, 0, 'World\\Generic\\Orc\\Passive Doodads\\Jars\\JarOrc03.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.208, -0.234, 0.0, 0.207, 0.245, 0.339, 1.0, 1.0, 0, 0, 0),
@@ -7730,12 +7726,12 @@ INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `M
 (101496, 0, 'World\\Generic\\Gnome\\Passive Doodads\\HazardLights\\GnomeHazardLightRed.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.013, -2.305, -0.811, 1.012, 0.195, 1.214, 1.0, 1.0, 0, 0, 0),
 (101497, 0, 'World\\Azeroth\\Karazahn\\PassiveDoodads\\GrainSacks\\KN_GrainSack01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.571, -0.711, 0.002, 0.547, 0.794, 0.325, 1.0, 1.0, 0, 0, 0),
 (101498, 0, 'World\\Azeroth\\Stranglethorn\\PassiveDoodads\\Sack01_01\\Sack01_01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.544, -0.502, -0.036, 0.545, 0.502, 0.946, 1.0, 1.0, 0, 0, 0),
-(101499, 0, 'World\\Generic\\Dwarf\\Passive Doodads\\TavernStuff\\GrainSacs02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.501, -0.531, -0.035, 1.043, 0.923, 1.057, 1.0, 1.0, 0, 0, 0);
-INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
+(101499, 0, 'World\\Generic\\Dwarf\\Passive Doodads\\TavernStuff\\GrainSacs02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.501, -0.531, -0.035, 1.043, 0.923, 1.057, 1.0, 1.0, 0, 0, 0),
 (101500, 0, 'World\\Goober\\G_Bonfire.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -2.131, -2.143, -0.299, 1.63, 1.835, 5.422, 1.0, 1.0, 0, 0, 0),
 (101501, 0, 'World\\Expansion01\\Doodads\\Generic\\BloodElf\\Books\\BE_Book_Large02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.275, -0.324, 0.009, 0.325, 0.324, 0.224, 1.0, 1.0, 0, 0, 0),
 (101502, 0, 'World\\Expansion01\\Doodads\\Netherstorm\\BioDomes\\NS_BioDome_Generic.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -282.367, -282.367, -282.367, 282.367, 282.367, 282.367, 1.0, 1.0, 0, 0, 0),
-(101503, 0, 'World\\KhazModan\\Ironforge\\PassiveDoodads\\SteamTank\\RuinedSteamTankAxle01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.675, -2.517, -0.091, 1.642, 2.741, 0.474, 1.0, 1.0, 0, 0, 0),
+(101503, 0, 'World\\KhazModan\\Ironforge\\PassiveDoodads\\SteamTank\\RuinedSteamTankAxle01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.675, -2.517, -0.091, 1.642, 2.741, 0.474, 1.0, 1.0, 0, 0, 0);
+INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
 (101504, 0, 'World\\KhazModan\\Ironforge\\PassiveDoodads\\SteamTank\\RuinedSteamTankGear01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.037, -1.037, -0.063, 1.037, 1.037, 0.51, 1.0, 1.0, 0, 0, 0),
 (101505, 0, 'World\\Generic\\Goblin\\PassiveDoodads\\GoblinMachinery\\GoblinWeatherVane.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.331, -0.804, -0.068, 1.33, 1.731, 2.838, 1.0, 1.0, 0, 0, 0),
 (101506, 0, 'World\\Kalimdor\\Silithus\\ActiveDoodads\\AhnQirajDoor\\AhnQirajSandTrap.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -3.473, -3.524, -0.22, 3.382, 3.524, 1.838, 1.0, 1.0, 0, 0, 0),
@@ -7935,7 +7931,6 @@ INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `M
 (101700, 0, 'World\\Generic\\Gnome\\Passive Doodads\\Tools\\GnomeTool05.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.22, -0.28, 0.002, 0.163, 0.29, 0.141, 1.0, 1.0, 0, 0, 0),
 (101701, 0, 'World\\Generic\\Gnome\\Passive Doodads\\Tools\\GnomeTool06.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.391, -0.217, 0.001, 0.404, 0.22, 0.348, 1.0, 1.0, 0, 0, 0),
 (101702, 0, 'World\\Generic\\Tauren\\Passive Doodads\\Sacks\\TaurenSack02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.439, -0.406, -0.02, 0.439, 0.603, 1.203, 1.0, 1.0, 0, 0, 0),
-(101703, 0, 'World\\Azeroth\\BurningSteppes\\PassiveDoodads\\OrcAnvilStoneBurningSteppes\\OrcAnvilStoneBurningSteppes.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.726, -1.762, -0.007, 1.277, 1.381, 1.069, 1.0, 1.0, 0, 0, 0),
 (101704, 0, 'World\\Expansion02\\Doodads\\GrizzlyHills\\Trees\\GrizzlyHills_GoldShrubs01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.452, -1.524, -0.259, 1.59, 1.472, 0.465, 1.0, 1.0, 0, 0, 0),
 (101705, 0, 'world\\expansion02\\doodads\\generic\\titan\\ti_brokenroad05_small.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -3.292, -3.201, -0.186, 3.292, 3.201, 3.362, 1.0, 1.0, 0, 0, 0),
 (101706, 0, 'WORLD\\GENERIC\\DWARF\\PASSIVE DOODADS\\CHAIRS\\DWARVENCHAIR03.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.963, -0.694, -0.001, 0.934, 0.982, 1.479, 1.0, 1.0, 0, 0, 0),
@@ -8231,13 +8226,13 @@ INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `M
 (101996, 0, 'World\\Generic\\Human\\Passive Doodads\\BookShelves\\AbbeyShelf01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.867, -0.781, 0.012, 1.689, 0.765, 5.073, 1.0, 1.0, 0, 0, 0),
 (101997, 0, 'World\\Goober\\G_EggSpider.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.989, -0.613, -0.11, 0.828, 0.626, 1.509, 1.0, 1.0, 0, 0, 0),
 (101998, 0, 'World\\Generic\\NightElf\\Passive Doodads\\SteppingStones\\SteppingStone01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.727, -0.95, -0.144, 0.769, 1.08, 0.577, 1.0, 1.0, 0, 0, 0),
-(101999, 0, 'WORLD\\GENERIC\\HUMAN\\PASSIVE DOODADS\\SIGNS\\WEAPONSMITHSHOP01.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5.98, -0.662, 2.103, 2.86, 0.719, 8.467, 1.0, 1.0, 0, 0, 0);
-INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
+(101999, 0, 'WORLD\\GENERIC\\HUMAN\\PASSIVE DOODADS\\SIGNS\\WEAPONSMITHSHOP01.MDX', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5.98, -0.662, 2.103, 2.86, 0.719, 8.467, 1.0, 1.0, 0, 0, 0),
 (102000, 0, 'World\\Azeroth\\Westfall\\PassiveDoodads\\Barrel\\WestFallBarrel01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.43, -0.468, 0.0, 0.429, 0.524, 0.992, 1.0, 1.0, 0, 0, 0),
 (102001, 0, 'World\\Kalimdor\\DireMaul\\ActiveDoodads\\NightmareSummoning\\NightmareStone.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.256, -0.369, 0.492, 0.258, 0.37, 1.296, 1.0, 1.0, 0, 0, 0),
 (102002, 0, 'World\\Generic\\ActiveDoodads\\Bushes\\BerryBush01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.428, -1.991, -0.557, 1.437, 1.539, 2.263, 1.0, 1.0, 0, 0, 0),
 (102003, 0, 'World\\Expansion01\\Doodads\\Generic\\Tradeskill\\JewelCrafting\\JewelCraft_GemUncut_01.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.476, -0.674, 0.009, 0.414, 0.43, 0.966, 1.0, 1.0, 0, 0, 0),
-(102004, 0, 'World\\Expansion01\\Doodads\\Generic\\Tradeskill\\JewelCrafting\\JewelCraft_GemUncut_02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.789, -0.849, -0.091, 0.536, 0.585, 1.039, 1.0, 1.0, 0, 0, 0),
+(102004, 0, 'World\\Expansion01\\Doodads\\Generic\\Tradeskill\\JewelCrafting\\JewelCraft_GemUncut_02.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.789, -0.849, -0.091, 0.536, 0.585, 1.039, 1.0, 1.0, 0, 0, 0);
+INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
 (102005, 0, 'World\\Expansion01\\Doodads\\Generic\\Tradeskill\\JewelCrafting\\JewelCraft_GemUncut_03.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.789, -0.849, -0.091, 0.536, 0.674, 1.012, 1.0, 1.0, 0, 0, 0),
 (102006, 0, 'World\\Azeroth\\BurningSteppes\\ActiveDoodads\\DarkIronNode\\DarkIronNodeParticleRock.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.663, -0.446, -0.636, 0.593, 0.534, 0.97, 1.0, 1.0, 0, 0, 0),
 (102007, 0, 'World\\Generic\\PassiveDoodads\\ParticleEmitters\\HouseSmoke.mdx', 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.33, -1.143, -0.061, 1.068, 1.151, 9.051, 1.0, 1.0, 0, 0, 0),
@@ -9156,10 +9151,6 @@ INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisp
 (100856, 100856, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100857, 100857, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100858, 100858, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(100859, 100859, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(100860, 100860, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(100861, 100861, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(100862, 100862, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100863, 100863, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100864, 100864, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100865, 100865, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
@@ -9296,12 +9287,12 @@ INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisp
 (100996, 100996, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100997, 100997, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (100998, 100998, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(100999, 100999, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0);
-INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, `TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, `BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`) VALUES
+(100999, 100999, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101000, 101000, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101001, 101001, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101002, 101002, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(101003, 101003, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
+(101003, 101003, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0);
+INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, `TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, `BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`) VALUES
 (101004, 101004, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101005, 101005, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101006, 101006, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
@@ -9797,12 +9788,12 @@ INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisp
 (101496, 101496, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101497, 101497, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101498, 101498, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(101499, 101499, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0);
-INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, `TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, `BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`) VALUES
+(101499, 101499, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101500, 101500, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101501, 101501, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101502, 101502, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(101503, 101503, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
+(101503, 101503, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0);
+INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, `TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, `BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`) VALUES
 (101504, 101504, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101505, 101505, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101506, 101506, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
@@ -10002,7 +9993,6 @@ INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisp
 (101700, 101700, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101701, 101701, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101702, 101702, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(101703, 101703, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101704, 101704, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101705, 101705, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101706, 101706, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
@@ -10298,13 +10288,13 @@ INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisp
 (101996, 101996, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101997, 101997, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (101998, 101998, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(101999, 101999, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0);
-INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, `TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, `BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`) VALUES
+(101999, 101999, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (102000, 102000, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (102001, 102001, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (102002, 102002, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (102003, 102003, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
-(102004, 102004, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
+(102004, 102004, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0);
+INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, `TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, `BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`) VALUES
 (102005, 102005, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (102006, 102006, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
 (102007, 102007, 0, 0, 1.0, 150, '', '', '', '', 0, 0, 0, 0, 0, 0),
@@ -11223,10 +11213,6 @@ INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`,
 (100856, 0.5, 1.0, 2, 0, 0),
 (100857, 0.5, 1.0, 2, 0, 0),
 (100858, 0.5, 1.0, 2, 0, 0),
-(100859, 0.5, 1.0, 2, 0, 0),
-(100860, 0.5, 1.0, 2, 0, 0),
-(100861, 0.5, 1.0, 2, 0, 0),
-(100862, 0.5, 1.0, 2, 0, 0),
 (100863, 0.5, 1.0, 2, 0, 0),
 (100864, 0.5, 1.0, 2, 0, 0),
 (100865, 0.5, 1.0, 2, 0, 0),
@@ -11363,12 +11349,12 @@ INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`,
 (100996, 0.5, 1.0, 2, 0, 0),
 (100997, 0.5, 1.0, 2, 0, 0),
 (100998, 0.5, 1.0, 2, 0, 0),
-(100999, 0.5, 1.0, 2, 0, 0);
-INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, `VerifiedBuild`) VALUES
+(100999, 0.5, 1.0, 2, 0, 0),
 (101000, 0.5, 1.0, 2, 0, 0),
 (101001, 0.5, 1.0, 2, 0, 0),
 (101002, 0.5, 1.0, 2, 0, 0),
-(101003, 0.5, 1.0, 2, 0, 0),
+(101003, 0.5, 1.0, 2, 0, 0);
+INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, `VerifiedBuild`) VALUES
 (101004, 0.5, 1.0, 2, 0, 0),
 (101005, 0.5, 1.0, 2, 0, 0),
 (101006, 0.5, 1.0, 2, 0, 0),
@@ -11864,12 +11850,12 @@ INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`,
 (101496, 0.5, 1.0, 2, 0, 0),
 (101497, 0.5, 1.0, 2, 0, 0),
 (101498, 0.5, 1.0, 2, 0, 0),
-(101499, 0.5, 1.0, 2, 0, 0);
-INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, `VerifiedBuild`) VALUES
+(101499, 0.5, 1.0, 2, 0, 0),
 (101500, 0.5, 1.0, 2, 0, 0),
 (101501, 0.5, 1.0, 2, 0, 0),
 (101502, 0.5, 1.0, 2, 0, 0),
-(101503, 0.5, 1.0, 2, 0, 0),
+(101503, 0.5, 1.0, 2, 0, 0);
+INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, `VerifiedBuild`) VALUES
 (101504, 0.5, 1.0, 2, 0, 0),
 (101505, 0.5, 1.0, 2, 0, 0),
 (101506, 0.5, 1.0, 2, 0, 0),
@@ -12069,7 +12055,6 @@ INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`,
 (101700, 0.5, 1.0, 2, 0, 0),
 (101701, 0.5, 1.0, 2, 0, 0),
 (101702, 0.5, 1.0, 2, 0, 0),
-(101703, 0.5, 1.0, 2, 0, 0),
 (101704, 0.5, 1.0, 2, 0, 0),
 (101705, 0.5, 1.0, 2, 0, 0),
 (101706, 0.5, 1.0, 2, 0, 0),
@@ -12365,13 +12350,13 @@ INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`,
 (101996, 0.5, 1.0, 2, 0, 0),
 (101997, 0.5, 1.0, 2, 0, 0),
 (101998, 0.5, 1.0, 2, 0, 0),
-(101999, 0.5, 1.0, 2, 0, 0);
-INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, `VerifiedBuild`) VALUES
+(101999, 0.5, 1.0, 2, 0, 0),
 (102000, 0.5, 1.0, 2, 0, 0),
 (102001, 0.5, 1.0, 2, 0, 0),
 (102002, 0.5, 1.0, 2, 0, 0),
 (102003, 0.5, 1.0, 2, 0, 0),
-(102004, 0.5, 1.0, 2, 0, 0),
+(102004, 0.5, 1.0, 2, 0, 0);
+INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, `VerifiedBuild`) VALUES
 (102005, 0.5, 1.0, 2, 0, 0),
 (102006, 0.5, 1.0, 2, 0, 0),
 (102007, 0.5, 1.0, 2, 0, 0),

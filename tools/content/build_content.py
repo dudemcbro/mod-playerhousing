@@ -243,14 +243,18 @@ class Ghosts:
 
     def __init__(self, dbc):
         rows, text = read_dbc(os.path.join(dbc, "CreatureDisplayInfo.dbc"))
-        # Every field of each display, strings read, for copies.
-        self.displays = {ints[0]: list(ints[:4]) + [floats[4], ints[5]] + [text(ints[i]) for i in range(6, 10)] + list(ints[10:16])
-                         for ints, floats in rows}
+        # Every field of each display, strings read, for copies (-1 stays -1: the server's
+        # columns are signed).
+        signed = lambda value: value - (1 << 32) if value >= 1 << 31 else value
+        self.displays = {ints[0]: [signed(v) for v in ints[:4]] + [floats[4], signed(ints[5])] + [text(ints[i]) for i in range(6, 10)]
+                         + [signed(v) for v in ints[10:16]] for ints, floats in rows}
         self.models = []   # (ghost id, model path, box)
         self.copies = []   # (ghost id, the display copied)
 
     def model(self, item, path, box):
-        if path.lower().endswith((".m2", ".mdx")):
+        # The server's creaturemodeldata_dbc keeps 100 characters of the path: a model with a
+        # longer one gets no ghost (it's carried as it is instead).
+        if path.lower().endswith((".m2", ".mdx")) and len(path) <= 100:
             self.models.append((ghost_id(item), path, tuple(box or (0.0,) * 6)))
 
     def copy(self, item, display):

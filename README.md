@@ -39,6 +39,18 @@ above Krook's menu, so skipping them costs nothing.
 
 ### Placing things
 
+With the client addon (below), click a piece in the Collection (or Place next to it): it
+follows you as a see-through ghost, a couple of yards ahead (a building comes along as it
+is). Walk it where it goes. The arrow keys push it farther or nearer and to the sides, the
+mouse wheel turns it, Ctrl+wheel (or Page Up and Page Down) raises and lowers it, and it
+sits on a table top it's over. G sets it down (Shift+G: then another of the same), Escape
+puts it back. Nothing is used until it's set down: it comes from your bags, House Storage,
+or a new copy from the Collection. The client can't tell anyone where the mouse points in
+the world, so the ghost follows you rather than the cursor: raise it and push it out to hang
+something on a wall or up under a roof.
+
+Without the addon:
+
 1. Right-click a furnishing or building in your bags. The targeting circle is the size of
    the piece (from 1 yard for a candle to 20 for a manor), so you can see the room it takes.
 2. Click where it should go. It lands on that exact spot, facing you.
@@ -57,17 +69,18 @@ Swim too far out and you're brought back to the beach.
 - **Start decorating** (Home menu, or `.house decorate`). Now click any piece to open its
   menu: turn it, face it toward you, move it to where you stand, nudge it, raise or lower
   it, or pick it up.
-- **Move with the targeting circle** hands you a Move a Piece item with a circle the size
-  of the piece: click the new spot. Whatever stands on it (a lantern on a table, all the
-  furniture in a building) goes along, and one undo puts it all back.
+- **Move**: the piece follows you as a ghost, starting where it stands, and G sets it down
+  in its new spot (the same keys as placing). Whatever stands on it (a lantern on a table,
+  all the furniture in a building) goes along, and one undo puts it all back.
+  `.house move` does it with a targeting circle instead.
 - **More turns, tilt and size...** turns by 90, 15 or 5 degrees, tilts it 5 degrees at a
   time (forward, back, or to its left or right), and makes it bigger or smaller a tenth
   at a time. What stands on it keeps its place on the bigger or smaller top. The server
   sets how far sizes and tilts go (half to double size and 45 degrees by default), and
   mannequins always stand upright.
-- **Place another like this** puts one more of the same piece in your bags (from your
-  bags, House Storage, or a new copy from the Collection). The next one you place gets
-  the first one's turn, size and tilt: handy for rows of fence posts or matching chairs.
+- **Place another like this**: a ghost of one more of the same piece follows you, with the
+  first one's turn, size and tilt (from your bags, House Storage, or a new copy from the
+  Collection): handy for rows of fence posts or matching chairs.
 - **Grid** (Island settings, or `.house grid 1`): new pieces land on a grid and face
   straight or diagonal, moves land on it too, and nudges go one square at a time. Pieces
   put on a table top aren't squared up, so they stay on the table.
@@ -227,9 +240,13 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house nudge <forward\|back\|left\|right\|up\|down> [yards] [id]` | Nudge a piece, relative to where you're facing |
 | `.house up`, `down` | Raise or lower a tenth of a yard |
 | `.house move [id]` | Move a piece with a targeting circle (what's on it comes along) |
+| `.house ghost <item>` | A new piece follows you as a ghost, from your bags, House Storage or the Collection |
+| `.house ghost move [id]` | The piece (or the selection) follows you as a ghost, what's on it too |
+| `.house ghost adjust <forward> <left> <up> <degrees>` | Push the ghost farther, to the side, up, or turn it |
+| `.house ghost place [another]`, `ghost cancel` | Set it down (then another of the same), or never mind |
 | `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
 | `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
-| `.house another [id]` | One more of this piece, placed with its turn, size and tilt |
+| `.house another [id]` | A ghost of one more of this piece, with its turn, size and tilt |
 | `.house row <count> [yards] [right\|left\|forward\|back] [id]` | Copies of a piece in a straight row beside it (spacing: its own length unless given), turned the same, one undo step |
 | `.house group [add\|remove <id> \| clear]` | Several pieces selected at once (Ctrl-click them with the addon): they slide, turn about their middle, move with the circle and get picked up together |
 | `.house match <height\|turn\|line\|space>` | The selected pieces take the first one's height or turn, line up across your view, or spread out evenly |
@@ -290,18 +307,16 @@ of them) and seven tabs:
 - **Collection**: every piece there is, unlocked ones in color and locked ones grey, with
   how many you have in your bags on each icon. Show all of them, your favorites, the ones
   you placed last, or a category; only unlocked ones, or only the ones in your bags; by name;
-  sorted as the Collection lists them, by name, by cost, or bags first. On your island, a
-  click on a piece in your bags places it: the targeting circle comes up, click the spot.
-  Any other click keeps the piece in the preview next to the window with its details and
-  buttons: Place (with none in your bags, the first click gets one, from House Storage if
-  it has one), Get 1, Get 5 and Take from storage. Hover an icon to preview the piece: its
+  sorted as the Collection lists them, by name, by cost, or bags first. A click keeps the
+  piece in the preview next to the window with its details and buttons (Place, Get 1,
+  Get 5 and Take from storage), and on your island a ghost of it follows you, to set down
+  with G. Hover an icon to preview the piece: its
   model, slowly turning and centered in the frame, and its size. Buildings made of world
-  models can't be drawn in a window, so they show a picture (see Pictures of buildings) or
-  else a floor plan to scale, with you next to it. Right-click a piece to star it as a
+  models can't be drawn in a window, so they show a picture (see Pictures of buildings). Right-click a piece to star it as a
   favorite; drag one from your bags to an action bar to keep it handy. New unlocks are
   marked until you leave the tab.
-- **Storage**: House Storage: take a piece out, place one straight from there, or take
-  everything back to the bags.
+- **Storage**: House Storage: take a piece out, place one straight from there (a ghost of
+  it follows you), or take everything back to the bags.
 - **Placed**: the pieces on the island, nearest first, and a search: go to one (you walk
   over and it's selected), select it, add it to the selection, bring it to where you
   stand, or pick it up.
@@ -324,15 +339,16 @@ tries the other way of centering them.
 
 For the selected piece, a panel below the tabs has turn (Shift-click for 5 degrees,
 Ctrl-click for 90, or the mouse wheel over the window), face me, move here, nudge, bigger
-and smaller, tilt, pick up, Move and Another. Move and Another bring up a button that uses
-the right item for you: click it, then click the spot. Row... places copies in a straight
+and smaller, tilt, pick up, Move and Another. Move and Another send a ghost after you, to
+set down with G. Row... places copies in a straight
 row: how many, how far apart (its own length unless you say), and toward your right, left,
 front or back.
 
 **Several pieces at once**: while decorating (or in edit mode), Ctrl-click more pieces to
 add them to the selection (Ctrl-click again takes one out), or use + on the Placed tab.
-They slide, turn about their middle, move with the circle and get picked up together, each
-with what stands on it, and each change is one undo step. The panel (and edit mode's
+The window's buttons and edit mode's keys slide them and turn them about their middle, G
+has them all follow you as ghosts, and they get picked up together, each with what stands on
+it; each change is one undo step (size and tilt stay one piece at a time). The panel (and edit mode's
 banner) then has Height and Turn (the others take the first piece's), Line up (a straight
 row across your view, through the first piece), Space (evenly between the two at the ends)
 and Save set. Every selected piece has a ring under it.
@@ -348,22 +364,42 @@ press Tab for the next one nearby), then:
 | R | Switch what the plain mouse wheel does |
 | Shift with any of those | Finer steps |
 | Tab, Shift+Tab | Next or previous piece nearby |
-| G | The targeting circle, at once: click the new spot |
+| G | Pick it up: it follows you as a ghost (below); G again sets it down |
 | Delete | Pick it up (several: after asking) |
 | Ctrl-click a piece | Add it to the selection, or take it out |
 | Ctrl+Z, Ctrl+Y | Undo, redo |
 | Alt+wheel | Zoom the camera |
-| Escape | Cancel the circle, or leave edit mode |
+| Escape | Put a ghost back, cancel a targeting circle, or leave edit mode |
 
 A banner at the top of the screen names the selected piece, lists the keys, says what the
 last key did (so a key that does the wrong thing shows itself) and has Grid, Wheel, Undo
 (right-click: the history), Redo and Done buttons, and Row, Height, Turn, Line up, Space
-and Save set for the selection. While a piece is selected,
-edit mode keeps a Move a Piece item in your bags for G, and takes it away afterwards. With
-the grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
+and Save set for the selection. With the grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
 undo step. The keys are only bound in edit mode, so the usual ones come back afterwards;
 bindings can't change in combat, so they wait for it to end. The client can't slide a game
 object, so each step redraws the piece.
+
+**Ghosts**: a piece being placed or moved follows you, in or out of edit mode, until you set
+it down. Furniture is a see-through copy of itself that glides along; a building comes as it
+is, redrawn a few times a second (the client can't draw a building see-through). The banner
+says Placing or Moving and has Set it down, And another and Never mind buttons.
+
+| Key | Does |
+| --- | --- |
+| Walk, turn | It comes along, the same distance ahead |
+| Up, Down arrows | Farther, nearer |
+| Left, Right arrows | To the side |
+| Mouse wheel | Turn it |
+| Page Up, Page Down, Ctrl+wheel | Raise, lower (on a wall, under a roof) |
+| Shift with any of those | Finer steps |
+| G | Set it down |
+| Shift+G | Set it down, then another of the same follows |
+| Escape | Never mind: a new piece stays in your bags, a moved one where it was |
+
+It lands on the grid when the grid is on, and stands on a table top it's over (held higher,
+it floats). The see-through ghosts need the client patch (see Install) from this version:
+without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as it is
+instead.
 
 The window opens by itself when you arrive home (`/housing auto` turns that off).
 `/housing` shows or hides it, and `/housing <command>` runs any `.house` command. A button
@@ -388,8 +424,14 @@ lua5.1 client-addon/test/harness.lua $(sed -n 's|^\([A-Za-z]*\.lua\)$|client-add
 
 ### Pictures of buildings
 
-A model window can't draw buildings made of world models, so the preview shows a floor
-plan, unless the addon has a picture. The pictures come from your own client, once:
+A model window can't draw buildings made of world models, so the addon comes with a
+picture of each (`Pictures/<item>.tga`, listed in `Pictures.lua`), and shows a floor plan to
+scale for any building without one. `tools/pictures/render_buildings.py` makes them: it
+downloads each building's model files and textures (from wago.tools, which serves the
+game's files) and draws them all from the same three-quarter view. Run it again after adding
+buildings (it needs numpy and Pillow: `apt install python3-numpy python3-pil`).
+
+Pictures from your own client instead, with the game's own lighting, take a GM a few minutes:
 
 1. As a GM, go home and type `/housing phototour`. The island turns clear and sunny, the
    camera goes to first person, and each building is set up in front of you in turn: the
@@ -401,8 +443,8 @@ plan, unless the addon has a picture. The pictures come from your own client, on
    `Interface/AddOns/PlayerHousing/Pictures/<item>.tga` and lists them in `Pictures.lua`.
 4. `/reload`: buildings show their pictures.
 
-Copying a new version of the addon over the old one keeps the pictures but resets
-`Pictures.lua`: run the script again (it only needs a moment) to list them.
+Copying a new version of the addon over the old one brings back the rendered pictures: run
+the script again (it only needs a moment) to use yours.
 
 ## Install
 
@@ -423,7 +465,8 @@ Copying a new version of the addon over the old one keeps the pictures but reset
    It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
    the server data (collision and pathing without the hall, one script) and a client patch
    every player installs once. The same patch gives the housing items their bag icons
-   (without it they show as question marks). To keep the hall instead, set
+   (without it they show as question marks) and adds the ghosts' see-through models (a
+   patch from before ghosts needs building again). To keep the hall instead, set
    `PlayerHousing.Layout = "guildhouse"`; players then build the patch with `--icons-only`.
 5. Restart the worldserver.
 
@@ -442,6 +485,7 @@ Copying a new version of the addon over the old one keeps the pictures but reset
 | `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
 | `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
 | `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
+| `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
 | `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
 | `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
@@ -509,6 +553,16 @@ fits, since players already see and track those.
   before it casts, so there's no cast bar, sound or cooldown. The core has already checked
   range and line of sight to the clicked spot by then. Players who have old copies of the items cached see the old
   circle size until they clear their `WDB` folder.
+- **Ghosts** (`src/HousingGhosts.cpp`) follow the player's position, guessed ahead of their
+  last movement packet (the client reports only every half second when running straight),
+  and are redrawn every tenth of a second. Furniture's ghost is a creature (entry 900203)
+  with a see-through model of the piece: a `CreatureModelData` and `CreatureDisplayInfo` row
+  per piece model (display 60000 plus the item's offset from 900000, opacity 150), which
+  the content builder writes for the server (`creaturemodeldata_dbc`,
+  `creaturedisplayinfo_dbc`) and the client patch adds to the client. It glides with a
+  movement spline, its facing held. Figurines and the mannequin get a see-through copy of
+  their creature's display. Buildings, and pieces whose model has no ghost, are carried as
+  game objects, put down again in the new spot at most four times a second.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. Each player has
   their own list, in memory, cleared when they leave the island. A step only applies to

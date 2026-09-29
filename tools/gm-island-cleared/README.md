@@ -55,9 +55,10 @@ The folder can be the client's install folder or its `Data` folder, in any lette
 and any `patch-*.MPQ` the client already has is read too. Copy `patch-H.MPQ` into the
 `Data` folder of every client that plays on this server, and clear the client's `WDB`
 cache folder once. Without the patch, players still see (and bump into) the hall while the
-server treats the spot as open ground, and housing items show as question marks. Pick
-another letter if `patch-H.MPQ` is already taken. Rebuild and recopy the patch whenever the
-module's content changes, so new pieces get their icons.
+server treats the spot as open ground, housing items show as question marks, and the
+see-through ghosts of pieces being placed can't be seen. Pick another letter if
+`patch-H.MPQ` is already taken. Rebuild and recopy the patch whenever the module's content
+changes, so new pieces get their icons and ghosts.
 
 ## Item icons
 
@@ -74,7 +75,20 @@ If another patch in the client also carries one of these files and loads after
 the output a later letter than that patch.
 
 For a server on the guildhouse layout, `make_client_patch.sh --icons-only` builds a patch
-with the icons alone.
+with the icons (and ghosts) alone.
+
+## Ghosts
+
+A piece being placed or moved follows its player as a see-through copy of itself: a
+creature with the piece's model (see the main README). The client only draws creatures
+from its own `CreatureDisplayInfo.dbc` and `CreatureModelData.dbc`, so the patch adds a
+creature model and a see-through display (opacity 150 of 255) for each piece's model, and a
+see-through copy of the figurines' and the mannequin's displays, all with ids from 61100 (a
+piece's ghost is 60000 plus its item's offset from 900000; the catalog's from 100000). The
+rows come from `client_items.tsv` too; `dbc_add_ghosts.py` adds them to the client's own
+copies of the two files. The server has the same rows in its world database. On a server
+whose players keep an older patch, `PlayerHousing.Ghosts = 0` carries pieces as they are
+instead.
 
 `adt_sink_wmo.py` and the MPQ packing were checked against a synthetic tile (only the
 hall's placement changes, the file keeps its size, and the entry is found by the client's
