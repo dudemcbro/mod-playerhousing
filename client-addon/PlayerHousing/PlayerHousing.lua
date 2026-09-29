@@ -101,22 +101,34 @@ local function Command(command)
     return function() PlayerHousing_Command(command) end
 end
 
--- PlayerHousing.dll (client-dll/, started with PlayerHousingLauncher.exe) says where the mouse
--- points in the world: then a piece being placed follows the mouse (Mouse.lua).
-local function HasMouse()
-    return type(PlayerHousing_CursorWorld) == "function"
+-- Quick, quiet commands (where the mouse points, ten times a second) go over AzerothCore's
+-- addon command channel, which chat's flood limit doesn't count and which answers the addon,
+-- not the chat window. It's there unless the server turned it off (AddonChannel = 0): a ping
+-- when the server first reports housing, and its answer, say so.
+local commandChannel = false
+local pinged = false
+local fastCount = 0
+
+local function PingChannel()
+    if not pinged then
+        pinged = true
+        SendAddonMessage("AzerothCore", "p0000", "WHISPER", UnitName("player"))
+    end
 end
 
--- Quick, quiet commands (where the mouse points, ten times a second): AzerothCore's addon
--- command channel, which chat's flood limit doesn't count and which answers the addon, not
--- the chat window.
-local fastCount = 0
 local function FastCommand(command)
-    if not known then
+    if not known or not commandChannel then
         return
     end
     fastCount = fastCount % 9999 + 1
     SendAddonMessage("AzerothCore", ("i%04dhouse %s"):format(fastCount, command), "WHISPER", UnitName("player"))
+end
+
+-- PlayerHousing.dll (client-dll/, started with PlayerHousingLauncher.exe) says where the mouse
+-- points in the world: then a piece being placed follows the mouse (Mouse.lua), when the
+-- command channel is there to send it on.
+local function HasMouse()
+    return type(PlayerHousing_CursorWorld) == "function" and commandChannel
 end
 
 -- The server learns the addon is here, whether the House Key opens this window, and whether
@@ -319,6 +331,7 @@ local function OnState(fields)
     if not registered and db then
         registered = true
         Register()
+        PingChannel()
     end
     for _, hook in ipairs(stateHooks) do
         hook(state)
@@ -1108,6 +1121,17 @@ driver:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, message, channel, sender = ...
+        -- The command channel answers (its ping, or a command): it's there.
+        if prefix == "AzerothCore" and channel == "WHISPER" and sender == UnitName("player") then
+            if not commandChannel and message:sub(1, 1) == "a" then
+                commandChannel = true
+                if HasMouse() then
+                    Register()  -- the server hears the mouse is there
+                    RequestState()
+                end
+            end
+            return
+        end
         -- Only the server's whisper to us counts, never another player's.
         if prefix ~= PREFIX or channel ~= "WHISPER" or sender ~= UnitName("player") then
             return

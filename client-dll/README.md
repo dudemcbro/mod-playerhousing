@@ -6,7 +6,9 @@ thing. With it, and the Player Housing addon, a piece follows your mouse cursor 
 sets it down: on the floor, on a table, or on a wall (it turns to face out from the wall).
 
 It is optional, and only for Wow.exe 3.3.5a build 12340. Everything else in the module works
-without it.
+without it. The addon sends where the mouse points over AzerothCore's addon command channel,
+which is on unless the server sets `AddonChannel = 0` in worldserver.conf; without it the
+addon doesn't use the mouse (it checks when you log in), and pieces follow you as before.
 
 ## Install (each player)
 

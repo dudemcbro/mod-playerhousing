@@ -24,8 +24,9 @@ using namespace Housing;
 // the piece floats ahead of the player instead: they walk it where it goes, push it farther
 // or nearer, raise it and turn it, and see it there before setting it down. Furniture is a
 // see-through copy of itself (a creature with its model, which can glide); a building (a world
-// model, which a creature can't show) is a see-through block its size. Pieces without a ghost
-// model (an old client patch) are carried as they are, redrawn a few times a second.
+// model, which a creature can't show) is a see-through block its size. Pieces whose ghost the
+// server doesn't have (content from before ghosts) are carried as they are, redrawn a few times
+// a second. (A player whose client patch is older than the server's content sees no ghost.)
 
 namespace
 {
@@ -41,6 +42,8 @@ namespace
     constexpr float ON_TOP = 0.35f;          // this close to a table's top, it stands on the table
     constexpr float POINT_ON_TOP = 0.5f;     // the mouse on a table: its top this close to the point
     constexpr float MAX_POINT_DISTANCE = 120.0f;  // the mouse on something farther off: not taken
+    constexpr float MAX_POINT_HEIGHT = 40.0f;     // ... or this far above the ground (a tall roof)
+    constexpr float MAX_POINT_DEPTH = 3.0f;       // ... or this far under it
     constexpr uint32 POINT_DRAW_MS = 60;     // points coming faster than this are drawn by the update
     constexpr float WALL_STEEPNESS = 0.6f;   // a surface facing up less than this is a wall
 
@@ -660,6 +663,16 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
         note = "That's too far away.";
     else if (!IsSpotOnIsland(x, y, z))
         note = "That spot is off your island.";
+    else
+    {
+        // Nothing the mouse can point at is under the ground or high above it (a client that
+        // says otherwise doesn't get to bury pieces or hang them in the sky).
+        float terrain = player->GetMap()->GetGridHeight(x, y);
+        if (terrain > INVALID_HEIGHT + 1.0f && z < terrain - MAX_POINT_DEPTH)
+            note = "That's under the ground.";
+        else if (terrain > INVALID_HEIGHT + 1.0f && z > terrain + MAX_POINT_HEIGHT)
+            note = "That's too high up.";
+    }
     if (!note.empty())
     {
         // It stays where it was; the addon hears why (once, not for every point).
@@ -672,10 +685,19 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
         return false;
     }
 
-    // The mouse on a piece being moved (still standing where it was): what that stands on.
+    // A building stands on the ground, whatever the mouse is on (a roof, a cliff's side).
+    PieceDefinition const* lead = GetPiece(ghost.pieces.front().itemEntry);
+    bool building = lead && lead->IsBuilding();
+    if (building)
+        z = GroundHeightNear(player, x, y, z);
+
+    // The mouse on a piece being moved (still standing where it was): where the lead stood, as
+    // if it were on what that piece stands on.
     bool onOriginal = false;
     for (GhostPiece const& piece : ghost.pieces)
     {
+        if (building)
+            break;
         auto placementItr = piece.placementId ? session->placements.find(piece.placementId) : session->placements.end();
         if (placementItr == session->placements.end())
             continue;
@@ -686,7 +708,7 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
         float scale = definition->scale > 0.0f ? original.scale / definition->scale : 1.0f;
         if (z < original.z - 0.2f || z > original.z + definition->height * scale + 0.2f || !IsOverSurface(*definition, original, x, y))
             continue;
-        z = original.z;
+        z = original.z - piece.dz;
         onOriginal = true;
         break;
     }
@@ -701,7 +723,7 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
     ghost.pointZ = z;
     // A wall (the surface facing more sideways than up): the piece faces out from it.
     bool wall = false;
-    if (facing && !onOriginal && std::isfinite(facing[0]) && std::isfinite(facing[1]) && std::isfinite(facing[2]))
+    if (facing && !onOriginal && !building && std::isfinite(facing[0]) && std::isfinite(facing[1]) && std::isfinite(facing[2]))
     {
         float length = std::sqrt(facing[0] * facing[0] + facing[1] * facing[1] + facing[2] * facing[2]);
         if (length > 0.5f && length < 1.5f && std::fabs(facing[2] / length) < WALL_STEEPNESS)

@@ -39,16 +39,21 @@ local function Pointed()
     return PlayerHousing_CursorWorld(fx, fy)
 end
 
-local function Send(x, y, z, nx, ny, nz, always)
-    if not always and lastX and math.abs(x - lastX) < MIN_MOVE and math.abs(y - lastY) < MIN_MOVE and math.abs(z - lastZ) < MIN_MOVE then
+-- x y z, and which way the surface faces when the DLL could tell.
+local function PointText(x, y, z, nx, ny, nz)
+    local text = ("%.2f %.2f %.2f"):format(x, y, z)
+    if nx then
+        text = text .. (" %.2f %.2f %.2f"):format(nx, ny, nz)
+    end
+    return text
+end
+
+local function Send(x, y, z, nx, ny, nz)
+    if lastX and math.abs(x - lastX) < MIN_MOVE and math.abs(y - lastY) < MIN_MOVE and math.abs(z - lastZ) < MIN_MOVE then
         return
     end
     lastX, lastY, lastZ = x, y, z
-    local command = ("ghost at %.2f %.2f %.2f"):format(x, y, z)
-    if nx then
-        command = command .. (" %.2f %.2f %.2f"):format(nx, ny, nz)
-    end
-    API.FastCommand(command)
+    API.FastCommand("ghost at " .. PointText(x, y, z, nx, ny, nz))
 end
 
 local function OverWorld()
@@ -62,8 +67,9 @@ driver:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
-    -- A click on the world: the piece goes there. (A long press, or one that turned the
-    -- camera, is a drag.)
+    -- A click on the world: the piece goes there (the point goes with the click, so a spot it
+    -- can't go isn't swapped for an older one). A long press, one that turned the camera, or
+    -- one that started on the sky is a drag.
     local down = IsMouseButtonDown("LeftButton")
     if down and not press and OverWorld() then
         local x, y, z = Pointed()
@@ -73,11 +79,11 @@ driver:SetScript("OnUpdate", function(self, elapsed)
         press = nil
         if GetTime() - started.time <= CLICK_TIME and OverWorld() then
             local x, y, z, nx, ny, nz = Pointed()
-            local turned = x and started.x and (math.abs(x - started.x) + math.abs(y - started.y) + math.abs(z - started.z)) > DRAG_MOVE
+            local turned = not started.x or (x and (math.abs(x - started.x) + math.abs(y - started.y) + math.abs(z - started.z)) > DRAG_MOVE)
             if x and not turned then
-                Send(x, y, z, nx, ny, nz, true)
+                lastX, lastY, lastZ = x, y, z
                 local another = IsShiftKeyDown() and not state.ghostMove
-                API.Command(another and "ghost place another" or "ghost place")
+                API.Command((another and "ghost place another at " or "ghost place at ") .. PointText(x, y, z, nx, ny, nz))
                 if API.Feedback then
                     API.Feedback(another and "Shift-click" or "Click", another and "set down; another follows" or "set down")
                 end

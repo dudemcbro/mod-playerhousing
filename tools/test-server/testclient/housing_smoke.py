@@ -796,8 +796,13 @@ def main():
               ghost is not None and abs(ghost.z - chair["z"]) < 0.1 and state is not None and state[24] == "",
               "%s %s" % (ghosts_in_sight(owner), state and state[20:]))
 
-        owner.addon_command("house ghost at %.2f %.2f %.2f 0 0 1" % spot, me, echo=60, wait=0.5)
-        msgs = owner.command(".house ghost place")
+        # A click carries its own point: one that can't be used (under the ground) is refused,
+        # with why, rather than setting the piece down at the last good one.
+        msgs = owner.command(".house ghost place at %.2f %.2f %.2f" % (spot[0], spot[1], spot[2] - 20))
+        still = placement_of(owner_guid, CHAIR)
+        check("a click on a spot it can't go says why, and nothing moves", has(msgs, "under the ground") and ghosts_in_sight(owner)
+              and still is not None and math.dist((still["x"], still["y"]), (chair["x"], chair["y"])) < 0.01, joined(msgs) + " " + str(still))
+        msgs = owner.command(".house ghost place at %.2f %.2f %.2f 0 0 1" % spot)
         moved = placement_of(owner_guid, CHAIR)
         wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
         check("a click sets it down where the mouse points, turned as before (the wall's turn stays with the wall)", moved is not None
@@ -1413,6 +1418,26 @@ def main():
           and math.dist((moved_chair["x"] - inside["x"], moved_chair["y"] - inside["y"]), step) < 0.15, joined(msgs) + " %s %s" % (moved_house, moved_chair))
     wait_for(lambda: len([o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == live(FARMHOUSE)]) == 1, 3, owner)
     owner.command(".house undo")
+
+    # With the mouse, a building stands on the ground whatever the mouse is on (a roof, a wall).
+    owner.command(".house addon 1 1 mouse")
+    owner.command(".house ghost move %d" % house["id"])
+    wait_for(lambda: len(ghosts_in_sight(owner)) == 3, 3, owner)
+    roof = (house["x"] + 4.0, house["y"] + 1.0, L["ground"] + 9.0)
+    owner.addon_command("house ghost at %.2f %.2f %.2f 0 1 0" % roof, args.owner_char, echo=90, wait=1.0)
+
+    def block_at():
+        found = [o for o in ghosts_in_sight(owner) if o.fields.get(UNIT_FIELD_DISPLAYID) == ghost_display(FARMHOUSE)]
+        return found[0] if found and math.dist((found[0].x, found[0].y), roof[:2]) < 0.1 else None
+
+    wait_for(block_at, 3, owner)
+    block = block_at()
+    check("a building pointed at a roof or a wall stands on the ground there, turned as it was", block is not None
+          and abs(block.z - L["ground"]) < 1.0 and angle_diff(block.o, house["o"]) < 0.02,
+          "%s %s" % (ghosts_in_sight(owner), house))
+    owner.command(".house ghost cancel")
+    owner.command(".house addon 1 1")
+    wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
 
     # ------------------------------------------------------------- stands
     log("== mannequin")

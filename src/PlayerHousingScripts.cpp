@@ -785,6 +785,26 @@ public:
         {
             // A piece following the player until it's set down (the addon's keys drive it).
             std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            // x y z [facing x y z] from tokens[index] on: the ghost goes there. False, with why,
+            // when it can't (quiet when it's only the mouse wandering off the island).
+            auto pointAt = [&](size_t index, std::string& why) -> bool
+            {
+                float nan = std::numeric_limits<float>::quiet_NaN();
+                float x = decimal(index, nan);
+                float y = decimal(index + 1, nan);
+                float z = decimal(index + 2, nan);
+                if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+                {
+                    why = "Usage: .house ghost at <x> <y> <z> [<facing x> <facing y> <facing z>]";
+                    return false;
+                }
+                float facing[3] = { decimal(index + 3, nan), decimal(index + 4, nan), decimal(index + 5, nan) };
+                if (mgr->GhostAt(player, x, y, z, tokens.size() > index + 5 ? facing : nullptr, why))
+                    return true;
+                if (what == "at")
+                    why.clear();  // the addon shows why; chat stays quiet
+                return false;
+            };
             if (what == "move")
                 mgr->StartGhostMove(player, number(2), reason);
             else if (what == "adjust")
@@ -797,13 +817,23 @@ public:
             {
                 // Quiet: where the mouse points, a few times a second (the addon, with
                 // PlayerHousing.dll); x y z, then which way the surface there faces.
-                float nan = std::numeric_limits<float>::quiet_NaN();
-                float facing[3] = { decimal(5, nan), decimal(6, nan), decimal(7, nan) };
-                mgr->GhostAt(player, decimal(2, nan), decimal(3, nan), decimal(4, nan), tokens.size() > 7 ? facing : nullptr, reason);
+                if (!pointAt(2, reason))
+                    Reply(player, reason);
                 return true;
             }
             else if (what == "place")
-                mgr->PlaceGhost(player, tokens.size() > 2 && Lower(tokens[2]) == "another", reason);
+            {
+                // A click: set down where the mouse points (the point comes with it, so a spot
+                // that can't be used isn't swapped for an older one).
+                bool another = tokens.size() > 2 && Lower(tokens[2]) == "another";
+                size_t at = another ? 3 : 2;
+                if (tokens.size() > at && Lower(tokens[at]) == "at" && !pointAt(at + 1, reason))
+                {
+                    Reply(player, reason);
+                    return true;
+                }
+                mgr->PlaceGhost(player, another, reason);
+            }
             else if (what == "cancel")
                 mgr->CancelGhost(player);
             else if (what == "new" && tokens.size() > 2)
@@ -811,7 +841,7 @@ public:
             else if (uint32 item = number(1))
                 mgr->StartGhostNew(player, item, 0, reason);
             else
-                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | at <x> <y> <z> | place [another] | cancel";
+                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | at <x> <y> <z> | place [another] [at <x> <y> <z>] | cancel";
         }
         else if (sub == "group")
         {

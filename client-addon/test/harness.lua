@@ -411,9 +411,17 @@ assert(next(overrides) == nil and not PlayerHousingEditHud:IsShown(), "keys and 
 local pointed = { 16210.5, 16255.25, 12, 0, 0, 1 }
 local asked
 PlayerHousing_CursorWorld = function(fx, fy) asked = { fx, fy }; return unpack(pointed) end
-SlashCmdList.PLAYERHOUSING("key")
-SlashCmdList.PLAYERHOUSING("key")
-assert(last() == ".house addon 1 1 mouse", "the server hears about the mouse: " .. last())
+-- The addon pinged AzerothCore's command channel when the server first reported housing; until
+-- it answers, the mouse isn't used (a server with AddonChannel = 0 never does).
+assert(addonSent[1] and addonSent[1][1] == "AzerothCore" and addonSent[1][2] == "p0000" and addonSent[1][4] == "Krookowner",
+  "the channel is pinged: " .. tostring(addonSent[1] and addonSent[1][2]))
+for _, command in ipairs(sent) do
+  assert(not command:find("mouse"), "no answer from the channel yet: no mouse: " .. command)
+end
+fire("CHAT_MSG_ADDON", "AzerothCore", "a0000", "WHISPER", "Krookowner")
+assert(sent[#sent - 1] == ".house addon 1 1 mouse" and last() == ".house state", "the channel answers: the server hears about the mouse: "
+  .. tostring(sent[#sent - 1]) .. " " .. last())
+wipe(addonSent)
 fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t", "WHISPER", "Krookowner")
 assert(PlayerHousingEditHudHelp.text:find("follows your mouse"), PlayerHousingEditHudHelp.text)
 local mouse = PlayerHousingMouse
@@ -451,14 +459,14 @@ mouseButtons.LeftButton = true
 tick(0.1)
 mouseButtons.LeftButton = nil
 tick(0.1)
-assert(#sent == before + 1 and last() == ".house ghost place" and lastAddon()[2]:find("ghost at 16215%.00"), last() .. " " .. lastAddon()[2])
+assert(#sent == before + 1 and last() == ".house ghost place at 16215.00 16255.25 12.00 0.00 0.00 1.00", "the click carries its point: " .. last())
 assert(PlayerHousingEditHudLast.text:find("Click"), tostring(PlayerHousingEditHudLast.text))
 IsShiftKeyDown = function() return true end
 mouseButtons.LeftButton = true
 tick(0.1)
 mouseButtons.LeftButton = nil
 tick(0.1)
-assert(last() == ".house ghost place another", "Shift-click: " .. last())
+assert(last():find("^%.house ghost place another at 16215%.00"), "Shift-click: " .. last())
 IsShiftKeyDown = function() return false end
 -- A long press, or one that turned the camera, is a drag: nothing set down.
 before = #sent
@@ -474,6 +482,15 @@ pointed[1] = 16230
 mouseButtons.LeftButton = nil
 tick(0.1)
 assert(#sent == before, "the camera turned: not a click")
+-- Nor one that started on the sky.
+local sky = pointed
+pointed = {}
+mouseButtons.LeftButton = true
+tick(0.1)
+pointed = sky
+mouseButtons.LeftButton = nil
+tick(0.1)
+assert(#sent == before, "a press that started on the sky isn't a click: " .. last())
 -- A click on the window's buttons is theirs.
 mouseFocus = PlayerHousingFrame
 mouseButtons.LeftButton = true
@@ -492,7 +509,7 @@ mouseButtons.LeftButton = true
 tick(0.1)
 mouseButtons.LeftButton = nil
 tick(0.1)
-assert(last() == ".house ghost place", "Shift-click on a moved piece: " .. last())
+assert(last():find("^%.house ghost place at "), "Shift-click on a moved piece: " .. last())
 IsShiftKeyDown = function() return false end
 -- No ghost: the mouse sends nothing.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t0\t\t1\t", "WHISPER", "Krookowner")

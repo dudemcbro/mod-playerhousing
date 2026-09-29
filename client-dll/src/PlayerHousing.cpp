@@ -190,11 +190,10 @@ namespace
 
     int Lua_CursorWorld(lua_State* L)
     {
-        if (!*IN_WORLD)
-            return 0;
-        uint8_t const* camera = GetActiveCamera();
-        void* worldFrame = *WORLD_FRAME;
-        if (!camera || !worldFrame)
+        // The world frame first: the camera belongs to it.
+        void* worldFrame = *IN_WORLD ? *WORLD_FRAME : nullptr;
+        uint8_t const* camera = worldFrame ? GetActiveCamera() : nullptr;
+        if (!camera)
             return 0;
 
         float fx;
@@ -245,7 +244,7 @@ namespace
         int length = std::snprintf(line, sizeof(line), "PlayerHousing.dll %d: %s (added to Lua %u times; screen %s, %s)", VERSION, g_status,
             g_registrations, g_axes.xRight ? "x right" : "x left", g_axes.yUp ? "y up" : "y down");
         // Where the camera is and which way it looks, for when a point comes out wrong.
-        uint8_t const* camera = *IN_WORLD ? GetActiveCamera() : nullptr;
+        uint8_t const* camera = *IN_WORLD && *WORLD_FRAME ? GetActiveCamera() : nullptr;
         if (camera && length > 0 && size_t(length) < sizeof(line))
         {
             Vec3 at = ReadVec(camera, CAMERA_POSITION);

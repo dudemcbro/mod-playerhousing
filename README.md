@@ -402,8 +402,8 @@ another and Never mind buttons.
 | Shift+G | Set it down, then another of the same follows |
 | Escape | Never mind: a new piece stays in your bags, a moved one where it was |
 
-It lands on the grid when the grid is on, and stands on a table top it's over (held higher,
-it floats). The see-through ghosts and blocks need the client patch (see Install) from this
+It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over
+(held higher, it floats). A building always stands on the ground, wherever the mouse is. The see-through ghosts and blocks need the client patch (see Install) from this
 version: without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as
 it is instead.
 
