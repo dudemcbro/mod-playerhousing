@@ -20,18 +20,22 @@ Three things have to match, or the server and clients disagree about where walls
 (`-DTOOLS_BUILD=maps-only`). The test server scripts take care of it:
 
 - `tools/test-server/setup.sh` builds the map tools and runs `server_data.sh` by default.
-- The prebuilt image and `podman-test.sh` / `dev-container.sh` run it at container start.
+- `podman-test.sh` and `dev-container.sh` run it at container start (through
+  `container-entry.sh`).
 
-By hand, with the worldserver stopped:
+By hand, from the module directory with the worldserver stopped, point `SERVER_DIR` at
+the server's install directory (the one with `bin/` and `data/`; the default is the test
+server's `~/acore-test-server`). It looks for `bin/mmaps_generator` and
+`bin/mmaps-config.yaml` there; `MMAPS_GENERATOR` and `MMAPS_CONFIG` override them:
 
 ```bash
-SERVER_DIR=~/acore-test-server tools/gm-island-cleared/server_data.sh
+SERVER_DIR=/path/to/server tools/gm-island-cleared/server_data.sh
 ```
 
 It keeps the original files as `.orig` and can be re-run safely. To go back to the hall:
 
 ```bash
-SERVER_DIR=~/acore-test-server tools/gm-island-cleared/server_data.sh --restore
+SERVER_DIR=/path/to/server tools/gm-island-cleared/server_data.sh --restore
 ```
 
 and set `PlayerHousing.Layout = "guildhouse"`.
@@ -39,12 +43,10 @@ and set `PlayerHousing.Layout = "guildhouse"`.
 When a server switches to the cleared layout, anything players had placed inside the old
 hall goes to their House Storage, and they get a message on their next visit.
 
-Tested here: the end-to-end test passes 104/104 on the cleared layout.
-
 ## Client patch
 
 Nothing to download: the patch is built from your own 3.3.5a client files, so it runs on
-your machine. On Bluefin, inside a distrobox (Ubuntu):
+your machine. On Ubuntu or Debian (on an immutable host, inside a distrobox):
 
 ```bash
 sudo apt install smpq

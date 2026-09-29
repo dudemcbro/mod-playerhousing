@@ -11,6 +11,77 @@ shredded tent at level 1 to faction halls at Exalted.
 The design and the reasoning behind it are in [docs/UX_PLAN.md](docs/UX_PLAN.md). Every
 piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 
+## Requirements
+
+- AzerothCore WotLK (3.3.5a). Developed and tested on the `custom` branch of
+  [azerothcore-wotlk-playerbots-custom](https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom),
+  which the [test server](tools/test-server/README.md) builds. The module uses only
+  standard AzerothCore script hooks; no core patches are needed.
+- For the default island layout (`cleared`): the core's map tools
+  (`-DTOOLS_BUILD=maps-only`, for `mmaps_generator`) on the server, and a client patch
+  for every player, built with `smpq` and Python 3 from a 3.3.5a client (see
+  [tools/gm-island-cleared](tools/gm-island-cleared/README.md)).
+- Optional: the [client addon](#optional-client-addon).
+
+## Installation
+
+1. Clone the module into the core's `modules` directory, then re-run CMake and rebuild:
+
+   ```sh
+   cd <azerothcore>/modules
+   git clone https://github.com/dudemcbro/mod-playerhousing.git
+   ```
+
+2. Apply the SQL. The worldserver's updater only imports a module's `data/sql/world`,
+   `data/sql/characters` and `data/sql/auth` folders, and these files live in `sql/`,
+   so apply them by hand, in this order, from the module directory (every file can be
+   applied again safely; the test server scripts do this for you):
+
+   ```sh
+   cd <azerothcore>/modules/mod-playerhousing
+   mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world.sql
+   # optional: the catalog of every object, used with PlayerHousing.Catalog = everything
+   mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_catalog.sql
+   mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_content.sql
+   mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters.sql
+   mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters_hotfix.sql
+   ```
+
+3. In your server's `etc/modules` directory (the build installs
+   `mod_playerhousing.conf.dist` there), copy it to `mod_playerhousing.conf`.
+4. The island: the default layout, `cleared`, is GM Island with its guild hall removed.
+   It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
+   the server data (collision and pathing without the hall, one script) and a client patch
+   every player installs once. The same patch gives the housing items their bag icons
+   (without it they show as question marks) and adds the ghosts' see-through models (a
+   patch from before ghosts needs building again). To keep the hall instead, set
+   `PlayerHousing.Layout = "guildhouse"`; players then build the patch with `--icons-only`.
+5. Restart the worldserver.
+
+## Configuration
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `PlayerHousing.Enable` | 1 | The whole module |
+| `PlayerHousing.FreeMode` | 0 | Test servers: copies from the Collection are free and the House Key is instant |
+| `PlayerHousing.UnlockAll` | 0 | Test servers: the whole Collection is unlocked, plus "one of everything" |
+| `PlayerHousing.Layout` | cleared | `cleared` (no guild hall) or `guildhouse` |
+| `PlayerHousing.DefaultPrivacy` | private | Privacy of new islands: `private`, `friends` or `public` |
+| `PlayerHousing.GmBypassPrivate` | 0 | GMs in GM mode can visit any island |
+| `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |
+| `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
+| `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
+| `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
+| `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
+| `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
+| `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
+| `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
+| `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
+| `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
+
+Every setting can also come from an environment variable, for example
+`AC_PLAYER_HOUSING_FREE_MODE=1` (the core's usual `AC_` naming).
+
 ## For players
 
 ### Getting started
@@ -397,7 +468,7 @@ says Placing or Moving and has Set it down, And another and Never mind buttons.
 | Escape | Never mind: a new piece stays in your bags, a moved one where it was |
 
 It lands on the grid when the grid is on, and stands on a table top it's over (held higher,
-it floats). The see-through ghosts need the client patch (see Install) from this version:
+it floats). The see-through ghosts need the client patch (see [Installation](#installation)) from this version:
 without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as it is
 instead.
 
@@ -445,54 +516,6 @@ Pictures from your own client instead, with the game's own lighting, take a GM a
 
 Copying a new version of the addon over the old one brings back the rendered pictures: run
 the script again (it only needs a moment) to use yours.
-
-## Install
-
-1. Put the module in your AzerothCore `modules` folder and rebuild the server.
-2. Apply the SQL, in this order (all files can be re-applied safely):
-   - world: `sql/db_world/base/mod_playerhousing_world.sql`, then
-     `sql/db_world/base/mod_playerhousing_world_catalog.sql` (optional: the catalog of
-     every object, used with `PlayerHousing.Catalog = everything`), then
-     `sql/db_world/base/mod_playerhousing_world_content.sql`
-   - characters: `sql/db_characters/base/mod_playerhousing_characters.sql`, then
-     `sql/db_characters/base/mod_playerhousing_characters_hotfix.sql`
-
-   The core's auto-updater only reads `data/sql`, so these are applied by hand (the test
-   server scripts do it for you).
-3. Copy `conf/mod_playerhousing.conf.dist` to your server's `modules` config folder as
-   `mod_playerhousing.conf`.
-4. The island: the default layout, `cleared`, is GM Island with its guild hall removed.
-   It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
-   the server data (collision and pathing without the hall, one script) and a client patch
-   every player installs once. The same patch gives the housing items their bag icons
-   (without it they show as question marks) and adds the ghosts' see-through models (a
-   patch from before ghosts needs building again). To keep the hall instead, set
-   `PlayerHousing.Layout = "guildhouse"`; players then build the patch with `--icons-only`.
-5. Restart the worldserver.
-
-## Configuration
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| `PlayerHousing.Enable` | 1 | The whole module |
-| `PlayerHousing.FreeMode` | 0 | Test servers: copies from the Collection are free and the House Key is instant |
-| `PlayerHousing.UnlockAll` | 0 | Test servers: the whole Collection is unlocked, plus "one of everything" |
-| `PlayerHousing.Layout` | cleared | `cleared` (no guild hall) or `guildhouse` |
-| `PlayerHousing.DefaultPrivacy` | private | Privacy of new islands: `private`, `friends` or `public` |
-| `PlayerHousing.GmBypassPrivate` | 0 | GMs in GM mode can visit any island |
-| `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |
-| `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
-| `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
-| `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
-| `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
-| `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
-| `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
-| `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
-| `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
-| `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
-
-Every setting can also come from an environment variable, for example
-`AC_PLAYER_HOUSING_FREE_MODE=1` (the core's usual `AC_` naming).
 
 ## Content
 
@@ -634,15 +657,6 @@ players came in the first run after a restart. The worldserver used about 1.8 GB
 
 No island showed another island's pieces, and no action failed.
 
-### Upgrading from the house levels version
-
-Older versions had house styles, stages, a vendor catalog and furniture unlocks. Applying
-the world SQL removes those tables. At the next startup the module converts what players
-had: placed furniture gets its item (so it picks up into your bags), catalog unlocks become
-Collection unlocks plus one copy in House Storage, and with the cleared island, anything
-that stood inside the old guild hall goes to its owner's House Storage with a message on
-their next visit. Gold spent on stages isn't refunded.
-
 ## Testing
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
@@ -652,11 +666,58 @@ sets, the addon's window, storage, the Collection, buildings, mannequins, layout
 ambience, visitors, the guestbook, roommates, moderation, working furniture, addon
 messages, relogging, and the safety rules above), and a load test.
 
-## Rollback
+## Updating
 
-`sql/db_world/base/mod_playerhousing_world_rollback.sql` and
-`sql/db_characters/base/mod_playerhousing_characters_rollback.sql` remove everything the
-module added.
+```sh
+cd <azerothcore>/modules/mod-playerhousing
+git pull
+```
+
+Then re-run CMake, rebuild, apply the SQL files again in the order above (they are all
+safe to re-apply), and restart the worldserver. When the content changed, players need
+the rebuilt client patch (see [tools/gm-island-cleared](tools/gm-island-cleared/README.md))
+and the new addon.
+
+The repository's history was rewritten in September 2026. A clone from before that
+cannot pull: clone it again, or run `git fetch && git reset --hard origin/main` (this
+discards local commits).
+
+### From the house levels version
+
+Older versions had house styles, stages, a vendor catalog and furniture unlocks. Applying
+the world SQL removes those tables. At the next startup the module converts what players
+had: placed furniture gets its item (so it picks up into your bags), catalog unlocks become
+Collection unlocks plus one copy in House Storage, and with the cleared island, anything
+that stood inside the old guild hall goes to its owner's House Storage with a message on
+their next visit. Gold spent on stages isn't refunded.
+
+## Uninstall
+
+With the worldserver stopped (the characters rollback hands out mail ids), from the
+module directory:
+
+```sh
+cd <azerothcore>/modules/mod-playerhousing
+mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_rollback.sql
+mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters_rollback.sql
+```
+
+They remove everything the module added; gear still on mannequins is mailed back to its
+owners. On the cleared layout, put the guild hall back in the server data with
+`tools/gm-island-cleared/server_data.sh --restore` (see its
+[README](tools/gm-island-cleared/README.md)). Then delete the module directory and your
+server's `etc/modules/mod_playerhousing.conf`, re-run CMake and rebuild. Players can
+remove the client patch and the addon.
+
+## Contributing
+
+Issues and pull requests are welcome. Work on a feature branch and open the pull request
+against `main`. Commit messages follow
+[Conventional Commits](https://www.conventionalcommits.org/) (`fix: ...`, `feat: ...`,
+`docs: ...`). Run the end-to-end test from [tools/test-server](tools/test-server/README.md)
+(and `client-addon/test/harness.lua` for addon changes) before opening a pull request.
+Content changes go in `tools/content/pieces.py`; regenerate the SQL, `docs/UNLOCKS.md`
+and the addon lists with `tools/content/build_content.py` rather than editing them by hand.
 
 ## License
 

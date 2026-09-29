@@ -11,22 +11,25 @@ that already hosts a live server.
 ## Fastest: the prebuilt image (Podman)
 
 The core fork publishes a test server image with the core already compiled, the client
-data and populated databases inside (`apps/test-server-image` in
-azerothcore-wotlk-playerbots-custom). With it, a full test run is one command and only
+data and populated databases inside
+([`apps/test-server-image`](https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom/tree/custom/apps/test-server-image)
+in azerothcore-wotlk-playerbots-custom). With it, a full test run is one command and only
 this module gets compiled:
 
 ```bash
-podman login ghcr.io -u dudemcbro      # once; token with read:packages
 tools/test-server/podman-test.sh           # add --verbose for every chat line
 ```
+
+The image is `ghcr.io/dudemcbro/acore-test-server:latest`. If its package is private,
+run `podman login ghcr.io` once first, with a token that has `read:packages`.
 
 If you can't pull that image, build it from the core fork's root
 (`podman build -f apps/test-server-image/Containerfile -t acore-test-server .`, about an
 hour) and point the scripts at it: `IMAGE=localhost/acore-test-server tools/test-server/podman-test.sh`
 (the same `IMAGE` works for `dev-container.sh`).
 
-It starts a throwaway container with this checkout mounted (`:Z`, for Bluefin's SELinux;
-on an NTFS or exFAT drive it turns labeling off for the container instead), clears GM
+It starts a throwaway container with this checkout mounted (`:Z` for SELinux hosts such as
+Fedora; on an NTFS or exFAT drive it turns labeling off for the container instead), clears GM
 Island's guild hall from the server data, builds the module, starts the servers with
 FreeMode on, runs `housing_smoke.py` inside and removes the container.
 
@@ -55,19 +58,22 @@ the cleared island with FreeMode on; `HOUSING_LAYOUT=guildhouse`,
 `AC_PLAYER_HOUSING_FREE_MODE=0` or `AC_PLAYER_HOUSING_UNLOCK_ALL=1` on `start` change
 that. `ENGINE=docker` works too.
 
-## Quick start on Bluefin (building everything locally)
+## Building everything locally (without the image)
 
-Bluefin's base image is immutable, so build inside a distrobox. It shares your
-home directory and network with the host.
+`setup.sh` is written for Ubuntu 24.04. On an immutable host (Bluefin, Silverblue and
+similar), run it inside a distrobox, which shares your home directory and network with
+the host:
 
 ```bash
 distrobox create --name acore --image ubuntu:24.04
 distrobox enter acore
 ```
 
-Inside the box, with both repos cloned into your home directory:
+Clone the core and the module into your home directory, then build and test:
 
 ```bash
+git clone https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom.git ~/azerothcore-wotlk-playerbots-custom
+git clone https://github.com/dudemcbro/mod-playerhousing.git ~/mod-playerhousing
 CORE_DIR=~/azerothcore-wotlk-playerbots-custom ~/mod-playerhousing/tools/test-server/setup.sh
 ~/mod-playerhousing/tools/test-server/start.sh
 python3 ~/mod-playerhousing/tools/test-server/testclient/housing_smoke.py
@@ -92,13 +98,14 @@ changed, so it is also the way to pick up module edits.
    (`tools/gm-island-cleared/server_data.sh`), or puts it back for the guildhouse layout.
 7. Creates the `acore` MySQL user and databases, then populates them with
    `worldserver --dry-run`.
-8. Applies this module's SQL. The core's auto-updater only reads
-   `modules/<name>/data/sql/db-*`, so the files in `sql/` are applied here.
+8. Applies this module's SQL. The core's updater only imports a module's
+   `data/sql/world`, `data/sql/characters` and `data/sql/auth` folders, so the files in
+   `sql/` are applied here.
 9. Creates accounts `houseowner` and `houseguest` (players) and `admin` (GM 3).
    Passwords match the names.
 
 Variables: `CORE_DIR`, `SERVER_DIR`, `BUILD_DIR`, `JOBS`, `HOUSING_LAYOUT` (`cleared`,
-the default, or `guildhouse`) and `TOOLS_BUILD`.
+the default, or `guildhouse`), `TOOLS_BUILD` and `CLIENT_DATA_VERSION`.
 
 ## Day to day
 
@@ -117,7 +124,7 @@ and log in as `admin`/`admin`. Module settings live in
 vim ~/acore-test-server/etc/modules/mod_playerhousing.conf
 ```
 
-More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
+More accounts: `python3 tools/test-server/testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 ## The automated test
 
@@ -242,8 +249,11 @@ moment, reading their arrival packets takes the process seconds, and "go home" r
 slow. One more player, `Loadprobe`, runs in a process of its own and goes home and back
 all through the test: its line (`go home: server`) is what the server itself takes.
 
-```
-docker exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/load_test.py --players 99
+In the development container (`dev-container.sh start`; use `docker` instead of
+`podman` if you started it with `ENGINE=docker`):
+
+```bash
+podman exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/load_test.py --players 99
 ```
 
 It waits for its characters to be out of the world before resetting them, and logs them
@@ -266,8 +276,8 @@ mod-playerbots, so there are no bots to try it with.
 ## Troubleshooting
 
 - `Table 'acore_world.charsections_dbc' doesn't exist`: the core expects this
-  table but, before the pending update added on the fork, no SQL created it.
-  Pull the fork branch that contains
+  table, but older core checkouts have no SQL that creates it. Update the core to the
+  current `custom` branch, which adds
   `data/sql/updates/pending_db_world/rev_1790527052762784643.sql`.
 - Ports 3306, 3724 and 8085 must be free on the host.
 - If the worldserver dies, its tmux window stays open with the output:
