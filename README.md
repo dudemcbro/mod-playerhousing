@@ -503,11 +503,15 @@ container (server and all the clients on one machine):
 
 | Players | Pieces placed | Place, p95 | Undo, p95 | Visit, p95 | Go home, p95 | Server update: mean, p99, max |
 | --- | --- | --- | --- | --- | --- | --- |
-| 40 | 320 in 35 s | 112 ms | 95 ms | 547 ms | 1.0 s | 10 ms, 62 ms, 102 ms |
-| 99 | 792 in 42 s | 195 ms | 140 ms | 553 ms | 6.3 s | 14 ms, 142 ms, 361 ms |
+| 40 | 320 in 37 s | 127 ms | 129 ms | 547 ms | 78 ms | 11 ms, 105 ms, 1244 ms |
+| 99 | 792 in 42 s | 168 ms | 134 ms | 549 ms | 92 ms | 14 ms, 150 ms, 223 ms |
 
 Going home is a teleport to another continent, every player at the same moment; a visit
-is a short hop on the island. The worldserver used about 1.9 GB.
+is a short hop on the island. "Go home" is measured by one more player in a process of its
+own, going home and back all through the test: the load test's own players share one
+Python process, and reading all their arrivals at once takes it seconds (their own
+figure, 5.6 s at 99 players, is the test client, not the server). The 1.2 s update at 40
+players came in the first run after a restart. The worldserver used about 1.8 GB.
 
 No island showed another island's pieces, and no action failed.
 
@@ -524,9 +528,10 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (218 checks: placing, undo, decorating, storage, the Collection,
-buildings, mannequins, layouts, ambience, visitors, roommates, moderation, working
-furniture, addon messages, relogging, and the safety rules above), and a load test.
+headless clients (235 checks: placing, undo, decorating, edit mode, the addon's window,
+storage, the Collection, buildings, mannequins, layouts, ambience, visitors, roommates,
+moderation, working furniture, addon messages, relogging, and the safety rules above), and
+a load test.
 
 ## Rollback
 

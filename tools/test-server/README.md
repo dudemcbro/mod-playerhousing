@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (218 checks, 219 with `PlayerHousing.Catalog = everything`):
+checking the database and what the client sees after each step (235 checks, 236 with `PlayerHousing.Catalog = everything`):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -132,6 +132,12 @@ checking the database and what the client sees after each step (218 checks, 219 
   all` the menu after anything, with Take it back and Keep it here; undo returns the
   item, redo places it again; no spacing rules; placing far out on the island; refusing
   spots off the island; swimmers brought back to the beach
+- edit mode (the addon's keys): a click only selects, `.house shift` moves and turns a
+  piece relative to your facing, a quick run of shifts is one undo step, a flood of them
+  is capped, Tab picks the next piece
+- the addon's window: its lists (Collection, Placed, Island, Layouts, Guests, Visit),
+  getting copies, weather by name, House Storage, and the House Key opening the window
+  (or its menu when the player prefers)
 - decorate mode: clickable copies, the snap rune on tables, the piece menu (turn, nudge,
   undo), putting a lantern on a table, the lantern moving and turning with its table in
   one undoable step, picking up
@@ -201,7 +207,12 @@ the guild hall. The exit code is 0 only if every check passes.
 pieces, turns, nudges, undoes and redoes, and visits a neighbor, while the GM account
 samples `.server info`. It reports how long each kind of action took to answer, the
 server's update times, the worldserver's memory, and any island that showed another
-island's pieces:
+island's pieces.
+
+All the load test's players share one Python process, so when they all go home at the same
+moment, reading their arrival packets takes the process seconds, and "go home" reads
+slow. One more player, `Loadprobe`, runs in a process of its own and goes home and back
+all through the test: its line (`go home: server`) is what the server itself takes.
 
 ```
 docker exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/load_test.py --players 99

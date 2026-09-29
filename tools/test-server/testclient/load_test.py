@@ -15,6 +15,7 @@ Player accounts LOADTEST01.. are created on first run (password "loadtest").
 
 import argparse
 import math
+import multiprocessing
 import os
 import statistics
 import subprocess
@@ -215,6 +216,39 @@ def watch_server(args, stop, samples):
         admin.close()
 
 
+def at_home(wc):
+    return wc.map_id == HOUSING_MAP and math.dist(wc.pos[:2], LANDING[:2]) < 6
+
+
+def probe(args, ready, go, stop, results):
+    """One more player, in a process of its own, going home and back again all through the
+    test. The load test's players share this process, and when all of them arrive at once,
+    reading their arrival packets takes Python seconds; the probe shows what the server
+    itself takes."""
+    try:
+        wc = connect(args.host, args.auth_port, "LOADPROBE", "loadtest")
+        wc.login(get_or_create_char(wc, "Loadprobe")["guid"])
+        wc.pump(2.0)
+    except Exception as exc:  # noqa: BLE001 - reported with the results
+        results.put("probe login failed: %r" % exc)
+        ready.set()
+        return
+    ready.set()
+    go.wait()
+    while not stop.is_set():
+        start = time.time()
+        wc.command(".house home", wait=0)
+        while time.time() - start < 15 and not at_home(wc):
+            wc.pump(0.02)
+        results.put(time.time() - start)
+        wc.pump(1.0)
+        wc.command(".house leave", wait=0)
+        left = time.time()
+        while time.time() - left < 15 and at_home(wc):
+            wc.pump(0.02)
+        wc.pump(1.0)
+
+
 def percentile(values, p):
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, int(round(p / 100.0 * (len(ordered) - 1))))]
@@ -234,11 +268,12 @@ def main():
     names = [char_name(i) for i in range(args.players)]
     for i in range(args.players):
         ensure_account("LOADTEST%02d" % (i + 1), "loadtest")
+    ensure_account("LOADPROBE", "loadtest")
 
     # A fresh start for the load characters' housing. Only once they are out of the world: a
     # character still in it from an earlier run keeps its old bags and island in memory, and
     # logging in again picks those up instead of the reset.
-    guids = [r[0] for r in db("SELECT guid FROM characters WHERE name IN (%s)" % ",".join("'%s'" % n for n in names))]
+    guids = [r[0] for r in db("SELECT guid FROM characters WHERE name IN (%s)" % ",".join("'%s'" % n for n in names + ["Loadprobe"]))]
     if guids:
         ids = ",".join(guids)
         deadline = time.time() + 120
@@ -263,6 +298,12 @@ def main():
     watcher = threading.Thread(target=watch_server, args=(args, stop, samples), daemon=True)
     watcher.start()
 
+    probe_ready, probe_go, probe_stop = multiprocessing.Event(), multiprocessing.Event(), multiprocessing.Event()
+    probe_results = multiprocessing.Queue()
+    prober = multiprocessing.Process(target=probe, args=(args, probe_ready, probe_go, probe_stop, probe_results), daemon=True)
+    prober.start()
+    probe_ready.wait(60)
+
     ready = threading.Semaphore(0)
     go = threading.Event()
     threads = [threading.Thread(target=worker, args=(i, args, names, stats, ready, go), daemon=True) for i in range(args.players)]
@@ -275,10 +316,20 @@ def main():
     baseline = list(samples)
     print("all in; go")
     started = time.time()
+    probe_go.set()
     go.set()
     for thread in threads:
         thread.join(timeout=600)
     elapsed = time.time() - started
+    probe_stop.set()
+    prober.join(timeout=20)
+    probe_trips = []
+    while not probe_results.empty():
+        result = probe_results.get()
+        if isinstance(result, str):
+            stats.error(result)
+        else:
+            probe_trips.append(result)
     stop.set()
     watcher.join(timeout=10)
 
@@ -287,6 +338,10 @@ def main():
     for action, values in sorted(stats.latency.items()):
         print("%-22s %6d %8.0f %8.0f %8.0f" % (action, len(values), statistics.median(values) * 1000, percentile(values, 95) * 1000,
                                               max(values) * 1000))
+    if probe_trips:
+        print("%-22s %6d %8.0f %8.0f %8.0f   (one player in its own process, all through)" % (
+            "go home: server", len(probe_trips), statistics.median(probe_trips) * 1000, percentile(probe_trips, 95) * 1000,
+            max(probe_trips) * 1000))
     during = samples[len(baseline):]
     if during:
         print("\nserver update time while loaded (from %d samples of .server info):" % len(during))

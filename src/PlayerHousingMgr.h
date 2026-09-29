@@ -766,6 +766,7 @@ private:
     std::unordered_map<ObjectGuid, CommandWindow> _shiftWindows;
     std::unordered_set<ObjectGuid> _editMode;  // asked for edit mode; it holds while they decorate here
     std::unordered_map<ObjectGuid, bool> _addonClients;  // has the addon -> the House Key opens its window
+    mutable std::unordered_set<ObjectGuid::LowType> _knownHouses;  // have a house row (EnsureHouse); until logout
     void SendAddonRows(Player* player, std::string const& kind, std::string const& label, std::vector<std::string> const& parts) const;
     std::unordered_map<ObjectGuid::LowType, std::unordered_map<uint64, uint64>> _notified;  // sender -> target << 8 | kind -> sent at (ms)
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet

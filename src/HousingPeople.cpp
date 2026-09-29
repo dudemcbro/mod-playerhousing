@@ -65,10 +65,19 @@ bool PlayerHousingMgr::GetHouseRecord(ObjectGuid::LowType ownerGuid, HouseRecord
 
 bool PlayerHousingMgr::EnsureHouse(ObjectGuid::LowType ownerGuid) const
 {
+    // Written once a login; trips home and menus after that skip the write.
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        if (_knownHouses.count(ownerGuid))
+            return true;
+    }
+
     // Synchronous, so a read right after sees the row.
     CharacterDatabase.DirectExecute(
         "INSERT IGNORE INTO mod_playerhousing_house (owner_guid, style_id, stage, is_private) VALUES ({}, 1, 0, {})",
         ownerGuid, uint32(_defaultPrivacy));
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    _knownHouses.insert(ownerGuid);
     return true;
 }
 

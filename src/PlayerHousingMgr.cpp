@@ -728,6 +728,7 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         _shiftWindows.erase(player->GetGUID());
         _editMode.erase(player->GetGUID());
         _addonClients.erase(player->GetGUID());
+        _knownHouses.erase(player->GetGUID().GetCounter());
         _notified.erase(player->GetGUID().GetCounter());
     }
 
@@ -1024,6 +1025,7 @@ void PlayerHousingMgr::RemoveHousingOf(ObjectGuid::LowType guidLow)
     trans->Append("DELETE FROM mod_playerhousing_character WHERE guid={}", guidLow);
     trans->Append("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);
     CharacterDatabase.CommitTransaction(trans);
+    _knownHouses.erase(guidLow);
 }
 
 void PlayerHousingMgr::ReturnRoommatePieces(ObjectGuid::LowType ownerGuid)
