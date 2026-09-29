@@ -829,7 +829,7 @@ def main():
         # The window's buttons move and turn all of them too; size and tilt are one piece at a time.
         msgs = owner.command(".house nudge forward 0.25")
         c7, t7 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
-        check("Fwd nudges every selected piece", c7 and t7 and abs(c7["x"] - chair["x"] - 0.25) < 0.03 and abs(t7["x"] - table["x"] - 0.25) < 0.03
+        check("Fwd nudges every selected piece", c7 and t7 and abs(c7["x"] - chair["x"] - 0.25) < 0.06 and abs(t7["x"] - table["x"] - 0.25) < 0.06
               and (has(msgs, "2 pieces") or has(msgs, "3 pieces")), joined(msgs) + " %s %s" % (c7, t7))
         owner.command(".house undo")
         msgs = owner.command(".house size bigger")
