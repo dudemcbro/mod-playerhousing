@@ -1,9 +1,12 @@
 ## Interface: 30300
 ## Title: Player Housing
-## Notes: A window for mod-playerhousing: your furnishings as icons, undo and redo, and quick controls for the piece you're working on.
+## Notes: A window for mod-playerhousing: place, collect, store and arrange your furnishings, guests, visits and island settings, and edit mode (move pieces with the keys).
 ## Author: mod-playerhousing
 ## Version: 1.0
 ## SavedVariablesPerCharacter: PlayerHousingDB
 
 PieceModels.lua
+PieceInfo.lua
 PlayerHousing.lua
+EditMode.lua
+Window.lua

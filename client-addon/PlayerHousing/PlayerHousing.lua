@@ -11,18 +11,20 @@
 
 local PREFIX = "HOUSING"
 
-local COLUMNS, ROWS = 8, 4
+local COLUMNS, ROWS = 9, 4
 local SLOT_SIZE, SLOT_GAP = 36, 4
 local PAGE_SIZE = COLUMNS * ROWS
 local WIDTH = 24 + COLUMNS * (SLOT_SIZE + SLOT_GAP)
-local BASE_HEIGHT, SELECTED_HEIGHT = 356, 144
-local SEND_INTERVAL = 0.3   -- seconds between mouse wheel commands; turns in between add up
+local BASE_HEIGHT, SELECTED_HEIGHT = 378, 144
+local CONTENT_TOP, CONTENT_HEIGHT = -130, 236  -- where the tabs' panels go
+local SEND_INTERVAL = 0.15  -- seconds between moves sent; key presses and wheel turns in between add up
 
 BINDING_HEADER_PLAYERHOUSING = "Player Housing"
 BINDING_NAME_PLAYERHOUSING_TOGGLE = "Show or hide the housing window"
 BINDING_NAME_PLAYERHOUSING_UNDO = "Undo"
 BINDING_NAME_PLAYERHOUSING_REDO = "Redo"
 BINDING_NAME_PLAYERHOUSING_DECORATE = "Start or stop decorating"
+BINDING_NAME_PLAYERHOUSING_EDIT = "Start or stop edit mode (move pieces with the keys)"
 BINDING_NAME_PLAYERHOUSING_TURN_LEFT = "Turn the selected piece left"
 BINDING_NAME_PLAYERHOUSING_TURN_RIGHT = "Turn the selected piece right"
 BINDING_NAME_PLAYERHOUSING_SELECT_NEAREST = "Select the nearest piece"
@@ -34,6 +36,8 @@ local state = {
     undo = "", redo = "", islandOwner = "",
     pendingMover = 0, pendingCopy = 0,
     roommate = false,       -- decorating someone else's island, with their leave
+    editMode = false,       -- keys move the selected piece (EditMode.lua)
+    grid = 0,               -- yards; 0 is off
 }
 
 -- Changing things: on your own island, or as a roommate on someone else's.
@@ -50,9 +54,14 @@ local search = ""
 local page = 1
 local bagsDirty, layoutPending = true, false
 local autoShown = false
-local pendingTurn, pendingLift, sinceSend = 0, 0, 0
+-- Moves waiting to go: yards forward, left and up (the player's way), and degrees of turn.
+local pending = { forward = 0, left = 0, up = 0, turn = 0 }
+local sinceSend = 0
+local stateHooks, windowHooks, dataHooks = {}, {}, {}
+local lists = {}            -- lists from the server for the window's tabs, by kind
+local registered = false    -- told the server this session that the addon is here
 
-local frame, statusText, grid, emptyText, pageText, selectedPanel, selectedText
+local frame, statusText, grid, emptyText, pageText, selectedPanel, selectedText, bagsPanel
 local preview, previewModel, previewName, previewSize, previewNote
 local plan, planRect, planBorder, planYou, planYouLabel
 local previewFacing = 0
@@ -246,7 +255,7 @@ local function UpdateButtons()
     end
 
     homeButton:SetText(onIsland and "Leave" or "Go home")
-    decorateButton:SetText(state.decorating and "Done" or "Decorate")
+    decorateButton:SetText(state.editMode and "Done" or "Edit")
     if CanEdit() then decorateButton:Enable() else decorateButton:Disable() end
     if CanEdit() and state.undo ~= "" then undoButton:Enable() else undoButton:Disable() end
     if CanEdit() and state.redo ~= "" then redoButton:Enable() else redoButton:Disable() end
@@ -311,6 +320,17 @@ local function OnState(fields)
     state.pendingMover = tonumber(fields[14] or "") or 0
     state.pendingCopy = tonumber(fields[15] or "") or 0
     state.roommate = fields[16] == "1"
+    state.editMode = fields[17] == "1"
+    state.grid = tonumber(fields[18] or "") or 0
+    -- Once a session: the server learns the addon is here, and whether the House Key should
+    -- open this window instead of the menu.
+    if not registered and db then
+        registered = true
+        PlayerHousing_Command("addon 1 " .. (db.keyWindow == false and "0" or "1"))
+    end
+    for _, hook in ipairs(stateHooks) do
+        hook(state)
+    end
 
     -- The window comes up by itself on arriving home, and goes again on leaving.
     if not frame then
@@ -382,8 +402,15 @@ local function SetFilter(which)
     UpdateGrid()
 end
 
+local function Shift(forward, left, up, turn)
+    pending.forward = pending.forward + (forward or 0)
+    pending.left = pending.left + (left or 0)
+    pending.up = pending.up + (up or 0)
+    pending.turn = pending.turn + (turn or 0)
+end
+
 local function Turn(degrees)
-    pendingTurn = pendingTurn + degrees
+    Shift(0, 0, 0, degrees)
 end
 
 -- The turn buttons: 15 degrees, Shift for 5, Ctrl for 90.
@@ -395,7 +422,7 @@ local function TurnButton(direction)
 end
 
 local function Lift(yards)
-    pendingLift = pendingLift + yards
+    Shift(0, 0, yards, 0)
 end
 
 local function OnMouseWheel(self, delta)
@@ -687,36 +714,36 @@ local function CreateWindow()
     local row = Row(frame, -56, {
         { "Go home", function() PlayerHousing_Command((state.own or state.islandOwner ~= "") and "leave" or "home") end,
           "Go home or leave", "Takes you to your island, or back to where you came from." },
-        { "Decorate", Command("decorate"),
-          "Decorate", "While decorating, click any piece to turn it, nudge it or pick it up. Blue runes on tables take small pieces." },
+        { "Edit", Command("edit"),
+          "Edit mode", "Click a piece (or press Tab) and move it with the keys: arrows slide it, the mouse wheel turns it, Page Up and Page Down raise and lower it. Escape when you're done." },
         { "Undo", Command("undo"), function()
             return "Undo", state.undo ~= "" and ("Undo: " .. state.undo) or "Nothing to undo."
         end },
         { "Redo", Command("redo"), function()
             return "Redo", state.redo ~= "" and ("Redo: " .. state.redo) or "Nothing to redo."
         end },
+        { "Menu", Command(""), "Housing menu", "The House Key menu: everything the window has, and pack up, help and more." },
     })
     homeButton, decorateButton, undoButton, redoButton = row[1], row[2], row[3], row[4]
 
-    Row(frame, -80, {
-        { "Collection", Command("collection"), "Collection", "Everything you can own, and how to earn the rest. Unlocked pieces give you a copy." },
-        { "Storage", Command("storage"), "House Storage", "Pieces that came back while your bags were full." },
-        { "Visit", Command("visit"), "Visit an island", "Islands of your party, guild, friends, and the ones you're invited to." },
-        { "Menu", Command(""), "Housing menu", "The House Key menu: settings, guests, pack up and more." },
-    })
+    -- The Bags tab: furnishings in the bags, ready to place. The other tabs are Window.lua's.
+    bagsPanel = CreateFrame("Frame", "PlayerHousingBagsPanel", frame)
+    bagsPanel:SetPoint("TOPLEFT", 0, CONTENT_TOP)
+    bagsPanel:SetWidth(WIDTH)
+    bagsPanel:SetHeight(CONTENT_HEIGHT)
 
     local filters = { { "all", "All" }, { "furnishings", "Furnishings" }, { "buildings", "Buildings" } }
     for index, spec in ipairs(filters) do
-        local button = MakeButton(frame, spec[2], 76, function() SetFilter(spec[1]) end)
+        local button = MakeButton(bagsPanel, spec[2], 76, function() SetFilter(spec[1]) end)
         button:SetHeight(20)
-        button:SetPoint("TOPLEFT", 12 + (index - 1) * 78, -108)
+        button:SetPoint("TOPLEFT", 12 + (index - 1) * 78, 0)
         filterButtons[spec[1]] = button
     end
 
-    local searchBox = CreateFrame("EditBox", "PlayerHousingSearchBox", frame, "InputBoxTemplate")
+    local searchBox = CreateFrame("EditBox", "PlayerHousingSearchBox", bagsPanel, "InputBoxTemplate")
     searchBox:SetWidth(WIDTH - 24 - 3 * 78 - 10)
     searchBox:SetHeight(20)
-    searchBox:SetPoint("TOPRIGHT", -14, -108)
+    searchBox:SetPoint("TOPRIGHT", -14, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetScript("OnEscapePressed", searchBox.ClearFocus)
     searchBox:SetScript("OnEnterPressed", searchBox.ClearFocus)
@@ -732,8 +759,8 @@ local function CreateWindow()
     end)
     searchBox:SetScript("OnLeave", GameTooltip_Hide)
 
-    grid = CreateFrame("Frame", "PlayerHousingGrid", frame)
-    grid:SetPoint("TOPLEFT", 14, -136)
+    grid = CreateFrame("Frame", "PlayerHousingGrid", bagsPanel)
+    grid:SetPoint("TOPLEFT", 14, -28)
     grid:SetWidth(COLUMNS * (SLOT_SIZE + SLOT_GAP))
     grid:SetHeight(ROWS * (SLOT_SIZE + SLOT_GAP))
     for index = 1, PAGE_SIZE do
@@ -742,22 +769,22 @@ local function CreateWindow()
     emptyText = grid:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     emptyText:SetPoint("CENTER")
 
-    prevButton = MakeButton(frame, "<", 28, function()
+    prevButton = MakeButton(bagsPanel, "<", 28, function()
         page = page - 1
         UpdateGrid()
     end)
-    prevButton:SetPoint("TOPLEFT", 12, -300)
-    nextButton = MakeButton(frame, ">", 28, function()
+    prevButton:SetPoint("TOPLEFT", 12, -192)
+    nextButton = MakeButton(bagsPanel, ">", 28, function()
         page = page + 1
         UpdateGrid()
     end)
-    nextButton:SetPoint("TOPRIGHT", -12, -300)
-    pageText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    pageText:SetPoint("TOP", 0, -305)
+    nextButton:SetPoint("TOPRIGHT", -12, -192)
+    pageText = bagsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pageText:SetPoint("TOP", 0, -197)
 
-    local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hint:SetPoint("TOPLEFT", 14, -326)
-    hint:SetPoint("TOPRIGHT", -14, -326)
+    local hint = bagsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hint:SetPoint("TOPLEFT", 14, -218)
+    hint:SetPoint("TOPRIGHT", -14, -218)
     hint:SetText("Click a furnishing, then click where it goes. Undo gives it back.")
 
     selectedPanel = CreateFrame("Frame", "PlayerHousingSelected", frame)
@@ -828,12 +855,46 @@ local function CreateWindow()
     spotButton.tooltipText = "The targeting circle is as big as the piece. Right-click or Escape cancels the circle; the menu can start over."
     spotButton:SetScript("OnEnter", ShowButtonTooltip)
     spotButton:SetScript("OnLeave", GameTooltip_Hide)
+    -- Edit mode's G clicks this button: with no move under way yet, it starts one.
+    spotButton:SetScript("PreClick", function(self)
+        if not self:GetAttribute("item") and CanEdit() and state.selected > 0 then
+            PlayerHousing_Command("move")
+        end
+    end)
     spotButton:Hide()
     selectedPanel:Hide()
 
     SetFilter("all")
     CreatePreview()
     frame:HookScript("OnHide", HidePreview)
+    for _, hook in ipairs(windowHooks) do
+        hook(frame)
+    end
+end
+
+-- The House Key, with the addon: open the window.
+function PlayerHousing_Open()
+    if not frame then
+        return
+    end
+    if InCombatLockdown() then
+        Print("the housing window can't open in combat.")
+        return
+    end
+    autoShown = false
+    SetShown(true)
+end
+
+-- A piece by its number (the Placed tab): buildings ask first, like the selected one.
+local function PickUpPlacement(id, name, building)
+    if not building then
+        PlayerHousing_Command("pickup " .. id)
+        return
+    end
+    local dialog = StaticPopup_Show("PLAYERHOUSING_PICKUP_BUILDING", name)
+    if dialog then
+        dialog.data = id
+    end
 end
 
 function PlayerHousing_Toggle()
@@ -858,16 +919,14 @@ driver:SetScript("OnUpdate", function(self, elapsed)
     if sinceSend < SEND_INTERVAL then
         return
     end
-    -- Mouse wheel turns add up between commands, so a fast spin is one command and one undo.
-    if pendingTurn % 360 ~= 0 then
-        PlayerHousing_Command(("rotate %d"):format(pendingTurn))
+    -- Key presses and wheel turns add up between commands; the server makes a quick run of
+    -- them one undo step.
+    local turn = pending.turn % 360 == 0 and 0 or pending.turn
+    if math.abs(pending.forward) >= 0.005 or math.abs(pending.left) >= 0.005 or math.abs(pending.up) >= 0.005 or turn ~= 0 then
+        PlayerHousing_Command(("shift %.2f %.2f %.2f %d"):format(pending.forward, pending.left, pending.up, turn))
         sinceSend = 0
-    elseif pendingLift ~= 0 and math.abs(pendingLift) >= 0.05 then
-        PlayerHousing_Command(("nudge %s %.2f"):format(pendingLift > 0 and "up" or "down", math.abs(pendingLift)))
-        sinceSend = 0
-        pendingLift = 0
     end
-    pendingTurn = 0
+    pending.forward, pending.left, pending.up, pending.turn = 0, 0, 0, 0
     if bagsDirty and frame and frame:IsShown() then
         UpdateGrid()
     end
@@ -915,8 +974,32 @@ driver:SetScript("OnEvent", function(self, event, ...)
         for field in (message .. "\t"):gmatch("([^\t]*)\t") do
             fields[#fields + 1] = field
         end
-        if fields[1] == "state" then
+        local kind = fields[1]
+        if kind == "state" then
             OnState(fields)
+        elseif kind == "open" then
+            PlayerHousing_Open()
+        elseif kind == "begin" then
+            -- A list for the window: begin, a row a message, end.
+            lists[fields[2]] = { rows = {}, arg = fields[3] }
+        elseif kind == "row" then
+            local list = lists[fields[2]]
+            if list and not list.done then
+                local row = {}
+                for index = 3, #fields do
+                    row[#row + 1] = fields[index]
+                end
+                list.rows[#list.rows + 1] = row
+            end
+        elseif kind == "end" then
+            local list = lists[fields[2]]
+            if list and not list.done then
+                list.done = true
+                list.total = tonumber(fields[3] or "")
+                for _, hook in ipairs(dataHooks[fields[2]] or {}) do
+                    hook(list)
+                end
+            end
         end
     end
 end)
@@ -926,6 +1009,36 @@ for _, event in ipairs({ "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_
     driver:RegisterEvent(event)
 end
 
+-- For EditMode.lua and Window.lua.
+PlayerHousingAPI = {
+    state = state,
+    Command = PlayerHousing_Command,
+    CanEdit = CanEdit,
+    Shift = Shift,
+    PickUp = PickUp,
+    PickUpPlacement = PickUpPlacement,
+    Print = Print,
+    MakeButton = MakeButton,
+    ShowPreview = ShowPreview,
+    HidePreview = HidePreview,
+    WIDTH = WIDTH,
+    CONTENT_TOP = CONTENT_TOP,
+    CONTENT_HEIGHT = CONTENT_HEIGHT,
+    GetFrame = function() return frame end,
+    GetBagsPanel = function() return bagsPanel end,
+    IsKnown = function() return known end,
+    OnState = function(hook) stateHooks[#stateHooks + 1] = hook end,
+    -- Runs once the window exists (at ADDON_LOADED).
+    OnWindow = function(hook) windowHooks[#windowHooks + 1] = hook end,
+    OnData = function(kind, hook)
+        dataHooks[kind] = dataHooks[kind] or {}
+        table.insert(dataHooks[kind], hook)
+    end,
+    RequestData = function(kind, argument)
+        PlayerHousing_Command("data " .. kind .. (argument and (" " .. argument) or ""))
+    end,
+}
+
 SLASH_PLAYERHOUSING1 = "/housing"
 SlashCmdList["PLAYERHOUSING"] = function(message)
     message = strtrim(message or "")
@@ -934,6 +1047,10 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
     elseif message == "auto" then
         db.autoShow = not db.autoShow
         Print(db.autoShow and "the window opens by itself when you arrive home." or "the window only opens with /housing.")
+    elseif message == "key" then
+        db.keyWindow = db.keyWindow == false
+        PlayerHousing_Command("addon 1 " .. (db.keyWindow and "1" or "0"))
+        Print(db.keyWindow and "the House Key opens this window." or "the House Key opens its menu.")
     else
         -- Anything else is a .house command: /housing undo, /housing rotate 90, ...
         PlayerHousing_Command(message)

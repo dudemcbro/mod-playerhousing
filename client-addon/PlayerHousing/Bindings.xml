@@ -3,6 +3,7 @@
     <Binding name="PLAYERHOUSING_UNDO">PlayerHousing_Command("undo")</Binding>
     <Binding name="PLAYERHOUSING_REDO">PlayerHousing_Command("redo")</Binding>
     <Binding name="PLAYERHOUSING_DECORATE">PlayerHousing_Command("decorate")</Binding>
+    <Binding name="PLAYERHOUSING_EDIT">PlayerHousing_Command("edit")</Binding>
     <Binding name="PLAYERHOUSING_TURN_LEFT">PlayerHousing_Command("rotate 15")</Binding>
     <Binding name="PLAYERHOUSING_TURN_RIGHT">PlayerHousing_Command("rotate -15")</Binding>
     <Binding name="PLAYERHOUSING_SELECT_NEAREST">PlayerHousing_Command("select")</Binding>

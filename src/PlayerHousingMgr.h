@@ -256,6 +256,8 @@ namespace Housing
     {
         std::string label;
         std::vector<Change> changes;
+        uint64 at{0};            // game time (ms) of its last change
+        bool mergeable{false};   // edit mode: the next small move of the same pieces joins it
     };
 
     struct HouseRecord
@@ -347,6 +349,13 @@ public:
     bool PickUp(Player* player, uint32 placementId, bool withInside, std::string& reason);
     bool Rotate(Player* player, uint32 placementId, float degrees, std::string& reason);
     bool Nudge(Player* player, uint32 placementId, float forward, float left, float up, std::string& reason);
+    // Edit mode (the client addon): keys move the selected piece. Moves and turns in one go,
+    // relative to the player's facing; a quick run of them on one piece is a single undo step.
+    bool Shift(Player* player, uint32 placementId, float forward, float left, float up, float degrees, std::string& reason);
+    bool SetEditMode(Player* player, bool on, std::string& reason);
+    bool IsInEditMode(Player const* player) const;
+    // The next (or previous) piece nearby after the selected one, by distance; 0 if none.
+    uint32 SelectNext(Player* player, bool backwards, std::string& reason);
     bool FaceMe(Player* player, uint32 placementId, std::string& reason);
     bool MoveHere(Player* player, uint32 placementId, std::string& reason);
     // Percent of the piece's normal size, or (relative) percentage points more or less.
@@ -391,6 +400,16 @@ public:
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
     void ProcessPendingConsumes(Player* player);
     bool HasPendingConsumes() const { return _pendingConsumeCount.load(std::memory_order_relaxed) != 0; }
+
+    // ---- the client addon's housing window (HousingAddon.cpp)
+    void SendAddon(Player* player, std::string const& text) const;
+    // A list for one of the window's tabs: collection, placed, layouts, guests, visits, island.
+    bool SendAddonData(Player* player, std::string const& kind, std::string const& argument, std::string& reason);
+    // The addon says it's there; with keyOpensWindow the House Key opens its window instead of the menu.
+    void SetAddonClient(Player* player, bool keyOpensWindow);
+    bool KeyOpensWindow(Player const* player) const;
+    bool TakeFromStorageCommand(Player* player, std::string const& what, std::string& reason);
+    void MarkAllSeen(Player* player) const;
 
     // ---- moderation (HousingModeration.cpp)
     bool ReportIsland(Player* reporter, std::string const& text, std::string& reason);
@@ -522,6 +541,8 @@ public:
     bool OnCooldown(Player* player, uint8 kind, uint32 ms, std::string& reason);
     // .house commands: a burst is fine, a flood isn't.
     bool CommandFlood(Player* player);
+    // Edit mode's moves come in quick runs and have a window of their own.
+    bool ShiftFlood(Player* player);
     // Messages to another player (invites, likes, roommate news): each kind not over and over.
     enum Notice : uint8
     {
@@ -649,7 +670,7 @@ private:
     void AddToStorage(ObjectGuid::LowType ownerGuid, uint32 itemEntry, int32 delta) const;
     bool ApplyChanges(Player* player, Session& session, std::vector<Housing::Change> const& changes, bool towardsAfter, std::string& reason);
     bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
-    void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes);
+    void Record(Player* player, std::string const& label, std::vector<Housing::Change> changes, bool merge = false);
     // A journal step still fits the island: every piece it touches is the one it was written for.
     bool JournalStillApplies(Session const& session, Housing::JournalEntry const& entry, bool towardsAfter) const;
     // Undo lists that point at an island's pieces, when those pieces go some other way.
@@ -659,10 +680,12 @@ private:
     // Housing of characters that no longer exist, at startup.
     void PurgeLeftovers();
     void RemoveHousingOf(ObjectGuid::LowType guid);
-    bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason);
+    bool Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o,
+        std::string& reason, bool merge = false);
     // Checks the island, applies the changes and records them as one step; the first change
     // is the piece the label names.
-    bool Commit(Player* player, Session& session, std::string const& label, std::vector<Housing::Change> changes, std::string& reason);
+    bool Commit(Player* player, Session& session, std::string const& label, std::vector<Housing::Change> changes, std::string& reason,
+        bool merge = false);
     void SnapToGrid(ObjectGuid::LowType guid, float& x, float& y) const;
     // Pieces that go wherever this one goes: what stands on it, and for a building (when
     // includeInside) what's inside it; each with what stands on them in turn.
@@ -740,6 +763,10 @@ private:
         uint32 count{0};
     };
     std::unordered_map<ObjectGuid, CommandWindow> _commandWindows;
+    std::unordered_map<ObjectGuid, CommandWindow> _shiftWindows;
+    std::unordered_set<ObjectGuid> _editMode;  // asked for edit mode; it holds while they decorate here
+    std::unordered_map<ObjectGuid, bool> _addonClients;  // has the addon -> the House Key opens its window
+    void SendAddonRows(Player* player, std::string const& kind, std::string const& label, std::vector<std::string> const& parts) const;
     std::unordered_map<ObjectGuid::LowType, std::unordered_map<uint64, uint64>> _notified;  // sender -> target << 8 | kind -> sent at (ms)
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
     // Items used to place pieces; removed before the player's next packet or update, because

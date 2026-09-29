@@ -210,8 +210,10 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house` | Opens the Home menu |
 | `.house home`, `leave`, `unstuck`, `key` | Go home, leave the island, back to the landing spot, a new House Key |
 | `.house decorate [on\|off]` | Start or stop decorating |
+| `.house edit [on\|off]` | Edit mode (the addon's keys): decorating, and a click on a piece only selects it |
+| `.house shift <forward> <left> <up> <degrees> [id]` | Move and turn a piece in one go, relative to your facing; quick runs on one piece are one undo step |
 | `.house undo`, `redo` | Undo or redo the last change |
-| `.house select [id]` | Select a piece by number, or the nearest one |
+| `.house select [id\|next\|previous]` | Select a piece by number, the nearest one, or the next one out by distance |
 | `.house list` | The pieces within 40 yards, with their numbers |
 | `.house rotate <degrees> [id]` | Turn a piece (positive is left) |
 | `.house face [id]`, `here [id]` | Face you, move to where you stand |
@@ -226,6 +228,10 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
 | `.house packup` | Pick up everything (undoable) |
 | `.house collection [search]`, `storage`, `visit [name]` | Open those menus, search the Collection, or visit someone by name |
+| `.house get <item> [count]` | A copy (or up to 20) of an unlocked piece, paid for unless FreeMode |
+| `.house take <item\|all>` | Take a piece, or everything that fits, out of House Storage |
+| `.house weather <name>`, `time <name>`, `music <sound id\|off>` | The island's weather, time of day and music |
+| `.house data <kind>`, `addon`, `seen` | Quiet ones for the addon's window: its lists, that it's there, new unlocks seen |
 | `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
 | `.house roommate <name>`, `unroommate <name>` | Let a guest decorate, or stop |
 | `.house like`, `visitors` | Like the island you're visiting (or take it back); your visitor log |
@@ -257,37 +263,82 @@ GM actions are logged to the server log (module logger).
 
 ## Optional client addon
 
-`client-addon/PlayerHousing` is a window for players who'd rather click icons than use
-menus. It's optional: the House Key menus do everything without it.
+`client-addon/PlayerHousing` is a housing window for players who'd rather click than use
+menus, plus an edit mode that moves pieces with the keyboard and mouse. It's optional: the
+House Key menus do everything without it. With the addon, the House Key opens the window
+(`/housing key` switches back to the menu, which the window's Menu button also opens).
 
-- Your furnishings and buildings as icons, with filters and search. Click one, then click
-  where it goes. Drag one to an action bar to keep it handy.
-- Hover an icon to preview the piece: its model, slowly turning, and its size. Buildings
-  made of world models can't be drawn in a window, so they show a floor plan to scale
-  instead, with you next to it. Their outline is the most room they take, from the
-  server's collision data (`vmaps/GameObjectModels.dtree`).
-- Go home or leave, Decorate, Undo and Redo (the tooltip says what they'd undo),
-  Collection, Storage, Visit and the full menu, one click each.
-- For the selected piece: turn left or right (Shift-click for 5 degrees, Ctrl-click for
-  90, or the mouse wheel over the window: Shift for small steps, Ctrl to raise or lower),
-  face me, move here, nudge, bigger and smaller, tilt, and pick up. Shift-click on a size
-  or tilt button goes back to normal size or straight.
-- Move and Another bring up a button that uses the right item for you: click it, then
-  click the spot. Move takes whatever stands on the piece (or is inside a building)
-  along; Another places one more with the same turn, size and tilt.
-- Opens by itself when you arrive home (`/housing auto` turns that off). `/housing`
-  shows or hides it, and `/housing <command>` runs any `.house` command.
-- Key bindings for the window, undo, redo, decorate, turning and selecting the nearest
-  piece (Key Bindings, Player Housing).
+The window has a toolbar (go home or leave, Edit, Undo and Redo, whose tooltips say what
+they'd undo, and the full menu) and eight tabs:
+
+- **Bags**: your furnishings and buildings as icons, with filters and search. Click one,
+  then click where it goes. Drag one to an action bar to keep it handy. Hover an icon to
+  preview the piece: its model, slowly turning, and its size. Buildings made of world
+  models can't be drawn in a window, so they show a floor plan to scale instead, with you
+  next to it.
+- **Collection**: every piece there is, unlocked ones in color and locked ones grey, by
+  category, unlocked only, or by name. The tooltip says how to unlock a piece, what a copy
+  costs, and how many you have in your bags, House Storage and on the island. Click to get
+  a copy (Shift-click: five). New unlocks are marked until you leave the tab.
+- **Storage**: House Storage, one piece or everything at once back to the bags.
+- **Placed**: the pieces on the island, nearest first: select one, bring it to where you
+  stand, or pick it up.
+- **Layouts**: save the island under a name, set a layout out again, send it to someone,
+  delete it.
+- **Guests**: invite by name, your target or your party; make a guest a roommate (who
+  can decorate) or remove them.
+- **Visit**: the islands of your party, guild and friends, the ones you're invited to,
+  public ones and the most liked; or visit someone by name. Like the island you're on.
+- **Island**: who can visit, the greeting, and the island's weather, time of day and
+  music (with a Music Box placed).
+
+For the selected piece, a panel below the tabs has turn (Shift-click for 5 degrees,
+Ctrl-click for 90, or the mouse wheel over the window), face me, move here, nudge, bigger
+and smaller, tilt, pick up, Move and Another. Move and Another bring up a button that uses
+the right item for you: click it, then click the spot.
+
+**Edit mode** (the Edit button, a key binding, or `/housing edit`): right-click a piece (or
+press Tab for the next one nearby), then:
+
+| Key | Does |
+| --- | --- |
+| Arrow keys | Slide it, the way you face (hold to keep going) |
+| Mouse wheel | Turn it |
+| Page Up, Page Down, Ctrl+wheel | Raise, lower |
+| Shift with any of those | Finer steps |
+| Tab, Shift+Tab | Next or previous piece nearby |
+| G | Follow the mouse with the targeting circle, click to drop |
+| Delete | Pick it up |
+| Ctrl+Z, Ctrl+Y | Undo, redo |
+| Alt+wheel | Zoom the camera |
+| Escape | Cancel the circle, or leave edit mode |
+
+A banner at the top of the screen names the selected piece and lists the keys. With the
+grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
+undo step. The keys are only bound in edit mode, so the usual ones come back afterwards;
+bindings can't change in combat, so they wait for it to end. The client can't slide a game
+object, so each step redraws the piece.
+
+The window opens by itself when you arrive home (`/housing auto` turns that off).
+`/housing` shows or hides it, and `/housing <command>` runs any `.house` command. Key
+bindings: Key Bindings, Player Housing.
 
 Install: copy the `PlayerHousing` folder into `World of Warcraft/Interface/AddOns/`. The
-window can't open or close in combat (a WoW rule for windows with item buttons).
+window can't open or close, or change tabs, in combat (a WoW rule for windows with item
+buttons).
 
-The addon talks to the server with the same `.house` commands and reads a state message
-the server whispers to the player (addon prefix `HOUSING`, fields in
-`PlayerHousingMgr::SendAddonState`). `client-addon/test/harness.lua` runs it outside the
-game against stubbed WoW functions: `lua5.1 client-addon/test/harness.lua
-client-addon/PlayerHousing/PieceModels.lua client-addon/PlayerHousing/PlayerHousing.lua`.
+The addon talks to the server with the same `.house` commands, and reads what the server
+whispers to the player with the addon prefix `HOUSING`: the island state
+(`PlayerHousingMgr::SendAddonState`) and the tabs' lists (`src/HousingAddon.cpp`: `begin`,
+a `row` a message, `end`). The piece list with names, icons and unlock hints
+(`PieceInfo.lua`) comes from the content builder. `client-addon/test/harness.lua` runs the
+addon outside the game against stubbed WoW functions:
+
+```
+lua5.1 client-addon/test/harness.lua client-addon/PlayerHousing/PieceModels.lua \
+    client-addon/PlayerHousing/PieceInfo.lua client-addon/PlayerHousing/PlayerHousing.lua \
+    client-addon/PlayerHousing/EditMode.lua client-addon/PlayerHousing/Window.lua
+```
 
 ## Install
 

@@ -531,6 +531,20 @@ bool PlayerHousingMgr::CommandFlood(Player* player)
     return ++window.count > 15;
 }
 
+bool PlayerHousingMgr::ShiftFlood(Player* player)
+{
+    // The addon sends about seven a second while a key is held.
+    uint64 now = GameTime::GetGameTimeMS().count();
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    CommandWindow& window = _shiftWindows[player->GetGUID()];
+    if (now - window.start > 1000)
+    {
+        window.start = now;
+        window.count = 0;
+    }
+    return ++window.count > 12;
+}
+
 std::string PlayerHousingMgr::FormatYards(float yards)
 {
     // 0.25, 0.5, 1, 2
@@ -711,6 +725,9 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         _ambienceTimers.erase(player->GetGUID());
         _cooldowns.erase(player->GetGUID());
         _commandWindows.erase(player->GetGUID());
+        _shiftWindows.erase(player->GetGUID());
+        _editMode.erase(player->GetGUID());
+        _addonClients.erase(player->GetGUID());
         _notified.erase(player->GetGUID().GetCounter());
     }
 
@@ -1528,13 +1545,11 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         CountPlaced(owner, furnishings, buildings);
 
     // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
-    std::string message = Acore::StringFormat("HOUSING\tstate\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
         owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
-        GetPendingCopy(player), roommate ? 1 : 0);
-
-    WorldPacket data;
-    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-    player->SendDirectMessage(&data);
+        GetPendingCopy(player), roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
+        FormatYards(GetGridSize(player->GetGUID().GetCounter())));
+    SendAddon(player, message);
 }

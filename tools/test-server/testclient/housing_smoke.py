@@ -198,6 +198,31 @@ def addon_state(wc):
 CIRCLE_RADIUS = {61736: 1, 52923: 2, 53261: 3, 68316: 5, 45959: 8, 54686: 10, 48431: 15, 55295: 18, 32150: 20}
 
 
+def addon_list(wc, kind):
+    """The rows of the last list of this kind sent to the addon's window, or None."""
+    msgs = wc.addon_messages
+    starts = [i for i, m in enumerate(msgs) if m == "HOUSING\tbegin\t" + kind or m.startswith("HOUSING\tbegin\t" + kind + "\t")]
+    if not starts:
+        return None
+    rows = []
+    for m in msgs[starts[-1] + 1:]:
+        if m == "HOUSING\tend\t" + kind or m.startswith("HOUSING\tend\t" + kind + "\t"):
+            return rows
+        if m.startswith("HOUSING\trow\t" + kind + "\t"):
+            rows.append(m.split("\t")[3:])
+    return None
+
+
+def id_ranges(text):
+    """901100-901102,902001 -> {901100, 901101, 901102, 902001}"""
+    ids = set()
+    for part in text.split(","):
+        first, _, last = part.partition("-")
+        if first:
+            ids.update(range(int(first), int(last or first) + 1))
+    return ids
+
+
 def spell_of(item):
     """The item's spell, whose targeting circle the client shows (sized to the piece)."""
     return int(db("SELECT spellid_1 FROM item_template WHERE entry=%d" % item, "acore_world")[0][0])
@@ -621,6 +646,116 @@ def main():
     msgs = owner.command(".house grid off")
     check("grid off", has(msgs, "Grid off") and db("SELECT grid FROM mod_playerhousing_character WHERE guid=%d" % owner_guid) == [["0"]],
           joined(msgs))
+
+    # ------------------------------------------------------------- edit mode (the addon's keys)
+    log("== edit mode")
+    owner.addon_messages.clear()
+    msgs = owner.command(".house edit on")
+    state = addon_state(owner)
+    check("edit mode on, and the addon hears of it", has(msgs, "Edit mode") and state is not None and len(state) > 18
+          and state[17] == "1" and state[3] == "1", joined(msgs) + " " + str(state))
+    chair = placement_of(owner_guid, CHAIR)
+    chair_go = nearest_go(owner, edit(CHAIR))
+    if chair and chair_go:
+        move(owner, chair["x"] - 2.0, chair["y"], chair["z"], 0.0)
+        owner.addon_messages.clear()
+        menu, msgs = owner.use_gameobject(chair_go.guid)
+        state = addon_state(owner)
+        check("in edit mode a click selects the piece, with no menu", menu is None and state is not None and state[4] == str(chair["id"]),
+              str(menu) + " " + str(state))
+
+        # Facing east: forward is +x, left is +y. (Positions read back with the float column's
+        # six digits, so to a tenth of a yard out here.)
+        msgs = owner.command(".house shift 0.5 0 0 0 %d" % chair["id"]) + owner.command(".house shift 0.5 0.25 0 90 %d" % chair["id"])
+        moved = placement_of(owner_guid, CHAIR)
+        check("shift moves a piece relative to the facing and turns it, quietly", moved is not None and not msgs
+              and abs(moved["x"] - chair["x"] - 1.0) < 0.06 and abs(moved["y"] - chair["y"] - 0.25) < 0.06
+              and angle_diff(moved["o"], chair["o"] + math.pi / 2) < 0.01, joined(msgs) + " %s -> %s" % (chair, moved))
+        state = addon_state(owner)
+        check("a quick run of shifts is one undo step", state is not None and state[10].startswith("adjusted Westfall Chair"), str(state))
+        owner.command(".house undo")
+        back = placement_of(owner_guid, CHAIR)
+        check("one undo takes back the whole run", back is not None and math.dist((back["x"], back["y"]), (chair["x"], chair["y"])) < 0.01
+              and angle_diff(back["o"], chair["o"]) < 0.01, str(back))
+
+        # Held keys send several a second; a flood of them is capped.
+        for _ in range(20):
+            owner.command(".house shift 0.1 0 0 0 %d" % chair["id"], wait=0.0)
+        owner.pump(1.5)
+        flooded = placement_of(owner_guid, CHAIR)
+        went = flooded["x"] - chair["x"] if flooded else 0.0
+        check("a flood of shifts is capped", 0.05 < went < 1.95, "moved %.2f yd of 2" % went)
+        owner.command(".house undo")
+        back = placement_of(owner_guid, CHAIR)
+        check("and one undo takes it all back", back is not None and abs(back["x"] - chair["x"]) < 0.01, str(back))
+
+        owner.addon_messages.clear()
+        owner.command(".house select next", wait=0.8)
+        first = addon_state(owner)
+        owner.command(".house select next", wait=0.8)
+        second = addon_state(owner)
+        check("Tab picks the next piece nearby, then the one after", first is not None and second is not None
+              and first[4] not in ("0", str(chair["id"])) and second[4] not in ("0", first[4]), str(first) + " / " + str(second))
+    msgs = owner.command(".house edit off")
+    state = addon_state(owner)
+    check("edit mode off stops decorating too", state is not None and state[17] == "0" and state[3] == "0", joined(msgs) + " " + str(state))
+    owner.command(".house decorate on")
+
+    # ------------------------------------------------------------- the addon's window
+    log("== the addon's window")
+    owner.addon_messages.clear()
+    owner.command(".house data collection")
+    rows = addon_list(owner, "collection") or []
+    settings = next((r for r in rows if r[0] == "settings"), None)
+    unlocked_ids = set().union(*[id_ranges(r[1]) for r in rows if r[0] == "unlocked"])
+    placed_counts = dict(pair.split(":") for r in rows if r[0] == "placed" for pair in r[1].split(","))
+    check("the window's Collection list: settings, what's unlocked and what's placed", settings is not None and settings[1] == "1"
+          and CHAIR in unlocked_ids and int(placed_counts.get(str(CHAIR), 0)) >= 1, str(rows)[:300])
+
+    before = owner.count_item(CHAIR)
+    msgs = owner.command(".house get %d 2" % CHAIR)
+    wait_for(lambda: owner.count_item(CHAIR) == before + 2, 3, owner)
+    check("the window gets two copies at once", owner.count_item(CHAIR) == before + 2, joined(msgs))
+    owner.destroy_item(CHAIR)
+    wait_for(lambda: owner.count_item(CHAIR) == 0, 3, owner)
+    if before:
+        owner.command(".house get %d %d" % (CHAIR, before))
+        wait_for(lambda: owner.count_item(CHAIR) == before, 3, owner)
+
+    owner.addon_messages.clear()
+    owner.command(".house data placed")
+    rows = addon_list(owner, "placed") or []
+    distances = [float(r[2]) for r in rows]
+    check("the window's Placed list: every piece, nearest first", len(rows) == len(placements(owner_guid)) and distances == sorted(distances)
+          and any(int(r[1]) == CHAIR for r in rows), "%d rows for %d pieces" % (len(rows), len(placements(owner_guid))))
+
+    owner.command(".house weather fog", wait=1.3)
+    owner.addon_messages.clear()
+    owner.command(".house data island")
+    rows = addon_list(owner, "island") or []
+    settings = next((r for r in rows if r[0] == "settings"), None)
+    check("weather by name, and the window's Island list shows it with every choice", settings is not None and settings[2] == "1"
+          and len([r for r in rows if r[0] == "weather"]) >= 5 and len([r for r in rows if r[0] == "time"]) >= 2
+          and db("SELECT weather FROM mod_playerhousing_house WHERE owner_guid=%d" % owner_guid) == [["1"]], str(rows)[:300])
+    owner.command(".house weather clear", wait=1.3)
+
+    owner.addon_messages.clear()
+    for request in ("layouts", "guests", "visits 4"):
+        owner.command(".house data " + request, wait=0.8)
+    check("the window's Layouts, Guests and Visit lists answer", all(addon_list(owner, kind) is not None for kind in ("layouts", "guests", "visits")),
+          str(owner.addon_messages)[:300])
+    msgs = owner.command(".house take all")
+    check("taking all from an empty House Storage says so", has(msgs, "House Storage is empty"), joined(msgs))
+
+    # With the addon, the House Key opens its window; the player can ask for the menu instead.
+    owner.command(".house addon 1 1", wait=0.8)
+    owner.addon_messages.clear()
+    owner.use_item(HOUSE_KEY, KEY_SPELL)
+    check("with the addon, the House Key opens its window", "HOUSING\topen" in owner.addon_messages and owner.last_gossip is None,
+          str(owner.addon_messages) + " " + str(owner.last_gossip))
+    owner.command(".house addon 1 0", wait=0.8)
+    owner.use_item(HOUSE_KEY, KEY_SPELL)
+    check("and its menu when the player prefers it", owner.last_gossip is not None, str(owner.last_gossip))
 
     # ------------------------------------------------------------- pick up, storage
     log("== pick up and storage")

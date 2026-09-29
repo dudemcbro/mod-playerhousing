@@ -193,8 +193,8 @@ public:
     }
 };
 
-// Furnishings and buildings: using one brings up the targeting circle (Flare); the chosen
-// spot is caught in spell_playerhousing_place before anything is cast.
+// Furnishings and buildings: using one brings up the targeting circle of the item's spell;
+// the chosen spot is caught in spell_playerhousing_place before anything is cast.
 class item_playerhousing_piece : public ItemScript
 {
 public:
@@ -206,8 +206,8 @@ public:
     }
 };
 
-// Places the piece where the targeting circle was clicked, then cancels the cast silently:
-// no flare, no global cooldown, no stealth reveal. Hunters' own Flare is left alone. The core
+// Places the piece where the targeting circle was clicked, then cancels the cast silently, so
+// the borrowed spell never does anything. Only casts from housing items are caught. The core
 // has already checked range and line of sight to the spot by the time this runs.
 class spell_playerhousing_place : public SpellScript
 {
@@ -271,7 +271,11 @@ class spell_playerhousing_key : public SpellScript
             return SPELL_FAILED_DONT_REPORT;
         }
 
-        HousingMenus::ShowHome(player, MenuSource{ SOURCE_ITEM, item->GetGUID() });
+        // With the client addon, its window; the menu is a button away there.
+        if (sPlayerHousingMgr->KeyOpensWindow(player))
+            sPlayerHousingMgr->SendAddon(player, "open");
+        else
+            HousingMenus::ShowHome(player, MenuSource{ SOURCE_ITEM, item->GetGUID() });
         return SPELL_FAILED_DONT_REPORT;
     }
 
@@ -301,6 +305,14 @@ public:
         uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, go->GetGUID());
         if (!placementId)
             return false;
+
+        // Edit mode: a click only picks the piece; the keys do the rest.
+        if (sPlayerHousingMgr->IsInEditMode(player))
+        {
+            sPlayerHousingMgr->SelectPlacement(player, placementId);
+            sPlayerHousingMgr->SendAddonState(player);
+            return true;
+        }
 
         if (sPlayerHousingMgr->IsDecorating(player))
         {
@@ -388,13 +400,15 @@ public:
     {
         handler->SendSysMessage("Housing commands (.house alone opens the Home menu):");
         handler->SendSysMessage(".house home | leave | unstuck | key");
-        handler->SendSysMessage(".house decorate [on|off] | undo | redo | packup");
+        handler->SendSysMessage(".house decorate [on|off] | edit [on|off] | undo | redo | packup");
+        handler->SendSysMessage(".house shift <forward> <left> <up> <degrees> [id] | select next|previous");
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
         handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name> | like | visitors");
         handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
+        handler->SendSysMessage(".house get <item> [count] | take <item|all> | weather <name> | time <name> | music <sound id|off>");
         handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
         handler->SendSysMessage(".house report <what's wrong> (while visiting)");
         if (gm)
@@ -461,8 +475,14 @@ public:
         std::string reason;
         PlayerHousingMgr* mgr = sPlayerHousingMgr;
 
-        // The addon's state request is quiet and cheap; everything else counts.
-        if (sub != "state" && !gm && mgr->CommandFlood(player))
+        // The addon's state request is quiet and cheap; edit mode's moves have their own
+        // window; everything else counts.
+        if (sub == "shift")
+        {
+            if (!gm && mgr->ShiftFlood(player))
+                return true;
+        }
+        else if (sub != "state" && !gm && mgr->CommandFlood(player))
         {
             Reply(player, "Too many housing commands at once: give it a moment.");
             return true;
@@ -487,6 +507,78 @@ public:
             std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
             bool on = mode == "on" ? true : (mode == "off" ? false : !mgr->IsDecorating(player));
             mgr->SetDecorating(player, on, reason);
+        }
+        else if (sub == "addon")
+        {
+            // Quiet: the addon says it's there, and whether the House Key opens its window.
+            mgr->SetAddonClient(player, !(tokens.size() > 2 && tokens[2] == "0"));
+            mgr->SendAddonState(player);
+            return true;
+        }
+        else if (sub == "data")
+        {
+            // Quiet: lists for the addon's window.
+            if (tokens.size() < 2 || !mgr->SendAddonData(player, Lower(tokens[1]), tokens.size() > 2 ? std::string(tokens[2]) : "", reason))
+                Reply(player, reason.empty() ? "Usage: .house data <collection|placed|layouts|guests|visits <list>|island>" : reason);
+            return true;
+        }
+        else if (sub == "seen")
+        {
+            mgr->MarkAllSeen(player);
+            return true;
+        }
+        else if (sub == "get")
+        {
+            uint32 item = number(1);
+            uint32 count = std::clamp<uint32>(tokens.size() > 2 ? number(2) : 1, 1, 20);
+            if (!item)
+                reason = "Usage: .house get <item entry> [count]";
+            else if (count == 1)
+                mgr->GetCopy(player, item, reason);
+            else
+                mgr->GetCopies(player, item, count, reason);
+        }
+        else if (sub == "take")
+            mgr->TakeFromStorageCommand(player, tokens.size() > 1 ? Lower(tokens[1]) : "", reason);
+        else if (sub == "weather" || sub == "time")
+        {
+            // By number, or by name: .house weather light rain
+            bool weather = sub == "weather";
+            uint8 count = weather ? PlayerHousingMgr::WeatherCount() : PlayerHousingMgr::TimeOfDayCount();
+            std::string wanted = Lower(restFrom(1));
+            int32 choice = -1;
+            for (uint8 i = 0; i < count; ++i)
+                if (wanted == std::to_string(i) || wanted == Lower(weather ? PlayerHousingMgr::WeatherName(i) : PlayerHousingMgr::TimeOfDayName(i)))
+                    choice = i;
+            if (choice < 0)
+            {
+                std::string names;
+                for (uint8 i = 0; i < count; ++i)
+                    names += (names.empty() ? "" : ", ") + std::string(weather ? PlayerHousingMgr::WeatherName(i) : PlayerHousingMgr::TimeOfDayName(i));
+                reason = Acore::StringFormat("Usage: .house {} <{}>", sub, names);
+            }
+            else if (weather)
+                mgr->SetWeather(player, uint8(choice), reason);
+            else
+                mgr->SetTimeOfDay(player, uint8(choice), reason);
+        }
+        else if (sub == "music")
+        {
+            std::string wanted = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            mgr->SetMusic(player, wanted == "off" || wanted == "none" ? 0 : number(1), reason);
+        }
+        else if (sub == "edit")
+        {
+            std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            bool on = mode == "on" ? true : (mode == "off" ? false : !mgr->IsInEditMode(player));
+            mgr->SetEditMode(player, on, reason);
+        }
+        else if (sub == "shift")
+        {
+            // Edit mode: forward, left and up in yards, a turn in degrees, then the piece.
+            // Quiet when it works; the addon shows the result.
+            if (mgr->Shift(player, number(5), decimal(1, 0.0f), decimal(2, 0.0f), decimal(3, 0.0f), decimal(4, 0.0f), reason))
+                reason.clear();
         }
         else if (sub == "undo")
             mgr->Undo(player, reason);
@@ -676,6 +768,11 @@ public:
                 reason = Acore::StringFormat("The grid is {} yards. Usage: .house grid <off|yards> (0.25 to 4).", PlayerHousingMgr::FormatYards(current));
             else
                 reason = "The grid is off. Usage: .house grid <off|yards> (0.25 to 4).";
+        }
+        else if (sub == "select" && tokens.size() > 1 && (Lower(tokens[1]) == "next" || Lower(tokens[1]) == "previous" || Lower(tokens[1]) == "prev"))
+        {
+            // Quiet too: Tab in edit mode.
+            mgr->SelectNext(player, Lower(tokens[1]) != "next", reason);
         }
         else if (sub == "select")
         {

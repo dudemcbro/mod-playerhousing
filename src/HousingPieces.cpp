@@ -4,6 +4,7 @@
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "GameObject.h"
+#include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "Map.h"
@@ -25,6 +26,7 @@ namespace
     constexpr float TWO_PI_F = 6.28318530717958647692f;
     constexpr size_t JOURNAL_SIZE = 30;
     constexpr size_t BIG_STEP = 20;  // pieces; undoing or redoing more waits between goes
+    constexpr uint64 MERGE_WINDOW_MS = 4000;  // edit mode: moves this close together are one step
     constexpr float NO_HEIGHT = -50000.0f;
 
     float NormalizeAngle(float angle)
@@ -782,7 +784,7 @@ bool PlayerHousingMgr::ApplyChanges(Player* player, Session& session, std::vecto
     return allOk;
 }
 
-void PlayerHousingMgr::Record(Player* player, std::string const& label, std::vector<Change> changes)
+void PlayerHousingMgr::Record(Player* player, std::string const& label, std::vector<Change> changes, bool merge)
 {
     Journal& journal = _journals[player->GetGUID().GetCounter()];
     ObjectGuid::LowType island = GetIslandOwner(player);
@@ -791,7 +793,28 @@ void PlayerHousingMgr::Record(Player* player, std::string const& label, std::vec
         journal = Journal{};
         journal.island = island;
     }
-    journal.undo.push_back(JournalEntry{ label, std::move(changes) });
+
+    uint64 now = GameTime::GetGameTimeMS().count();
+    if (merge && !journal.undo.empty())
+    {
+        // Another small move of the same pieces soon after the last: that step grows instead,
+        // so undo takes back the whole run of key presses.
+        JournalEntry& last = journal.undo.back();
+        bool same = last.mergeable && now - last.at <= MERGE_WINDOW_MS && last.changes.size() == changes.size();
+        for (size_t i = 0; same && i < changes.size(); ++i)
+            same = last.changes[i].placementId == changes[i].placementId && last.changes[i].after && changes[i].before && changes[i].after;
+        if (same)
+        {
+            for (size_t i = 0; i < changes.size(); ++i)
+                last.changes[i].after = changes[i].after;
+            last.label = label;
+            last.at = now;
+            journal.redo.clear();
+            return;
+        }
+    }
+
+    journal.undo.push_back(JournalEntry{ label, std::move(changes), now, merge });
     while (journal.undo.size() > JOURNAL_SIZE)
         journal.undo.pop_front();
     journal.redo.clear();
@@ -1153,7 +1176,8 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     return true;
 }
 
-bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o, std::string& reason)
+bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string const& label, float dx, float dy, float dz, float dO, bool absoluteO, float o,
+    std::string& reason, bool merge)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason);
@@ -1204,10 +1228,11 @@ bool PlayerHousingMgr::Transform(Player* player, uint32 placementId, std::string
         changes.push_back(Change{ carriedId, carried, moved });
     }
 
-    return Commit(player, *session, label, std::move(changes), reason);
+    return Commit(player, *session, label, std::move(changes), reason, merge);
 }
 
-bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string const& label, std::vector<Change> changes, std::string& reason)
+bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string const& label, std::vector<Change> changes, std::string& reason,
+    bool merge)
 {
     for (Change const& change : changes)
     {
@@ -1243,7 +1268,7 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
         entryLabel += Acore::StringFormat(" with the {}", PieceName(changes[1].before->itemEntry));
     else if (changes.size() > 2)
         entryLabel += Acore::StringFormat(" with {} pieces", changes.size() - 1);
-    Record(player, entryLabel, std::move(changes));
+    Record(player, entryLabel, std::move(changes), merge);
 
     reason = entryLabel + ".";
     reason[0] = char(std::toupper(static_cast<unsigned char>(reason[0])));
@@ -1476,6 +1501,95 @@ bool PlayerHousingMgr::Nudge(Player* player, uint32 placementId, float forward, 
     else if (up < 0.0f)
         label = "lowered";
     return Transform(player, placementId, label, dx, dy, up, 0.0f, false, 0.0f, reason);
+}
+
+bool PlayerHousingMgr::Shift(Player* player, uint32 placementId, float forward, float left, float up, float degrees, std::string& reason)
+{
+    std::optional<Placement> placement = GetPlacement(player, ResolvePlacementArgument(player, placementId));
+    if (!placement)
+    {
+        reason = "Choose a piece first: click it in edit mode, or press Tab.";
+        return false;
+    }
+
+    // A few yards and a full turn at most per message: the addon sends several a second.
+    forward = std::clamp(forward, -5.0f, 5.0f);
+    left = std::clamp(left, -5.0f, 5.0f);
+    up = std::clamp(up, -2.0f, 2.0f);
+    degrees = std::clamp(degrees, -360.0f, 360.0f);
+    if (forward == 0.0f && left == 0.0f && up == 0.0f && degrees == 0.0f)
+        return true;
+
+    float po = player->GetOrientation();
+    float dx = std::cos(po) * forward - std::sin(po) * left;
+    float dy = std::sin(po) * forward + std::cos(po) * left;
+    if (dx != 0.0f || dy != 0.0f)
+    {
+        // With the grid on, the piece lands on it (the addon steps a square at a time).
+        float x = placement->x + dx;
+        float y = placement->y + dy;
+        if (GetGridSize(player->GetGUID().GetCounter()) > 0.0f)
+            SnapToGrid(player->GetGUID().GetCounter(), x, y);
+        dx = x - placement->x;
+        dy = y - placement->y;
+    }
+
+    return Transform(player, placement->id, "adjusted", dx, dy, up, degrees * PI_F / 180.0f, false, 0.0f, reason, true);
+}
+
+bool PlayerHousingMgr::SetEditMode(Player* player, bool on, std::string& reason)
+{
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        if (on)
+            _editMode.insert(player->GetGUID());
+        else
+            _editMode.erase(player->GetGUID());
+    }
+
+    // Edit mode is decorating with the keys: pieces are clickable and runes show on tables.
+    if (on && !IsDecorating(player) && !SetDecorating(player, true, reason))
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        _editMode.erase(player->GetGUID());
+        return false;
+    }
+    if (!on && IsDecorating(player))
+        SetDecorating(player, false, reason);
+
+    reason = on ? "Edit mode: click a piece (or press Tab), then use the arrow keys and the mouse wheel. Escape when you're done."
+                : "Edit mode off.";
+    SendAddonState(player);
+    return true;
+}
+
+bool PlayerHousingMgr::IsInEditMode(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    return _editMode.count(player->GetGUID()) && CanDecorate(player) && IsDecorating(player);
+}
+
+uint32 PlayerHousingMgr::SelectNext(Player* player, bool backwards, std::string& reason)
+{
+    std::vector<std::pair<Placement, float>> nearby = GetNearbyPlacements(player, 40.0f);
+    if (nearby.empty() || !CanDecorate(player))
+    {
+        reason = "No pieces within 40 yards.";
+        return 0;
+    }
+
+    uint32 current = GetSelectedPlacement(player);
+    size_t index = 0;
+    for (size_t i = 0; i < nearby.size(); ++i)
+        if (nearby[i].first.id == current)
+            index = backwards ? (i + nearby.size() - 1) % nearby.size() : (i + 1) % nearby.size();
+    if (!current || std::none_of(nearby.begin(), nearby.end(), [&](auto const& entry) { return entry.first.id == current; }))
+        index = 0;
+
+    uint32 id = nearby[index].first.id;
+    SelectPlacement(player, id);
+    SendAddonState(player);
+    return id;
 }
 
 bool PlayerHousingMgr::FaceMe(Player* player, uint32 placementId, std::string& reason)
