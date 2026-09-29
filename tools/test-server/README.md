@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (281 checks, 282 with `PlayerHousing.Catalog = everything`):
+checking the database and what the client sees after each step (287 checks, 288 with `PlayerHousing.Catalog = everything`):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -140,11 +140,14 @@ checking the database and what the client sees after each step (281 checks, 282 
   ("Another") keeps G meanwhile; full bags keep it quiet; the grid size reaches the addon
 - several pieces at once: the undo history newest first and `undo 2`, adding a piece to
   the selection (a ring under each), sliding and turning the group with what stands on
-  it, one undo for the run, match height, line up, Ctrl-click taking a piece out and
+  it, one undo for the run and the group still selected after it, Fwd nudging all of
+  them, size waiting for one piece, a newly placed piece selected on its own, match
+  height, line up, Ctrl-click taking a piece out and
   putting it back, a plain click selecting just one, picking the group up and undoing
   that; a row of three chairs and one undo for it; saving the selection as a set, the
   window's list of sets, setting it down with Move a Piece where the circle was clicked
-  and deleting it; going to a piece; the Collection's recently placed pieces; taking one
+  and deleting it; a set's name needing a letter; a lantern saved before its table
+  still standing on it when set down; going to a piece; the Collection's recently placed pieces; taking one
   piece out of House Storage
 - the addon's window: its lists (Collection, Placed, Island, Layouts, Guests, Visit),
   getting copies, weather by name, House Storage, and the House Key opening the window
