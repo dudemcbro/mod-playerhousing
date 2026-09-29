@@ -9,6 +9,7 @@ SET @MANNEQUIN := 900201;
 SET @CHEST_BANKER := 900202;
 SET @HOUSE_KEY := 902000;
 SET @MARKER := 903990;
+SET @RING := 903991;
 
 -- Tables from before furnishings became items and house levels were removed.
 DROP TABLE IF EXISTS `mod_playerhousing_style_object`;
@@ -163,6 +164,11 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 DELETE FROM `gameobject_template` WHERE `entry` = @MARKER;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
 (@MARKER, 10, 7658, 'Put something here', '', '', '', 0.35, 'go_playerhousing_piece', 0);
+
+-- Edit mode: the green rune under the selected piece (scaled to the piece when spawned).
+DELETE FROM `gameobject_template` WHERE `entry` = @RING;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
+(@RING, 5, 674, 'Selected', '', '', '', 1, '', 0);
 
 -- Krook's welcome tour: five short quests that walk through housing. Each completes the
 -- moment the player does the thing (the module reports it as an event), and Krook anywhere,

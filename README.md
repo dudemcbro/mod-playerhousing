@@ -273,13 +273,15 @@ they'd undo, and the full menu) and eight tabs:
 
 - **Bags**: your furnishings and buildings as icons, with filters and search. Click one,
   then click where it goes. Drag one to an action bar to keep it handy. Hover an icon to
-  preview the piece: its model, slowly turning, and its size. Buildings made of world
-  models can't be drawn in a window, so they show a floor plan to scale instead, with you
-  next to it.
+  preview the piece next to the window: its model, slowly turning and centered in the
+  frame, and its size. Buildings made of world models can't be drawn in a window, so they
+  show a floor plan to scale instead, with you next to it.
 - **Collection**: every piece there is, unlocked ones in color and locked ones grey, by
   category, unlocked only, or by name. The tooltip says how to unlock a piece, what a copy
-  costs, and how many you have in your bags, House Storage and on the island. Click to get
-  a copy (Shift-click: five). New unlocks are marked until you leave the tab.
+  costs, and how many you have in your bags, House Storage and on the island. Click a piece
+  to keep it in the preview with its details and buttons: Place (click, then click the
+  spot), Get 1, Get 5 and Take from storage. Hovering other pieces shows them for a moment.
+  New unlocks are marked until you leave the tab.
 - **Storage**: House Storage, one piece or everything at once back to the bags.
 - **Placed**: the pieces on the island, nearest first: select one, bring it to where you
   stand, or pick it up.
@@ -292,6 +294,10 @@ they'd undo, and the full menu) and eight tabs:
 - **Island**: who can visit, the greeting, and the island's weather, time of day and
   music (with a Music Box placed).
 
+In the preview, drag the model to turn it, use the mouse wheel to zoom and right-drag to move
+it up or down. If previews sit too high or too low on your client, `/housing framing`
+tries the other way of centering them.
+
 For the selected piece, a panel below the tabs has turn (Shift-click for 5 degrees,
 Ctrl-click for 90, or the mouse wheel over the window), face me, move here, nudge, bigger
 and smaller, tilt, pick up, Move and Another. Move and Another bring up a button that uses
@@ -303,18 +309,22 @@ press Tab for the next one nearby), then:
 | Key | Does |
 | --- | --- |
 | Arrow keys | Slide it, the way you face (hold to keep going) |
-| Mouse wheel | Turn it |
+| Mouse wheel | Turn it (after R: raise and lower it) |
 | Page Up, Page Down, Ctrl+wheel | Raise, lower |
+| R | Switch what the plain mouse wheel does |
 | Shift with any of those | Finer steps |
 | Tab, Shift+Tab | Next or previous piece nearby |
-| G | Follow the mouse with the targeting circle, click to drop |
+| G | The targeting circle, at once: click the new spot |
 | Delete | Pick it up |
 | Ctrl+Z, Ctrl+Y | Undo, redo |
 | Alt+wheel | Zoom the camera |
 | Escape | Cancel the circle, or leave edit mode |
 
-A banner at the top of the screen names the selected piece and lists the keys. With the
-grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
+A banner at the top of the screen names the selected piece, lists the keys, says what the
+last key did (so a key that does the wrong thing shows itself) and has Grid, Wheel, Undo,
+Redo and Done buttons. The selected piece has a ring under it. While a piece is selected,
+edit mode keeps a Move a Piece item in your bags for G, and takes it away afterwards. With
+the grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
 undo step. The keys are only bound in edit mode, so the usual ones come back afterwards;
 bindings can't change in combat, so they wait for it to end. The client can't slide a game
 object, so each step redraws the piece.
@@ -528,7 +538,7 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (235 checks: placing, undo, decorating, edit mode, the addon's window,
+headless clients (241 checks: placing, undo, decorating, edit mode, the addon's window,
 storage, the Collection, buildings, mannequins, layouts, ambience, visitors, roommates,
 moderation, working furniture, addon messages, relogging, and the safety rules above), and
 a load test.

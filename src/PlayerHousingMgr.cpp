@@ -875,6 +875,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
 
     if (arrived)
         OnArrived(player, ownerGuid);
+    UpdateEditHelpers(player, ownerGuid);
 
     // Swimmers and anyone falling through the world go back to the landing spot rather than
     // dropping out of their private copy.
@@ -1197,6 +1198,10 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
         RemoveSpawned(map, spawned.guid);
 
     DespawnMarkers(session, map);
+    for (auto const& [who, ring] : session.rings)
+        if (GameObject* object = map->GetGameObject(ring.guid))
+            object->AddObjectToRemoveList();
+    session.rings.clear();
 
     if (session.stewardGuid)
         if (Creature* steward = map->GetCreature(session.stewardGuid))
@@ -1547,11 +1552,18 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         CountPlaced(owner, furnishings, buildings);
 
     // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
-    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    bool moverStaged = false;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto pending = _pendingMoves.find(player->GetGUID());
+        moverStaged = pending != _pendingMoves.end() && pending->second.staged;
+    }
+
+    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
         owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
         GetPendingCopy(player), roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
-        FormatYards(GetGridSize(player->GetGUID().GetCounter())));
+        FormatYards(GetGridSize(player->GetGUID().GetCounter())), moverStaged ? 1 : 0);
     SendAddon(player, message);
 }

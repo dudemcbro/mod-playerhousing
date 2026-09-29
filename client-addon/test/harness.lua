@@ -17,11 +17,20 @@ Widget.__index = function(t, k)
   return function(self, ...) return nil end   -- any unknown method: no-op
 end
 function Widget:SetScript(name, fn) self.scripts[name] = fn end
+function Widget:HookScript(name, fn)
+  local old = self.scripts[name]
+  self.scripts[name] = old and function(...) old(...); fn(...) end or fn
+end
 function Widget:GetScript(name) return self.scripts[name] end
 function Widget:SetAttribute(k, v) if combat and self.protected then error("protected attribute in combat") end self.attrs[k] = v end
 function Widget:GetAttribute(k) return self.attrs[k] end
 function Widget:Show() if combat and self.protected then error("protected show in combat") end self.shown = true; if self.scripts.OnShow then self.scripts.OnShow(self) end end
-function Widget:Hide() if combat and self.protected then error("protected hide in combat") end self.shown = false end
+function Widget:Hide()
+  if combat and self.protected then error("protected hide in combat") end
+  local was = self.shown
+  self.shown = false
+  if was and self.scripts.OnHide then self.scripts.OnHide(self) end
+end
 function Widget:IsShown() return self.shown end
 function Widget:SetText(t) self.text = t end
 function Widget:GetText() return self.text end
@@ -51,6 +60,13 @@ function Widget:GetChecked() return self.checked end
 function Widget:LockHighlight() self.highlighted = true end
 function Widget:UnlockHighlight() self.highlighted = false end
 function Widget:SetDesaturated(v) self.desaturated = v end
+function Widget:SetPosition(x, y, z) self.position = { x, y, z } end
+function Widget:GetFrameLevel() return rawget(self, "level") or 1 end
+function Widget:SetModelScale(v) self.modelScale = v end
+function Widget:SetFacing(v) self.facing = v end
+function Widget:Click(button) if self.scripts.PreClick then self.scripts.PreClick(self, button) end
+  if self.scripts.OnClick then self.scripts.OnClick(self, button, true) end
+  if self.scripts.PostClick then self.scripts.PostClick(self, button) end end
 
 function CreateFrame(kind, name, parent, template)
   local f = setmetatable({scripts={}, attrs={}, events={}, shown=true, name=name, parent=parent, template=template}, Widget)
@@ -85,6 +101,8 @@ function GetCoinTextureString(copper) return copper .. "c" end
 DELETE = "Delete"
 local now = 0
 function GetTime() return now end
+local cursorX, cursorY = 0, 0
+function GetCursorPosition() return cursorX, cursorY end
 function IsAltKeyDown() return false end
 local zoomed = 0
 function CameraZoomIn() zoomed = zoomed + 1 end
@@ -143,6 +161,44 @@ assert(PlayerHousingSelected:IsShown(), "selected panel shown")
 PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)
 assert(PlayerHousingPreview:IsShown(), "preview shown")
 assert(PlayerHousingPreviewModel.modelPath == PlayerHousing_Models[901105][1], "chair model: " .. tostring(PlayerHousingPreviewModel.modelPath))
+-- Fitted to the frame and turned about its middle, which the builder measured.
+local function near(a, b) return math.abs(a - b) < 1e-6 end
+local chair = PlayerHousing_Models[901105]
+local fit, midX, midY, midZ = chair[5], chair[6], chair[7], chair[8]
+assert(fit > 0 and midZ > 0, "the chair has bounds")
+local model, fitted = PlayerHousingPreviewModel, math.min(3, 2.2 / chair[5])
+assert(near(model.modelScale, fitted), "fitted: " .. tostring(model.modelScale))
+assert(near(model.position[1], -midX * fitted) and near(model.position[2], -midY * fitted) and near(model.position[3], -midZ * fitted),
+  "its middle at the frame's: " .. table.concat(model.position, ", "))
+PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 1)
+local c, s = math.cos(0.6), math.sin(0.6)
+assert(near(model.facing, 0.6) and near(model.position[1], -(midX * c - midY * s) * fitted), "turns about its middle")
+-- Drag to turn it (and it stops turning by itself), the wheel zooms, right-drag lifts.
+model.scripts.OnMouseDown(model, "LeftButton")
+cursorX = 100
+PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 0.01)
+model.scripts.OnMouseUp(model)
+assert(near(model.facing, 2.1), "dragged: " .. model.facing)
+PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 1)
+assert(near(model.facing, 2.1), "no more turning by itself")
+model.scripts.OnMouseWheel(model, 1)
+assert(near(model.modelScale, fitted * 1.2), "zoomed")
+model.scripts.OnMouseDown(model, "RightButton")
+cursorY = 50
+PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 0.01)
+model.scripts.OnMouseUp(model)
+assert(near(model.position[3], -midZ * fitted * 1.2 + 0.5), "lifted: " .. model.position[3])
+-- The other reading of the offsets, for clients that scale them.
+SlashCmdList.PLAYERHOUSING("framing")
+assert(PlayerHousingDB.framing == "model" and near(model.position[3], -midZ + 0.5), "framing: " .. model.position[3])
+SlashCmdList.PLAYERHOUSING("framing")
+assert(PlayerHousingDB.framing == nil)
+PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
+-- Another piece starts afresh.
+PlayerHousingSlot1.scripts.OnEnter(PlayerHousingSlot1)
+PlayerHousingSlot1.scripts.OnLeave(PlayerHousingSlot1)
+PlayerHousingSlot2.scripts.OnEnter(PlayerHousingSlot2)
+assert(near(model.modelScale, fitted) and near(model.facing, 0), "view reset for a new piece")
 PlayerHousingSlot2.scripts.OnLeave(PlayerHousingSlot2)
 assert(not PlayerHousingPreview:IsShown(), "preview hidden on leave")
 -- Buildings made of world models get a floor plan, to scale, instead of a model.
@@ -312,7 +368,7 @@ flush(); assert(last() == ".house shift 0.00 -0.05 0.00 5", last())
 click("PlayerHousingEditNext", true); assert(last() == ".house select previous", last())
 IsShiftKeyDown = function() return false end
 fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t0$", "\t0.5"), "WHISPER", "Krookowner")
-assert(PlayerHousingEditHudHelp.text:find("Grid: 0.5 yd"), "grid shown")
+assert(PlayerHousingEditHudGrid.text == "Grid: 0.5 yd", "grid shown: " .. tostring(PlayerHousingEditHudGrid.text))
 click("PlayerHousingEditForward", true); click("PlayerHousingEditForward", false)
 flush(); assert(last() == ".house shift 0.50 0.00 0.00 0", last())
 fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
@@ -325,14 +381,68 @@ IsAltKeyDown = function() return true end
 count = #sent
 click("PlayerHousingEditWheelUp", true); flush(); assert(#sent == count and zoomed == 1, "alt+wheel zooms")
 IsAltKeyDown = function() return false end
+-- Each wheel binding does its own thing, whether or not Ctrl reads as held, and the banner
+-- says what happened.
+assert(overrides["CTRL-MOUSEWHEELUP"] == "PlayerHousingEditRaiseWheelUp" and overrides["ALT-MOUSEWHEELDOWN"] == "PlayerHousingEditZoomWheelDown")
+assert(overrides["SHIFT-MOUSEWHEELUP"] == "PlayerHousingEditWheelUp" and overrides.R == "PlayerHousingEditWheelMode")
+click("PlayerHousingEditRaiseWheelUp", true); flush(); assert(last() == ".house shift 0.00 0.00 0.10 0", last())
+assert(PlayerHousingEditHudLast.text:find("Ctrl%+Wheel up") and PlayerHousingEditHudLast.text:find("raised 0.1 yd"), PlayerHousingEditHudLast.text)
+click("PlayerHousingEditWheelDown", true); flush()
+assert(PlayerHousingEditHudLast.text:find("turned right 15 degrees"), PlayerHousingEditHudLast.text)
+IsControlKeyDown = function() return true end
+click("PlayerHousingEditWheelDown", true); flush(); assert(last() == ".house shift 0.00 0.00 -0.10 0", last())
+assert(PlayerHousingEditHudLast.text:find("Ctrl held"), PlayerHousingEditHudLast.text)
+IsControlKeyDown = function() return false end
+click("PlayerHousingEditForward", true); click("PlayerHousingEditForward", false); flush()
+assert(PlayerHousingEditHudLast.text:find("Up arrow") and PlayerHousingEditHudLast.text:find("moved forward 0.25 yd"), PlayerHousingEditHudLast.text)
+-- R: the plain wheel raises instead, and back.
+click("PlayerHousingEditWheelMode", true)
+assert(PlayerHousingEditHudWheel.text == "Wheel: raise" and PlayerHousingEditHudHelp.text:find("R: wheel turns"))
+click("PlayerHousingEditWheelDown", true); flush(); assert(last() == ".house shift 0.00 0.00 -0.10 0", last())
+PlayerHousingEditHudWheel.scripts.OnClick()
+assert(PlayerHousingEditHudWheel.text == "Wheel: turn")
+click("PlayerHousingEditWheelUp", true); flush(); assert(last() == ".house shift 0.00 0.00 0.00 15", last())
+-- The line goes after a few seconds.
+now = now + 7; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 7)
+assert(PlayerHousingEditHudLast.text == "", "feedback fades")
+-- The banner's buttons.
+assert(PlayerHousingEditHudUndo.enabled == true and PlayerHousingEditHudRedo.enabled == false, "undo, no redo")
+PlayerHousingEditHudGrid.scripts.OnClick(); assert(last() == ".house grid 0.25", last())
+fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t0$", "\t0.5"), "WHISPER", "Krookowner")
+PlayerHousingEditHudGrid.scripts.OnClick(); assert(last() == ".house grid 1", last())
+fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t0$", "\t2"), "WHISPER", "Krookowner")
+PlayerHousingEditHudGrid.scripts.OnClick(); assert(last() == ".house grid off", last())
+fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
+PlayerHousingEditHudUndo.scripts.OnClick(); assert(last() == ".house undo", last())
+PlayerHousingEditHudDone.scripts.OnClick(); assert(last() == ".house edit off", last())
 -- The other keys.
 click("PlayerHousingEditNext", true); assert(last() == ".house select next", last())
 click("PlayerHousingEditPickUp", true); assert(last() == ".house pickup 13", last())
 click("PlayerHousingEditUndo", true); assert(last() == ".house undo", last())
 click("PlayerHousingEditRedo", true); assert(last() == ".house redo", last())
 -- G with no move under way asks for one.
-PlayerHousingSpotButton.scripts.PreClick(PlayerHousingSpotButton)
+PlayerHousingSpotButton:Click()
 assert(last() == ".house move", last())
+assert(PlayerHousingEditHudLast.text:find("press G again"), PlayerHousingEditHudLast.text)
+-- Edit mode keeps Move a Piece ready, so G starts the circle at once, with the window shut
+-- too: the button uses it, out of sight.
+PlayerHousingFrame.shown = false
+bags[0][7] = {901190, 1}
+fire("BAG_UPDATE")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t901190\t0\t0\t1\t0\t1", "WHISPER", "Krookowner")
+flush()
+assert(PlayerHousingSpotButton.attrs.item == "0 7" and not PlayerHousingSpotButton:IsShown(), "ready for G, out of sight")
+count = #sent
+targeting = true
+PlayerHousingSpotButton:Click()
+assert(#sent == count, "G uses the item: nothing to ask the server")
+assert(PlayerHousingEditHudLast.text:find("click the new spot"), PlayerHousingEditHudLast.text)
+targeting = false
+bags[0][7] = nil
+fire("BAG_UPDATE")
+fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
+flush()
+PlayerHousingFrame.shown = true
 -- Escape cancels the targeting circle first, then leaves edit mode.
 targeting = true
 count = #sent
@@ -419,18 +529,56 @@ for index = 1, 36 do
 end
 assert(lockedSlot and lockedSlot.icon.desaturated, "locked pieces are grey")
 assert(PlayerHousingCollectionStatus.text:find("^3 of "), PlayerHousingCollectionStatus.text)
-first.scripts.OnClick(first)
-assert(sent[#sent - 1] == ".house get 901105 1" and last() == ".house data collection", sent[#sent - 1])
-IsShiftKeyDown = function() return true end
-first.scripts.OnClick(first)
-assert(sent[#sent - 1] == ".house get 901105 5", sent[#sent - 1])
-IsShiftKeyDown = function() return false end
+-- A click pins the piece next to the window, with its details and buttons.
 local count = #sent
+first.scripts.OnClick(first)
+assert(#sent == count, "a click alone gets nothing")
+assert(PlayerHousingPreview:IsShown() and PlayerHousingPreview.height == 360, "pinned: " .. tostring(PlayerHousingPreview.height))
+assert(PlayerHousingDetailsText.text:find("Unlocked"), PlayerHousingDetailsText.text)
+assert(PlayerHousingDetailsCounts.text == "Bags: 5   Storage: 2   Placed: 1", PlayerHousingDetailsCounts.text)
+assert(PlayerHousingDetailsPlace:IsShown() and PlayerHousingDetailsPlace.attrs.type == "item" and PlayerHousingDetailsPlace.attrs.item == "0 1"
+  and PlayerHousingDetailsPlace.enabled, "Place uses the chair in the bags")
+assert(PlayerHousingDetailsPlace.parent == PlayerHousingFrame, "the secure button belongs to the window, not the preview")
+assert(PlayerHousingDetailsTake.enabled and PlayerHousingDetailsGetOne.enabled)
+PlayerHousingDetailsGetOne.scripts.OnClick()
+assert(sent[#sent - 1] == ".house get 901105 1" and last() == ".house data collection", sent[#sent - 1])
+PlayerHousingDetailsGetFive.scripts.OnClick()
+assert(sent[#sent - 1] == ".house get 901105 5", sent[#sent - 1])
+PlayerHousingDetailsTake.scripts.OnClick()
+assert(sent[#sent - 1] == ".house take 901105", sent[#sent - 1])
+-- Hovering another piece shows it for a moment; moving off brings the pinned one back.
+lockedSlot.scripts.OnEnter(lockedSlot)
+assert(PlayerHousingPreviewName.text == lockedSlot.info[2] and not PlayerHousingDetailsPlace:IsShown(), "hovered piece, no buttons")
+assert(PlayerHousingPreviewHint.text ~= "", "says how to show it instead")
+lockedSlot.scripts.OnLeave(lockedSlot)
+assert(PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == first.info[2] and PlayerHousingDetailsPlace:IsShown(),
+  "back to the pinned piece: " .. tostring(PlayerHousingPreviewName.text))
+-- In combat the secure Place button stays as it is.
+combat = true
+lockedSlot.scripts.OnEnter(lockedSlot)
+lockedSlot.scripts.OnLeave(lockedSlot)
+combat = false
+-- A locked piece says how to unlock it, and can't be had yet.
+count = #sent
 lockedSlot.scripts.OnClick(lockedSlot)
-assert(#sent == count and printed[#printed]:find("locked"), "locked: nothing sent")
+assert(#sent == count, "locked: nothing sent")
+assert(PlayerHousingDetailsText.text:find("Locked") and not PlayerHousingDetailsGetOne.enabled, PlayerHousingDetailsText.text)
+assert(not PlayerHousingDetailsPlace.enabled and PlayerHousingDetailsPlace.attrs.item == nil, "none in the bags to place")
+-- Close unpins.
+PlayerHousingPreviewClose.scripts.OnClick()
+assert(not PlayerHousingPreview:IsShown() and not PlayerHousingDetailsPlace:IsShown(), "closed")
 first.scripts.OnEnter(first)
-assert(PlayerHousingPreview:IsShown(), "preview while hovering")
+assert(PlayerHousingPreview:IsShown() and PlayerHousingPreview.height == 268, "preview while hovering")
 first.scripts.OnLeave(first)
+assert(not PlayerHousingPreview:IsShown(), "nothing pinned: hidden again")
+-- So does the window closing.
+first.scripts.OnClick(first)
+PlayerHousingFrame:Hide()
+assert(not PlayerHousingPreview:IsShown(), "unpinned with the window")
+PlayerHousingFrame:Show()
+first.scripts.OnEnter(first)
+first.scripts.OnLeave(first)
+assert(not PlayerHousingPreview:IsShown(), "stays unpinned")
 -- Filters: unlocked only, a category, search.
 PlayerHousingUnlockedOnly.checked = true
 PlayerHousingUnlockedOnly.scripts.OnClick(PlayerHousingUnlockedOnly)

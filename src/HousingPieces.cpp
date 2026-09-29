@@ -480,6 +480,145 @@ void PlayerHousingMgr::DespawnMarkers(Session& session, Map* map)
     session.markers.clear();
 }
 
+void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto sessionItr = _sessionsByOwner.find(ownerGuid);
+    if (sessionItr == _sessionsByOwner.end())
+        return;
+    Session& session = sessionItr->second;
+    Map* map = player->GetMap();
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+
+    // Rings of players who have left go with them.
+    for (auto itr = session.rings.begin(); itr != session.rings.end();)
+    {
+        bool here = itr->first == self || std::any_of(session.occupants.begin(), session.occupants.end(),
+            [&](ObjectGuid const& occupant) { return occupant.GetCounter() == itr->first; });
+        if (here)
+        {
+            ++itr;
+            continue;
+        }
+        if (GameObject* ring = map->GetGameObject(itr->second.guid))
+            ring->AddObjectToRemoveList();
+        itr = session.rings.erase(itr);
+    }
+
+    bool editing = IsInEditMode(player);
+    auto selectedItr = session.selected.find(self);
+    auto placementItr = editing && selectedItr != session.selected.end() ? session.placements.find(selectedItr->second) : session.placements.end();
+    Placement const* placement = placementItr != session.placements.end() ? &placementItr->second : nullptr;
+    PieceDefinition const* piece = placement ? GetPiece(placement->itemEntry) : nullptr;
+
+    // As wide as the piece: the rune model is about 3.4 yards across at size 1.
+    float scale = 0.0f;
+    if (piece)
+        scale = std::clamp(piece->footprint * (piece->scale > 0.0f ? placement->scale / piece->scale : 1.0f) / 1.5f, 0.3f, 12.0f);
+
+    auto ringItr = session.rings.find(self);
+    if (ringItr != session.rings.end())
+    {
+        SelectionRing const& ring = ringItr->second;
+        if (placement && ring.placementId == placement->id && std::fabs(ring.x - placement->x) < 0.001f && std::fabs(ring.y - placement->y) < 0.001f
+                && std::fabs(ring.z - placement->z) < 0.001f && std::fabs(ring.scale - scale) < 0.001f)
+        {
+            StageMover(player, session);
+            return;
+        }
+        if (GameObject* old = map->GetGameObject(ring.guid))
+            old->AddObjectToRemoveList();
+        session.rings.erase(ringItr);
+    }
+
+    if (placement && piece)
+    {
+        GameObject* ring = new GameObject();
+        if (ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), SELECTION_RING_GO, map, PHASEMASK_NORMAL,
+                placement->x, placement->y, placement->z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
+        {
+            ring->SetObjectScale(scale);
+            ring->SetRespawnTime(0);
+            ring->SetSpawnedByDefault(false);
+            if (map->AddToMap(ring))
+            {
+                ring->SetPhaseMask(session.phaseMask, true);
+                ring->EnableCollision(false);
+                session.rings[self] = SelectionRing{ ring->GetGUID(), placement->id, placement->x, placement->y, placement->z, scale };
+            }
+            else
+                delete ring;
+        }
+        else
+            delete ring;
+    }
+
+    if (editing)
+        StageMover(player, session);
+    else
+    {
+        // Edit mode ended some other way (decorating turned off): its item goes too.
+        auto pending = _pendingMoves.find(player->GetGUID());
+        if (pending != _pendingMoves.end() && pending->second.staged)
+        {
+            CancelMove(player);
+            SendAddonState(player);
+        }
+    }
+}
+
+void PlayerHousingMgr::StageMover(Player* player, Session& session)
+{
+    auto selectedItr = session.selected.find(player->GetGUID().GetCounter());
+    uint32 selected = selectedItr != session.selected.end() && session.placements.count(selectedItr->second) ? selectedItr->second : 0;
+
+    // The mover with the selected piece's circle.
+    uint32 wanted = 0;
+    if (selected)
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(session.placements[selected].itemEntry))
+        {
+            auto moverItr = _moverBySpell.find(proto->Spells[0].SpellId);
+            if (moverItr != _moverBySpell.end())
+                wanted = moverItr->second;
+        }
+
+    auto pending = _pendingMoves.find(player->GetGUID());
+    if (wanted && pending != _pendingMoves.end() && pending->second.moverItem == wanted && player->GetItemCount(wanted))
+    {
+        if (pending->second.placementId != selected)
+        {
+            pending->second.placementId = selected;
+            SendAddonState(player);
+        }
+        return;
+    }
+    if (!wanted && (pending == _pendingMoves.end() || !pending->second.staged))
+        return;
+
+    // Another circle, or none: the old item goes and the right one comes, quietly (it
+    // isn't loot; the chat would fill with it).
+    for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
+        if (entry != wanted)
+            if (uint32 count = player->GetItemCount(entry))
+                player->DestroyItemCount(entry, count, true);
+    _pendingMoves.erase(player->GetGUID());
+
+    if (wanted && !player->GetItemCount(wanted))
+    {
+        ItemPosCountVec dest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, wanted, 1) != EQUIP_ERR_OK)
+        {
+            SendAddonState(player);
+            return;  // bags full: G asks for the item as before, and hears why not
+        }
+        if (Item* item = player->StoreNewItem(dest, wanted, true))
+            player->SendNewItem(item, 1, true, false, false, false);
+    }
+    if (wanted)
+        _pendingMoves[player->GetGUID()] = PendingMove{ selected, wanted, true };
+    SendAddonState(player);
+}
+
 void PlayerHousingMgr::SpawnSteward(Session& session, Map* map)
 {
     Position const& landing = _layout.landing;
@@ -1556,6 +1695,8 @@ bool PlayerHousingMgr::SetEditMode(Player* player, bool on, std::string& reason)
     }
     if (!on && IsDecorating(player))
         SetDecorating(player, false, reason);
+    if (!on)
+        CancelMove(player);
 
     reason = on ? "Edit mode: click a piece (or press Tab), then use the arrow keys and the mouse wheel. Escape when you're done."
                 : "Edit mode off.";

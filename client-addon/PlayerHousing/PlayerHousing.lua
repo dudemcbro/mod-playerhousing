@@ -38,6 +38,7 @@ local state = {
     roommate = false,       -- decorating someone else's island, with their leave
     editMode = false,       -- keys move the selected piece (EditMode.lua)
     grid = 0,               -- yards; 0 is off
+    moverStaged = false,    -- edit mode keeps a Move a Piece ready in the bags, for G
 }
 
 -- Changing things: on your own island, or as a roommate on someone else's.
@@ -64,7 +65,7 @@ local registered = false    -- told the server this session that the addon is he
 local frame, statusText, grid, emptyText, pageText, selectedPanel, selectedText, bagsPanel
 local preview, previewModel, previewName, previewSize, previewNote
 local plan, planRect, planBorder, planYou, planYouLabel
-local previewFacing = 0
+local UpdateDetails         -- the pinned piece's details, next to the window (defined there)
 local homeButton, decorateButton, undoButton, redoButton, prevButton, nextButton
 local pickUpAllButton, spotButton
 local filterButtons = {}
@@ -176,7 +177,12 @@ local function UpdateSpotButton()
     if location then
         spotButton:SetAttribute("type", "item")
         spotButton:SetAttribute("item", location)
-        spotButton:Show()
+        -- The one edit mode keeps ready is for G: no button needed.
+        if state.moverStaged then
+            spotButton:Hide()
+        else
+            spotButton:Show()
+        end
     else
         spotButton:SetAttribute("item", nil)
         spotButton:Hide()
@@ -227,6 +233,7 @@ local function UpdateGrid()
     if page > 1 then prevButton:Enable() else prevButton:Disable() end
     if page < pages then nextButton:Enable() else nextButton:Disable() end
     UpdateSpotButton()
+    UpdateDetails()
 end
 
 ---------------------------------------------------------------------------------------------
@@ -284,6 +291,7 @@ local function UpdateButtons()
     else
         layoutPending = true
     end
+    UpdateDetails()
 end
 
 local function SetShown(show)
@@ -322,6 +330,7 @@ local function OnState(fields)
     state.roommate = fields[16] == "1"
     state.editMode = fields[17] == "1"
     state.grid = tonumber(fields[18] or "") or 0
+    state.moverStaged = fields[19] == "1"
     -- Once a session: the server learns the addon is here, and whether the House Key should
     -- open this window instead of the menu.
     if not registered and db then
@@ -480,8 +489,16 @@ local function SavePosition()
 end
 
 ---------------------------------------------------------------------------------------------
--- Preview: the piece's model, slowly turning, and its size, while hovering its icon.
--- PlayerHousing_Models (PieceModels.lua) comes from the module's content builder.
+-- Preview: the piece's model and size, next to the window, while hovering its icon. A piece
+-- clicked in the Collection stays here (pinned) with what you can do with it; hovering others
+-- shows them for a moment. Drag the model to turn it, the mouse wheel zooms, right-drag moves
+-- it up and down. PlayerHousing_Models (PieceModels.lua) comes from the content builder.
+
+local PREVIEW_HEIGHT, PINNED_HEIGHT = 268, 360
+local view = { facing = 0, zoom = 1, lift = 0, spin = true }
+local shownPiece, pinned        -- { id = item, name = text }
+local dragging, dragX, dragY
+local detailsText, detailsCounts, detailsHint, placeButton, getOneButton, getFiveButton, takeButton
 
 local function Yards(value)
     if value < 1 then
@@ -490,54 +507,32 @@ local function Yards(value)
     return ("%d yd"):format(math.floor(value + 0.5))
 end
 
-local function CreatePreview()
-    preview = CreateFrame("Frame", "PlayerHousingPreview", UIParent)
-    preview:SetWidth(220)
-    preview:SetHeight(268)
-    preview:SetPoint("TOPRIGHT", frame, "TOPLEFT", -4, 0)
-    preview:SetFrameStrata("DIALOG")
-    preview:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 32, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-
-    previewName = preview:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    previewName:SetPoint("TOPLEFT", 10, -10)
-    previewName:SetPoint("TOPRIGHT", -10, -10)
-
-    previewModel = CreateFrame("PlayerModel", "PlayerHousingPreviewModel", preview)
-    previewModel:SetPoint("TOPLEFT", 10, -28)
-    previewModel:SetWidth(200)
-    previewModel:SetHeight(190)
-
-    previewNote = preview:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    previewNote:SetPoint("TOP", previewModel, "TOP", 0, -2)
-    previewNote:SetWidth(180)
-
-    -- The floor plan: what world model buildings get instead of a model.
-    plan = CreateFrame("Frame", "PlayerHousingPreviewPlan", preview)
-    plan:SetAllPoints(previewModel)
-    planBorder = plan:CreateTexture("PlayerHousingPreviewPlanBorder", "BORDER")
-    planBorder:SetTexture(0.15, 0.1, 0.05, 1)
-    planRect = plan:CreateTexture("PlayerHousingPreviewPlanRect", "ARTWORK")
-    planRect:SetTexture(0.6, 0.45, 0.25, 0.9)
-    planYou = plan:CreateTexture("PlayerHousingPreviewPlanYou", "OVERLAY")
-    planYou:SetTexture("Interface\\Minimap\\MinimapArrow")
-    planYouLabel = plan:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    planYouLabel:SetPoint("LEFT", planYou, "RIGHT", 2, 0)
-    plan:Hide()
-
-    previewSize = preview:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    previewSize:SetPoint("BOTTOMLEFT", 10, 12)
-    previewSize:SetPoint("BOTTOMRIGHT", -10, 12)
-
-    preview:SetScript("OnUpdate", function(self, elapsed)
-        previewFacing = (previewFacing + elapsed * 0.6) % (2 * math.pi)
-        previewModel:SetFacing(previewFacing)
-    end)
-    preview:Hide()
+-- Model frames draw the model from its base; this turns it about its middle and fits its
+-- longest side to the frame. The builder measured both from the model's bounds.
+local function FrameModel()
+    local data = shownPiece and PlayerHousing_Models and PlayerHousing_Models[shownPiece.id]
+    local model = data and data[1]
+    if type(model) ~= "string" then
+        return
+    end
+    previewModel:SetFacing(view.facing)
+    if model == "player" or model:find("^creature:") then
+        -- These fit themselves; the wheel and right-drag move them nearer and up or down.
+        previewModel:SetPosition(math.max(-1, math.min(1.5, (view.zoom - 1) * 0.8)), 0, view.lift)
+        return
+    end
+    local fit, midX, midY, midZ = data[5] or 0, data[6] or 0, data[7] or 0, data[8] or 0
+    local scale
+    if fit > 0 then
+        scale = math.min(3, 2.2 / fit) * view.zoom
+    else
+        scale = math.min(1.5, 2.5 / math.max(data[2], data[3], data[4], 0.5)) * view.zoom
+    end
+    -- db.framing "model": offsets in the model's own units (for clients that scale them).
+    local offset = (db and db.framing == "model") and 1 or scale
+    local c, s = math.cos(view.facing), math.sin(view.facing)
+    previewModel:SetModelScale(scale)
+    previewModel:SetPosition(-(midX * c - midY * s) * offset, -(midX * s + midY * c) * offset, -midZ * offset + view.lift)
 end
 
 -- The building seen from above, as big as fits, with you next to it for scale.
@@ -572,12 +567,56 @@ local function ShowFloorPlan(length, depth)
     plan:Show()
 end
 
-local function ShowPreview(piece)
-    if not preview or not piece then
+function UpdateDetails()
+    if not preview then
         return
     end
+    if not pinned then
+        -- Unpinned in combat: its secure button goes once combat is over.
+        if placeButton:IsShown() and not InCombatLockdown() then
+            placeButton:Hide()
+        end
+        return
+    end
+    local piece = pinned
+    local info = PlayerHousingAPI.DescribePiece and PlayerHousingAPI.DescribePiece(piece.id) or {}
+    local status
+    if info.unlocked then
+        status = "|cff40ff40Unlocked.|r " .. (info.cost and ("A copy is " .. info.cost .. ".") or "")
+    elseif info.unlocked == false then
+        status = "|cffff8040Locked|r" .. ((info.hint and info.hint ~= "") and (": " .. info.hint) or ".")
+    else
+        status = "Open the Collection tab for how to unlock it."
+    end
+    detailsText:SetText((info.category and (info.category .. (info.building and ", building" or "") .. "\n") or "") .. status)
+    detailsCounts:SetText(("Bags: %d   Storage: %d   Placed: %d"):format(GetItemCount(piece.id), info.storage or 0, info.placed or 0))
+    if info.unlocked then getOneButton:Enable() getFiveButton:Enable() else getOneButton:Disable() getFiveButton:Disable() end
+    if (info.storage or 0) > 0 then takeButton:Enable() else takeButton:Disable() end
+    -- Place uses the piece in the bags, like its icon on the Bags tab: a secure button, so it
+    -- changes out of combat only.
+    if not InCombatLockdown() then
+        if bagsDirty then
+            ScanBags()
+        end
+        local location = PieceLocation(piece.id)
+        placeButton:SetAttribute("type", "item")
+        placeButton:SetAttribute("item", location)
+        if location and CanEdit() then placeButton:Enable() else placeButton:Disable() end
+    end
+end
 
-    -- { model, length, depth, height }: yards.
+local function SetPreviewHeight()
+    preview:SetHeight(pinned and PINNED_HEIGHT or PREVIEW_HEIGHT)
+end
+
+local function ShowPiece(piece)
+    if not shownPiece or shownPiece.id ~= piece.id then
+        view.facing, view.zoom, view.lift, view.spin = 0, 1, 0, true
+        dragging = nil
+    end
+    shownPiece = piece
+
+    -- { model, length, depth, height, then the model's longest side and middle }: yards.
     local data = PlayerHousing_Models and PlayerHousing_Models[piece.id]
     previewName:SetText(piece.name)
     previewSize:SetText(data and (Yards(data[2]) .. " by " .. Yards(data[3]) .. ", " .. Yards(data[4]) .. " tall") or "")
@@ -594,14 +633,10 @@ local function ShowPreview(piece)
         previewModel:ClearModel()
         previewModel:SetCreature(creature)
         previewModel:SetModelScale(1)
-        previewModel:SetPosition(0, 0, 0)
         previewModel:Show()
     elseif model then
         previewModel:ClearModel()
         previewModel:SetModel(model)
-        -- Big and small pieces both fill the frame.
-        previewModel:SetModelScale(math.min(1.5, 2.5 / math.max(data[2], data[3], data[4], 0.5)))
-        previewModel:SetPosition(0, 0, 0)
         previewModel:Show()
     elseif data then
         previewModel:Hide()
@@ -609,13 +644,207 @@ local function ShowPreview(piece)
     else
         previewModel:Hide()
     end
+    FrameModel()
+
+    local isPinned = pinned and pinned.id == piece.id
+    if isPinned then
+        UpdateDetails()
+    end
+    for _, region in ipairs({ detailsText, detailsCounts, getOneButton, getFiveButton, takeButton }) do
+        if isPinned then region:Show() else region:Hide() end
+    end
+    if not InCombatLockdown() then
+        if isPinned then placeButton:Show() else placeButton:Hide() end
+    end
+    detailsHint:SetText(pinned and not isPinned and "Click it to show it here instead." or "")
+    SetPreviewHeight()
     preview:Show()
 end
 
+-- Hovering: shows the piece until the mouse moves on.
+local function ShowPreview(piece)
+    if preview and piece then
+        ShowPiece(piece)
+    end
+end
+
 local function HidePreview()
-    if preview then
+    if not preview then
+        return
+    end
+    if pinned then
+        ShowPiece(pinned)
+    else
         preview:Hide()
     end
+end
+
+local function Pin(piece)
+    if not preview or not piece then
+        return
+    end
+    pinned = piece
+    ShowPiece(piece)
+end
+
+local function Unpin()
+    pinned = nil
+    dragging = nil
+    if not preview then
+        return
+    end
+    preview:Hide()
+    if InCombatLockdown() then
+        layoutPending = true
+    else
+        placeButton:Hide()
+    end
+end
+
+local function DetailsButton(name, text, width, onClick, tooltipTitle, tooltipText)
+    local button = CreateFrame("Button", name, preview, "UIPanelButtonTemplate")
+    button:SetWidth(width)
+    button:SetHeight(22)
+    button:SetText(text)
+    button:SetScript("OnClick", onClick)
+    button.tooltipTitle, button.tooltipText = tooltipTitle, tooltipText
+    button:SetScript("OnEnter", ShowButtonTooltip)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    return button
+end
+
+local function GetCopies(count)
+    return function()
+        if pinned then
+            PlayerHousing_Command(("get %d %d"):format(pinned.id, count))
+            PlayerHousing_Command("data collection")
+        end
+    end
+end
+
+local function CreatePreview()
+    preview = CreateFrame("Frame", "PlayerHousingPreview", UIParent)
+    preview:SetWidth(220)
+    preview:SetHeight(PREVIEW_HEIGHT)
+    preview:SetPoint("TOPRIGHT", frame, "TOPLEFT", -4, 0)
+    preview:SetFrameStrata("DIALOG")
+    preview:EnableMouse(true)
+    preview:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 32, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+
+    previewName = preview:CreateFontString("PlayerHousingPreviewName", "OVERLAY", "GameFontNormal")
+    previewName:SetPoint("TOPLEFT", 10, -10)
+    previewName:SetPoint("TOPRIGHT", -28, -10)
+    previewName:SetJustifyH("LEFT")
+
+    local close = CreateFrame("Button", "PlayerHousingPreviewClose", preview, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", 2, 2)
+    close:SetScript("OnClick", Unpin)
+
+    previewModel = CreateFrame("PlayerModel", "PlayerHousingPreviewModel", preview)
+    previewModel:SetPoint("TOPLEFT", 10, -28)
+    previewModel:SetWidth(200)
+    previewModel:SetHeight(190)
+    previewModel:EnableMouse(true)
+    previewModel:EnableMouseWheel(true)
+    previewModel:SetScript("OnMouseDown", function(self, button)
+        dragging = button
+        dragX, dragY = GetCursorPosition()
+        view.spin = false
+    end)
+    previewModel:SetScript("OnMouseUp", function()
+        dragging = nil
+    end)
+    previewModel:SetScript("OnMouseWheel", function(self, delta)
+        view.zoom = math.min(4, math.max(0.3, view.zoom * (delta > 0 and 1.2 or 1 / 1.2)))
+        FrameModel()
+    end)
+
+    previewNote = preview:CreateFontString("PlayerHousingPreviewNote", "OVERLAY", "GameFontDisableSmall")
+    previewNote:SetPoint("TOP", previewModel, "TOP", 0, -2)
+    previewNote:SetWidth(180)
+
+    -- The floor plan: what world model buildings get instead of a model.
+    plan = CreateFrame("Frame", "PlayerHousingPreviewPlan", preview)
+    plan:SetAllPoints(previewModel)
+    planBorder = plan:CreateTexture("PlayerHousingPreviewPlanBorder", "BORDER")
+    planBorder:SetTexture(0.15, 0.1, 0.05, 1)
+    planRect = plan:CreateTexture("PlayerHousingPreviewPlanRect", "ARTWORK")
+    planRect:SetTexture(0.6, 0.45, 0.25, 0.9)
+    planYou = plan:CreateTexture("PlayerHousingPreviewPlanYou", "OVERLAY")
+    planYou:SetTexture("Interface\\Minimap\\MinimapArrow")
+    planYouLabel = plan:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    planYouLabel:SetPoint("LEFT", planYou, "RIGHT", 2, 0)
+    plan:Hide()
+
+    previewSize = preview:CreateFontString("PlayerHousingPreviewSize", "OVERLAY", "GameFontHighlightSmall")
+    previewSize:SetPoint("TOPLEFT", 10, -226)
+    previewSize:SetPoint("TOPRIGHT", -10, -226)
+
+    detailsHint = preview:CreateFontString("PlayerHousingPreviewHint", "OVERLAY", "GameFontDisableSmall")
+    detailsHint:SetPoint("TOPLEFT", 10, -246)
+    detailsHint:SetPoint("TOPRIGHT", -10, -246)
+
+    -- The pinned piece's details and buttons.
+    detailsText = preview:CreateFontString("PlayerHousingDetailsText", "OVERLAY", "GameFontHighlightSmall")
+    detailsText:SetPoint("TOPLEFT", 10, -246)
+    detailsText:SetPoint("TOPRIGHT", -10, -246)
+    detailsText:SetJustifyH("LEFT")
+    detailsText:SetHeight(36)
+    detailsText:SetJustifyV("TOP")
+    detailsCounts = preview:CreateFontString("PlayerHousingDetailsCounts", "OVERLAY", "GameFontNormalSmall")
+    detailsCounts:SetPoint("TOPLEFT", 10, -284)
+    detailsCounts:SetPoint("TOPRIGHT", -10, -284)
+    detailsCounts:SetJustifyH("LEFT")
+
+    -- A secure button makes its parent protected: shown, hidden and sized out of combat only.
+    -- The window already is, so it's the window's, over the preview; the preview stays free
+    -- to come and go.
+    placeButton = CreateFrame("Button", "PlayerHousingDetailsPlace", frame, "SecureActionButtonTemplate,UIPanelButtonTemplate")
+    placeButton:SetWidth(76)
+    placeButton:SetHeight(22)
+    placeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", -214, -302)
+    placeButton:SetFrameStrata("DIALOG")
+    placeButton:SetFrameLevel(preview:GetFrameLevel() + 10)
+    placeButton:SetText("Place")
+    placeButton:RegisterForClicks("AnyUp")
+    placeButton.tooltipTitle = "Place one"
+    placeButton.tooltipText = "Click, then click where it should go. Get one first if there's none in your bags; on your island (or as a roommate) only."
+    placeButton:SetScript("OnEnter", ShowButtonTooltip)
+    placeButton:SetScript("OnLeave", GameTooltip_Hide)
+    getOneButton = DetailsButton("PlayerHousingDetailsGetOne", "Get 1", 60, GetCopies(1), "Get a copy", "Into your bags.")
+    getOneButton:SetPoint("TOPLEFT", 88, -302)
+    getFiveButton = DetailsButton("PlayerHousingDetailsGetFive", "Get 5", 60, GetCopies(5), "Get five copies", "Into your bags.")
+    getFiveButton:SetPoint("LEFT", getOneButton, "RIGHT", 2, 0)
+    takeButton = DetailsButton("PlayerHousingDetailsTake", "Take from storage", 200, function()
+        if pinned then
+            PlayerHousing_Command("take " .. pinned.id)
+            PlayerHousing_Command("data collection")
+        end
+    end, "Take from House Storage", "The ones that came back while your bags were full.")
+    takeButton:SetPoint("TOPLEFT", 10, -326)
+    placeButton:Hide()
+
+    preview:SetScript("OnUpdate", function(self, elapsed)
+        if dragging then
+            local x, y = GetCursorPosition()
+            if dragging == "LeftButton" then
+                view.facing = (view.facing + (x - dragX) * 0.015) % (2 * math.pi)
+            else
+                view.lift = math.max(-3, math.min(3, view.lift + (y - dragY) * 0.01))
+            end
+            dragX, dragY = x, y
+            FrameModel()
+        elseif view.spin then
+            view.facing = (view.facing + elapsed * 0.6) % (2 * math.pi)
+            FrameModel()
+        end
+    end)
+    preview:Hide()
 end
 
 local function MakeSlot(index)
@@ -866,7 +1095,7 @@ local function CreateWindow()
 
     SetFilter("all")
     CreatePreview()
-    frame:HookScript("OnHide", HidePreview)
+    frame:HookScript("OnHide", Unpin)
     for _, hook in ipairs(windowHooks) do
         hook(frame)
     end
@@ -927,7 +1156,8 @@ driver:SetScript("OnUpdate", function(self, elapsed)
         sinceSend = 0
     end
     pending.forward, pending.left, pending.up, pending.turn = 0, 0, 0, 0
-    if bagsDirty and frame and frame:IsShown() then
+    -- Even with the window shut: edit mode's G uses the spot button.
+    if bagsDirty and frame then
         UpdateGrid()
     end
 end)
@@ -1021,6 +1251,13 @@ PlayerHousingAPI = {
     MakeButton = MakeButton,
     ShowPreview = ShowPreview,
     HidePreview = HidePreview,
+    -- The Collection's click: the piece stays next to the window with its buttons.
+    Pin = Pin,
+    Unpin = Unpin,
+    RefreshPin = function() UpdateDetails() end,
+    -- Window.lua fills this in: function(item) returning { category, building, unlocked,
+    -- hint, cost, storage, placed }.
+    DescribePiece = nil,
     WIDTH = WIDTH,
     CONTENT_TOP = CONTENT_TOP,
     CONTENT_HEIGHT = CONTENT_HEIGHT,
@@ -1047,6 +1284,12 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
     elseif message == "auto" then
         db.autoShow = not db.autoShow
         Print(db.autoShow and "the window opens by itself when you arrive home." or "the window only opens with /housing.")
+    elseif message == "framing" then
+        -- Previews center each model from its measured middle. If they sit too high or low
+        -- on some client, this tries the other way of reading the model frame's offsets.
+        db.framing = db.framing ~= "model" and "model" or nil
+        FrameModel()
+        Print(db.framing and "previews use the second way of centering. /housing framing goes back." or "previews use the usual centering.")
     elseif message == "key" then
         db.keyWindow = db.keyWindow == false
         PlayerHousing_Command("addon 1 " .. (db.keyWindow and "1" or "0"))

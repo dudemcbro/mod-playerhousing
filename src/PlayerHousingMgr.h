@@ -33,6 +33,7 @@ namespace Housing
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 HOOK_MARKER_GO = 903990;
+    constexpr uint32 SELECTION_RING_GO = 903991;  // edit mode: under the selected piece
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
@@ -560,6 +561,17 @@ private:
         bool editCopy{false};
     };
 
+    // Edit mode: the ring under a player's selected piece, and where it was put.
+    struct SelectionRing
+    {
+        ObjectGuid guid;
+        uint32 placementId{0};
+        float x{0.0f};
+        float y{0.0f};
+        float z{0.0f};
+        float scale{0.0f};
+    };
+
     // One per occupied island. Islands share the spot on an open-world map and are kept apart
     // by giving each owner an exact phase of their own (see IsHousingPhase).
     struct Session
@@ -576,6 +588,7 @@ private:
         std::map<uint32, Housing::Placement> placements;
         std::unordered_map<uint32, SpawnedPiece> spawned;
         std::unordered_map<uint32, ObjectGuid> markers;  // surface placement id -> hook marker
+        std::unordered_map<ObjectGuid::LowType, SelectionRing> rings;  // edit mode, per player
         ObjectGuid stewardGuid;
     };
 
@@ -661,6 +674,10 @@ private:
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);
     void SpawnMarkers(Session& session, Map* map);
     void DespawnMarkers(Session& session, Map* map);
+    // Edit mode, each update: the ring under the selected piece, and its Move a Piece item
+    // waiting in the bags so the addon's G starts the circle at once.
+    void UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid);
+    void StageMover(Player* player, Session& session);
     void SpawnSteward(Session& session, Map* map);
     void PlaceStarterWreckage(Session& session, Map* map);
     bool CheckLimit(Session const& session, Housing::PieceDefinition const& piece, std::string& reason) const;
@@ -781,6 +798,7 @@ private:
     {
         uint32 placementId{0};
         uint32 moverItem{0};
+        bool staged{false};  // edit mode's, kept ready for the selected piece
     };
     std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
     std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it

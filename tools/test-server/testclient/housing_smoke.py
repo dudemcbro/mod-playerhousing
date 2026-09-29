@@ -21,6 +21,7 @@ HOUSING_MAP = 1
 STEWARD = 900200
 HOUSE_KEY, KEY_SPELL = 902000, 18282
 MARKER_GO = 903990
+RING_GO = 903991                                          # edit mode: under the selected piece
 
 CHAIR, TABLE, LANTERN = 901105, 901106, 901104          # first-login gifts
 CART, SHREDDED_TENT = 902200, 902201                    # wreckage on the island
@@ -664,6 +665,31 @@ def main():
         check("in edit mode a click selects the piece, with no menu", menu is None and state is not None and state[4] == str(chair["id"]),
               str(menu) + " " + str(state))
 
+        # A ring under the selected piece, and Move a Piece waiting in the bags so the addon's
+        # G starts the circle with one press.
+        wait_for(lambda: nearest_go(owner, RING_GO) is not None and any(owner.count_item(e) for e in MOVERS), 3, owner)
+        ring = nearest_go(owner, RING_GO)
+        staged = next((e for e in MOVERS if owner.count_item(e)), None)
+        state = addon_state(owner)
+        check("the selected piece gets a ring under it", ring is not None and math.dist((ring.x, ring.y), (chair["x"], chair["y"])) < 0.1,
+              str(ring and (ring.x, ring.y)))
+        check("edit mode keeps Move a Piece ready for G", staged is not None and state is not None and len(state) > 19
+              and state[19] == "1" and state[14] == str(staged), str(state))
+        if staged:
+            spot = (chair["x"] + 1.5, chair["y"] - 1.0, L["ground"])
+            msgs = owner.use_item(staged, spell_of(staged), spot)
+            moved = placement_of(owner_guid, CHAIR)
+            check("G's circle moves the piece", moved is not None and math.dist((moved["x"], moved["y"]), spot[:2]) < 0.01,
+                  joined(msgs) + " " + str(moved))
+            wait_for(lambda: (lambda r: r is not None and moved is not None and math.dist((r.x, r.y), (moved["x"], moved["y"])) < 0.1)(
+                nearest_go(owner, RING_GO)), 3, owner)
+            owner.pump(1.0)
+            ring = nearest_go(owner, RING_GO)
+            check("the ring follows it, and another Move a Piece is ready", ring is not None and moved is not None
+                  and math.dist((ring.x, ring.y), (moved["x"], moved["y"])) < 0.1 and sum(owner.count_item(e) for e in MOVERS) == 1,
+                  str(ring and (ring.x, ring.y)) + " " + str([owner.count_item(e) for e in MOVERS]))
+            owner.command(".house undo")
+
         # Facing east: forward is +x, left is +y. (Positions read back with the float column's
         # six digits, so to a tenth of a yard out here.)
         msgs = owner.command(".house shift 0.5 0 0 0 %d" % chair["id"]) + owner.command(".house shift 0.5 0.25 0 90 %d" % chair["id"])
@@ -696,9 +722,15 @@ def main():
         second = addon_state(owner)
         check("Tab picks the next piece nearby, then the one after", first is not None and second is not None
               and first[4] not in ("0", str(chair["id"])) and second[4] not in ("0", first[4]), str(first) + " / " + str(second))
+        owner.pump(0.5)
+        rings = [o for o in owner.find_objects(type_id=TYPEID_GAMEOBJECT) if o.entry == RING_GO]
+        check("one ring, under the piece selected now", len(rings) == 1, str(len(rings)))
     msgs = owner.command(".house edit off")
     state = addon_state(owner)
     check("edit mode off stops decorating too", state is not None and state[17] == "0" and state[3] == "0", joined(msgs) + " " + str(state))
+    wait_for(lambda: nearest_go(owner, RING_GO) is None and not any(owner.count_item(e) for e in MOVERS), 3, owner)
+    check("and the ring and the ready Move a Piece go", nearest_go(owner, RING_GO) is None and not any(owner.count_item(e) for e in MOVERS),
+          str([owner.count_item(e) for e in MOVERS]))
     owner.command(".house decorate on")
 
     # ------------------------------------------------------------- the addon's window

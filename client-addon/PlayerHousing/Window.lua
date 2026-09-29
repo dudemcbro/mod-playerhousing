@@ -304,7 +304,7 @@ local function UpdateCollection()
             end
         end
     end
-    collectionStatus:SetText(("%d of %d unlocked. Click: get one. Shift-click: five."):format(unlocked, total))
+    collectionStatus:SetText(("%d of %d unlocked. Click a piece to place it or get copies."):format(unlocked, total))
 end
 
 local function CycleCategory(step)
@@ -332,9 +332,7 @@ local function CollectionTooltip(button)
     end
     GameTooltip:AddLine(("In your bags: %d. In House Storage: %d. Placed: %d."):format(GetItemCount(id), collection.storage[id] or 0,
         collection.placed[id] or 0), 1, 1, 1, true)
-    if collection.unlocked[id] then
-        GameTooltip:AddLine("Click: get a copy. Shift-click: five.", 0.4, 1, 0.4)
-    end
+    GameTooltip:AddLine("Click: show it next to the window, to place it or get copies.", 0.4, 1, 0.4, true)
     GameTooltip:Show()
     API.ShowPreview({ id = id, name = info[2] })
 end
@@ -386,15 +384,9 @@ local function CreateCollection()
             API.HidePreview()
         end)
         button:SetScript("OnClick", function(self)
-            local info = self.info
-            if not info then
-                return
+            if self.info then
+                API.Pin({ id = self.info[1], name = self.info[2] })
             end
-            if not collection.unlocked[info[1]] then
-                API.Print(info[2] .. " is locked" .. (info[7] ~= "" and (": " .. info[7]) or "."))
-                return
-            end
-            Do(("get %d %d"):format(info[1], IsShiftKeyDown() and 5 or 1), "collection")
         end)
         button:Hide()
         collectionSlots[index] = button
@@ -807,6 +799,7 @@ end)
 -- The collection list feeds the Collection and Storage tabs.
 
 API.OnData("collection", function(list)
+    collection.loaded = true
     wipe(collection.unlocked)
     wipe(collection.fresh)
     wipe(collection.storage)
@@ -829,7 +822,29 @@ API.OnData("collection", function(list)
     end
     UpdateCollection()
     UpdateStorage()
+    API.RefreshPin()
 end)
+
+-- For the piece pinned next to the window.
+function API.DescribePiece(id)
+    local info = pieceById[id]
+    if not info then
+        return {}
+    end
+    local unlocked   -- nil until the server has sent the collection
+    if collection.loaded then
+        unlocked = collection.unlocked[id] == true
+    end
+    return {
+        category = PlayerHousing_Categories[info[3]],
+        building = info[4] == 1,
+        unlocked = unlocked,
+        hint = info[7],
+        cost = Money(info[5]),
+        storage = collection.storage[id] or 0,
+        placed = collection.placed[id] or 0,
+    }
+end
 
 -- The Placed tab keeps up with pieces placed and picked up.
 local lastCounts

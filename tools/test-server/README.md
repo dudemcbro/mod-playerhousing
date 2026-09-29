@@ -118,7 +118,7 @@ More accounts: `python3 testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (235 checks, 236 with `PlayerHousing.Catalog = everything`):
+checking the database and what the client sees after each step (241 checks, 242 with `PlayerHousing.Catalog = everything`):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -134,7 +134,9 @@ checking the database and what the client sees after each step (235 checks, 236 
   spots off the island; swimmers brought back to the beach
 - edit mode (the addon's keys): a click only selects, `.house shift` moves and turns a
   piece relative to your facing, a quick run of shifts is one undo step, a flood of them
-  is capped, Tab picks the next piece
+  is capped, Tab picks the next piece; a ring under the selected piece, and a Move a
+  Piece item kept ready for the addon's G that moves it and comes back for the next move,
+  both gone when edit mode ends
 - the addon's window: its lists (Collection, Placed, Island, Layouts, Guests, Visit),
   getting copies, weather by name, House Storage, and the House Key opening the window
   (or its menu when the player prefers)
