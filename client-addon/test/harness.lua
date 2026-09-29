@@ -62,6 +62,7 @@ function Widget:LockHighlight() self.highlighted = true end
 function Widget:UnlockHighlight() self.highlighted = false end
 function Widget:SetDesaturated(v) self.desaturated = v end
 function Widget:SetTexture(t) self.texture = t end
+function Widget:SetTexCoord(...) self.texCoord = { ... } end
 function Widget:SetPosition(x, y, z) self.position = { x, y, z } end
 function Widget:GetFrameLevel() return rawget(self, "level") or 1 end
 function Widget:SetModelScale(v) self.modelScale = v end
@@ -155,8 +156,8 @@ assert(#sent == 0 and #printed == 1, "no command before the server reports housi
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t0\t0\t\t0\t200\t0\t10\t\t\t\t0", "WHISPER", "Stranger")
 assert(not PlayerHousingFrame:IsShown(), "spoofed state ignored")
 
--- Arriving home: the window opens by itself on the Collection, where a click on a piece in
--- the bags places it (a secure button using the bag slot).
+-- Arriving home: the window opens by itself on the Collection, where a click on a piece shows
+-- it next to the window and a ghost of it follows you, to set down with G.
 PlayerHousingFrame.shown = false
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t12\tBroken Cart\t5\t200\t1\t10\tplaced Barrel\tKrookowner\t\t1", "WHISPER", "Krookowner")
 assert(PlayerHousingFrame:IsShown(), "window opened on arrival")
@@ -164,9 +165,9 @@ assert(PlayerHousingDB.known == true)
 assert(PlayerHousingCollectionPanel:IsShown() and not PlayerHousingTabBags, "the Collection is the first tab; no Bags tab")
 local chairSlot, barrelPieceSlot, cartSlot = PlayerHousingCollectionSlot1, PlayerHousingCollectionSlot11, PlayerHousingCollectionSlot28
 assert(chairSlot.info[1] == 901105 and barrelPieceSlot.info[1] == 902101 and cartSlot.info[1] == 902200, "the Collection's order")
-assert(chairSlot.attrs.type1 == "item" and chairSlot.attrs.item1 == "0 1" and chairSlot.count.text == 5, "the chairs in the bags: a click places one")
-assert(barrelPieceSlot.attrs.item1 == "1 4" and cartSlot.attrs.item1 == "0 2", "the barrel and the cart too")
-assert(PlayerHousingCollectionSlot2.attrs.type1 == nil and PlayerHousingCollectionSlot2.attrs.item1 == nil, "none of the table: a click shows it")
+assert(chairSlot.location == "0 1" and chairSlot.count.text == 5, "the chairs in the bags, for dragging onto an action bar")
+assert(barrelPieceSlot.location == "1 4" and cartSlot.location == "0 2", "the barrel and the cart too")
+assert(PlayerHousingCollectionSlot2.location == nil and not chairSlot.protected, "none of the table; plain buttons, fine in combat")
 assert(PlayerHousingSelected:IsShown(), "selected panel shown")
 local function SEL(text)
   for _, f in ipairs(frames) do if f.parent == PlayerHousingSelected and f.text == text then return f end end
@@ -314,16 +315,18 @@ fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicke
 assert(PlayerHousingButton4.enabled == true, "redo available")
 SEL("Pick up").scripts.OnClick(); assert(last() == ".house pickup 13")
 
--- Moving with the targeting circle: the server hands over a Move a Piece item and says
--- which; a button uses it. The item never shows in the grid.
-SEL("Move").scripts.OnClick(); assert(last() == ".house move", last())
-assert(not PlayerHousingSpotButton:IsShown(), "no spot button before the move starts")
+-- Moving: the piece follows you as a ghost, set down with G (below).
+SEL("Move").scripts.OnClick(); assert(last() == ".house ghost move", last())
+assert(not PlayerHousingSpotButton:IsShown(), "no spot button: no circle")
+
+-- Setting down a saved set uses the targeting circle: the server hands over a Move a Piece
+-- item and says which; a button uses it. The item never shows in the grid.
 bags[0][6] = {901193, 1}
 fire("BAG_UPDATE")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicked up Broken Cart\tKrookowner\t\t0\t901193", "WHISPER", "Krookowner")
 assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "0 6", "spot button uses the mover")
 assert(PlayerHousingSpotButton.attrs.type == "item")
--- Placed: the item is used up and the server says so.
+-- Set down: the item is used up and the server says so.
 bags[0][6] = nil
 fire("BAG_UPDATE")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
@@ -339,13 +342,51 @@ bags[1][9] = nil
 fire("BAG_UPDATE")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 
--- Another like this: the server puts one in the bags, and the same button places it.
+-- Another like this: the server sends a ghost of a new one after you.
 SEL("Another").scripts.OnClick(); assert(last() == ".house another", last())
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t902101", "WHISPER", "Krookowner")
-assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "1 4", "spot button uses the barrel")
-assert(PlayerHousingSpotButton.text == "Now place the copy", PlayerHousingSpotButton.text)
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t14\tBarrel\t6\t200\t1\t10\tplaced Barrel\tKrookowner\t\t0\t0\t0", "WHISPER", "Krookowner")
-assert(not PlayerHousingSpotButton:IsShown(), "spot button gone once the copy is placed")
+
+-- A ghost following you (fields 21 to 23): the same keys as edit mode drive it, even outside
+-- edit mode, and the banner says what they do.
+local GHOST = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t902101\tnew\t1"
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST, "WHISPER", "Krookowner")
+assert(overrides.G == "PlayerHousingEditFollow" and overrides["SHIFT-G"] == "PlayerHousingEditFollow" and overrides.ESCAPE == "PlayerHousingEditDone",
+  "ghost keys bound outside edit mode")
+assert(PlayerHousingEditHud:IsShown() and PlayerHousingEditHudTitle.text == "Placing" and PlayerHousingEditHudName.text == "Barrel",
+  tostring(PlayerHousingEditHudTitle.text) .. " " .. tostring(PlayerHousingEditHudName.text))
+assert(PlayerHousingEditHudSetDown:IsShown() and PlayerHousingEditHudAnother:IsShown() and PlayerHousingEditHudCancel:IsShown()
+  and not PlayerHousingEditHudRow:IsShown() and not PlayerHousingEditHudUndo:IsShown(), "the ghost's buttons, not edit mode's")
+PlayerHousingEditForward.scripts.OnClick(PlayerHousingEditForward, "LeftButton", true)
+assert(last() == ".house ghost adjust 0.25 0.00 0.00 0", last())
+PlayerHousingEditForward.scripts.OnClick(PlayerHousingEditForward, "LeftButton", false)
+PlayerHousingEditLeft.scripts.OnClick(PlayerHousingEditLeft, "LeftButton", true)
+assert(last() == ".house ghost adjust 0.00 0.25 0.00 0", last())
+PlayerHousingEditLeft.scripts.OnClick(PlayerHousingEditLeft, "LeftButton", false)
+PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
+assert(last() == ".house ghost adjust 0.00 0.00 0.00 15", last())
+PlayerHousingEditRaiseWheelDown.scripts.OnClick(PlayerHousingEditRaiseWheelDown, "LeftButton", true)
+assert(last() == ".house ghost adjust 0.00 0.00 -0.10 0", last())
+PlayerHousingEditPickUp.scripts.OnClick(PlayerHousingEditPickUp, "LeftButton", true)
+assert(last() == ".house ghost adjust 0.00 0.00 -0.10 0", "Delete waits while a piece follows you: " .. last())
+PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
+assert(last() == ".house ghost place", last())
+IsShiftKeyDown = function() return true end
+PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
+assert(last() == ".house ghost place another", last())
+IsShiftKeyDown = function() return false end
+PlayerHousingEditDone.scripts.OnClick(PlayerHousingEditDone, "LeftButton", true)
+assert(last() == ".house ghost cancel", last())
+PlayerHousingEditHudSetDown.scripts.OnClick(PlayerHousingEditHudSetDown)
+assert(last() == ".house ghost place", last())
+-- Moving pieces: no "and another".
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST:gsub("\tnew\t", "\tmove\t"), "WHISPER", "Krookowner")
+assert(PlayerHousingEditHudTitle.text == "Moving" and not PlayerHousingEditHudAnother:IsShown(), "moving: no another")
+IsShiftKeyDown = function() return true end
+PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
+assert(last() == ".house ghost place", "Shift+G sets a moved piece down: " .. last())
+IsShiftKeyDown = function() return false end
+-- Set down: the keys and the banner go.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t0\t\t1", "WHISPER", "Krookowner")
+assert(next(overrides) == nil and not PlayerHousingEditHud:IsShown(), "keys and banner gone after the ghost")
 
 -- Edit mode: the server says so, and the keys come on.
 local function click(name, down) _G[name].scripts.OnClick(_G[name], "LeftButton", down) end
@@ -353,7 +394,7 @@ local function flush() now = now + 1; OnUpdate(driver, 1) end
 local EDIT = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t1\t0"
 fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
 assert(overrides.UP == "PlayerHousingEditForward" and overrides["SHIFT-TAB"] == "PlayerHousingEditNext", "keys bound")
-assert(overrides.G == "PlayerHousingSpotButton" and overrides.ESCAPE == "PlayerHousingEditDone")
+assert(overrides.G == "PlayerHousingEditFollow" and overrides.ESCAPE == "PlayerHousingEditDone")
 assert(PlayerHousingEditHud:IsShown() and PlayerHousingEditHudName.text == "Barrel", "edit mode banner")
 assert(PlayerHousingButton2.text == "Done", "edit button shows Done in edit mode")
 flush()
@@ -439,33 +480,17 @@ click("PlayerHousingEditNext", true); assert(last() == ".house select next", las
 click("PlayerHousingEditPickUp", true); assert(last() == ".house pickup 13", last())
 click("PlayerHousingEditUndo", true); assert(last() == ".house undo", last())
 click("PlayerHousingEditRedo", true); assert(last() == ".house redo", last())
--- G with no move under way asks for one.
-PlayerHousingSpotButton:Click()
-assert(last() == ".house move", last())
-assert(PlayerHousingEditHudLast.text:find("press G again"), PlayerHousingEditHudLast.text)
--- Edit mode keeps Move a Piece ready, so G starts the circle at once, with the window shut
--- too: the button uses it, out of sight.
-PlayerHousingFrame.shown = false
-bags[0][7] = {901190, 1}
-fire("BAG_UPDATE")
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t901190\t0\t0\t1\t0\t1", "WHISPER", "Krookowner")
-flush()
-assert(PlayerHousingSpotButton.attrs.item == "0 7" and not PlayerHousingSpotButton:IsShown(), "ready for G, out of sight")
+-- G picks the selected piece up: it follows you until G again sets it down.
+click("PlayerHousingEditFollow", true)
+assert(last() == ".house ghost move", last())
+assert(PlayerHousingEditHudLast.text:find("G again"), PlayerHousingEditHudLast.text)
+-- Nothing selected: G says so.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t0\t\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t1\t0", "WHISPER", "Krookowner")
 count = #sent
-targeting = true
-PlayerHousingSpotButton:Click()
-assert(#sent == count, "G uses the item: nothing to ask the server")
-assert(PlayerHousingEditHudLast.text:find("click the new spot"), PlayerHousingEditHudLast.text)
-targeting = false
--- A copy waiting for its spot ("Another") comes first: its button shows, and G places it.
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t901190\t902101\t0\t1\t0\t1", "WHISPER", "Krookowner")
-flush()
-assert(PlayerHousingSpotButton.attrs.item == "1 4" and PlayerHousingSpotButton.text == "Now place the copy", tostring(PlayerHousingSpotButton.attrs.item))
-bags[0][7] = nil
-fire("BAG_UPDATE")
+click("PlayerHousingEditFollow", true)
+assert(#sent == count and PlayerHousingEditHudLast.text:find("select a piece first"), PlayerHousingEditHudLast.text)
 fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
 flush()
-PlayerHousingFrame.shown = true
 -- Escape cancels the targeting circle first, then leaves edit mode.
 targeting = true
 count = #sent
@@ -551,16 +576,14 @@ for index = 1, 36 do
 end
 assert(lockedSlot and lockedSlot.icon.desaturated, "locked pieces are grey")
 assert(PlayerHousingCollectionCount.text:find("^3 of "), PlayerHousingCollectionCount.text)
--- A click pins the piece next to the window, with its details and buttons.
-local count = #sent
+-- A click pins the piece next to the window, with its details and buttons, and a ghost of it
+-- follows you on the island (the server takes one from the bags or storage, or a new copy).
 first:Click("LeftButton")
-assert(#sent == count, "a click alone gets nothing")
+assert(last() == ".house ghost 901105", last())
 assert(PlayerHousingPreview:IsShown() and PlayerHousingPreview.height == 360, "pinned: " .. tostring(PlayerHousingPreview.height))
 assert(PlayerHousingDetailsText.text:find("Unlocked"), PlayerHousingDetailsText.text)
 assert(PlayerHousingDetailsCounts.text == "Bags: 5   Storage: 2   Placed: 1", PlayerHousingDetailsCounts.text)
-assert(PlayerHousingDetailsPlace:IsShown() and PlayerHousingDetailsPlace.attrs.type == "item" and PlayerHousingDetailsPlace.attrs.item == "0 1"
-  and PlayerHousingDetailsPlace.enabled, "Place uses the chair in the bags")
-assert(PlayerHousingDetailsPlace.parent == PlayerHousingFrame, "the secure button belongs to the window, not the preview")
+assert(PlayerHousingDetailsPlace:IsShown() and PlayerHousingDetailsPlace.enabled and not PlayerHousingDetailsPlace.protected, "Place: a plain button")
 assert(PlayerHousingDetailsTake.enabled and PlayerHousingDetailsGetOne.enabled)
 PlayerHousingDetailsGetOne.scripts.OnClick()
 assert(sent[#sent - 1] == ".house get 901105 1" and last() == ".house data collection", sent[#sent - 1])
@@ -568,6 +591,8 @@ PlayerHousingDetailsGetFive.scripts.OnClick()
 assert(sent[#sent - 1] == ".house get 901105 5", sent[#sent - 1])
 PlayerHousingDetailsTake.scripts.OnClick()
 assert(sent[#sent - 1] == ".house take 901105", sent[#sent - 1])
+PlayerHousingDetailsPlace:Click()
+assert(last() == ".house ghost 901105", "Place sends a ghost too: " .. last())
 -- Hovering another piece shows it for a moment; moving off brings the pinned one back.
 lockedSlot.scripts.OnEnter(lockedSlot)
 assert(PlayerHousingPreviewName.text == lockedSlot.info[2] and not PlayerHousingDetailsPlace:IsShown(), "hovered piece, no buttons")
@@ -575,48 +600,28 @@ assert(PlayerHousingPreviewHint.text ~= "", "says how to show it instead")
 lockedSlot.scripts.OnLeave(lockedSlot)
 assert(PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == first.info[2] and PlayerHousingDetailsPlace:IsShown(),
   "back to the pinned piece: " .. tostring(PlayerHousingPreviewName.text))
--- In combat the secure Place button stays as it is.
-combat = true
-lockedSlot.scripts.OnEnter(lockedSlot)
-lockedSlot.scripts.OnLeave(lockedSlot)
-combat = false
--- None in the bags: Place's first click gets one, and then it lights up to place it.
+-- None in the bags: still a ghost (the server finds one). In combat too: nothing secure.
 local barrelSlot
 for index = 1, 36 do
   local slot = _G["PlayerHousingCollectionSlot" .. index]
   if slot.info and slot.info[1] == 901106 then barrelSlot = slot end
 end
-barrelSlot:Click("LeftButton")
-local place = PlayerHousingDetailsPlace
-assert(place.enabled and place.attrs.item == nil, "unlocked, none in the bags: Place still works")
-place:Click()
-assert(sent[#sent - 1] == ".house get 901106 1" and last() == ".house data collection", sent[#sent - 1])
-bags[2] = { [1] = {901106, 1} }
-names[901106] = "Furnishing: Tiny Inn Table"
-fire("BAG_UPDATE")
-OnUpdate(driver, 1)
-assert(place.attrs.item == "2 1" and place.highlighted and PlayerHousingDetailsText.text:find("click Place again"), PlayerHousingDetailsText.text)
-count = #sent
-place:Click()
-assert(#sent == count and not place.highlighted, "the second click uses it")
-bags[2] = nil
-fire("BAG_UPDATE")
-OnUpdate(driver, 1)
--- Pinning another piece in combat: Place can't change until combat ends, then catches up.
-first:Click("LeftButton")
-assert(place.attrs.item == "0 1")
 combat = true
 barrelSlot:Click("LeftButton")
-assert(place.attrs.item == "0 1", "no change in combat")
+assert(last() == ".house ghost 901106" and PlayerHousingDetailsPlace.enabled and PlayerHousingDetailsPlace:IsShown(), last())
 combat = false
-fire("PLAYER_REGEN_ENABLED")
-assert(place.attrs.item == nil, "caught up after combat: " .. tostring(place.attrs.item))
+-- Off the island, a click only shows it.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t0\t0\t\t0\t200\t0\t10\t\t\t\t0", "WHISPER", "Krookowner")
+count = #sent
+first:Click("LeftButton")
+assert(#sent == count and not PlayerHousingDetailsPlace.enabled, "off the island: nothing sent, Place off")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 -- A locked piece says how to unlock it, and can't be had yet.
 count = #sent
 lockedSlot:Click("LeftButton")
 assert(#sent == count, "locked: nothing sent")
 assert(PlayerHousingDetailsText.text:find("Locked") and not PlayerHousingDetailsGetOne.enabled, PlayerHousingDetailsText.text)
-assert(not PlayerHousingDetailsPlace.enabled and PlayerHousingDetailsPlace.attrs.item == nil, "none in the bags to place")
+assert(not PlayerHousingDetailsPlace.enabled, "locked, none in the bags: nothing to place")
 -- Close unpins.
 PlayerHousingPreviewClose.scripts.OnClick()
 assert(not PlayerHousingPreview:IsShown() and not PlayerHousingDetailsPlace:IsShown(), "closed")
@@ -674,10 +679,9 @@ assert(PlayerHousingStoragePanelRow1:IsShown() and PlayerHousingStoragePanelRow1
 assert(PlayerHousingStoragePanelRow2Text.text == "Westfall Chair x2", PlayerHousingStoragePanelRow2Text.text)
 PlayerHousingStoragePanelRow2Button2.scripts.OnClick()
 assert(sent[#sent - 1] == ".house take 901105", sent[#sent - 1])
--- Place: one out of storage, and the preview's Place lights up for it.
+-- Place: a ghost of one follows you (the server takes it out of storage when it's set down).
 PlayerHousingStoragePanelRow2Button1.scripts.OnClick()
-assert(sent[#sent - 1] == ".house take 901105 1" and last() == ".house data collection" and PlayerHousingPreview:IsShown()
-  and PlayerHousingPreviewName.text == "Westfall Chair", sent[#sent - 1])
+assert(last() == ".house ghost 901105" and PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == "Westfall Chair", last())
 PlayerHousingPreviewClose.scripts.OnClick()
 PlayerHousingTakeAll.scripts.OnClick()
 assert(sent[#sent - 1] == ".house take all", sent[#sent - 1])

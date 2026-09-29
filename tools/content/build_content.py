@@ -75,6 +75,15 @@ QUALITY = {"Starter": 1, "Buildings": 2, "Exploration": 2, "Dungeons": 3, "Raids
 CUSTOM_DISPLAY_BASE = 190000   # plus the icon's SpellIcon.dbc id, so ids never move
 HOUSE_KEY, HOUSE_KEY_DISPLAY = 902000, 22071   # as in mod_playerhousing_world.sql
 CLIENT_ITEMS = os.path.join(MODULE, "tools/gm-island-cleared/client_items.tsv")
+# Ghosts: the see-through copy of a piece that follows a player placing or moving it. Its
+# creature display (and model) is Housing::GHOST_DISPLAY_BASE plus the item's offset.
+GHOST_DISPLAY_BASE = 60000
+GHOST_ALPHA = 150            # 0 (unseen) to 255 (solid)
+MANNEQUIN_DISPLAY = 49       # the mannequin's figure, as in mod_playerhousing_world.sql
+
+
+def ghost_id(item):
+    return GHOST_DISPLAY_BASE + item - 900000
 
 
 def live_entry(item):
@@ -217,6 +226,72 @@ def load_models(dbc):
     return models
 
 
+class Ghosts:
+    """The ghosts' creature models and displays. A piece's own model gets a creature model of
+    its own; a figurine or a mannequin, already a creature, gets a see-through copy of its
+    display. The server reads them from its *_dbc tables; the client patch adds the same rows
+    to the client's files (tools/gm-island-cleared/dbc_add_ghosts.py)."""
+
+    MODEL_COLUMNS = ("`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, "
+                     "`FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, "
+                     "`SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, "
+                     "`GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, "
+                     "`MissileCollisionPush`, `MissileCollisionRaise`")
+    DISPLAY_COLUMNS = ("`ID`, `ModelID`, `SoundID`, `ExtendedDisplayInfoID`, `CreatureModelScale`, `CreatureModelAlpha`, "
+                       "`TextureVariation_1`, `TextureVariation_2`, `TextureVariation_3`, `PortraitTextureName`, `BloodLevel`, "
+                       "`BloodID`, `NPCSoundID`, `ParticleColorID`, `CreatureGeosetData`, `ObjectEffectPackageID`")
+
+    def __init__(self, dbc):
+        rows, text = read_dbc(os.path.join(dbc, "CreatureDisplayInfo.dbc"))
+        # Every field of each display, strings read, for copies.
+        self.displays = {ints[0]: list(ints[:4]) + [floats[4], ints[5]] + [text(ints[i]) for i in range(6, 10)] + list(ints[10:16])
+                         for ints, floats in rows}
+        self.models = []   # (ghost id, model path, box)
+        self.copies = []   # (ghost id, the display copied)
+
+    def model(self, item, path, box):
+        if path.lower().endswith((".m2", ".mdx")):
+            self.models.append((ghost_id(item), path, tuple(box or (0.0,) * 6)))
+
+    def copy(self, item, display):
+        if display in self.displays:
+            self.copies.append((ghost_id(item), display))
+
+    def sql(self, first_item, last_item):
+        """The server's rows for the items first_item to last_item."""
+        low, high = ghost_id(first_item), ghost_id(last_item)
+        models = [m for m in self.models if low <= m[0] <= high]
+        copies = [c for c in self.copies if low <= c[0] <= high]
+        sql = [
+            "-- Ghosts: see-through copies of the pieces, for placing and moving them (the client patch",
+            "-- adds the same models and displays to the client).",
+            "DELETE FROM `creaturedisplayinfo_dbc` WHERE `ID` BETWEEN %d AND %d;" % (low, high),
+            "DELETE FROM `creaturemodeldata_dbc` WHERE `ID` BETWEEN %d AND %d;" % (low, high),
+            "DELETE FROM `creature_model_info` WHERE `DisplayID` BETWEEN %d AND %d;" % (low, high),
+        ]
+        model_rows = ["(%d, 0, %s, 0, 1.0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, %s, 1.0, 1.0, 0, 0, 0)" % (
+            ghost, sql_text(path), ", ".join(repr(round(v, 3)) for v in box)) for ghost, path, box in models]
+        display_rows = ["(%d, %d, 0, 0, 1.0, %d, '', '', '', '', 0, 0, 0, 0, 0, 0)" % (ghost, ghost, GHOST_ALPHA) for ghost, _, _ in models]
+        for ghost, source in copies:
+            row = self.displays[source]
+            display_rows.append("(%d, %d, %d, %d, %s, %d, %s, %s, %s, %s, %d, %d, %d, %d, %d, %d)" % (
+                (ghost,) + tuple(row[1:4]) + (repr(round(row[4], 4)), GHOST_ALPHA) + tuple(sql_text(t) for t in row[6:10]) + tuple(row[10:16])))
+        info_rows = ["(%d, 0.5, 1.0, 2, 0, 0)" % ghost for ghost in sorted([m[0] for m in models] + [c[0] for c in copies])]
+        for start in range(0, len(model_rows), 500):
+            sql += ["INSERT INTO `creaturemodeldata_dbc` (%s) VALUES" % self.MODEL_COLUMNS, ",\n".join(model_rows[start:start + 500]) + ";"]
+        for start in range(0, len(display_rows), 500):
+            sql += ["INSERT INTO `creaturedisplayinfo_dbc` (%s) VALUES" % self.DISPLAY_COLUMNS, ",\n".join(display_rows[start:start + 500]) + ";"]
+        for start in range(0, len(info_rows), 500):
+            sql += ["INSERT INTO `creature_model_info` (`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`, "
+                    "`VerifiedBuild`) VALUES", ",\n".join(info_rows[start:start + 500]) + ";"]
+        return sql + [""]
+
+    def client_lines(self):
+        lines = ["ghostmodel\t%d\t%s\t%s" % (ghost, path, " ".join(repr(round(v, 3)) for v in box)) for ghost, path, box in self.models]
+        lines += ["ghostcopy\t%d\t%d" % (ghost, source) for ghost, source in self.copies]
+        return lines
+
+
 class Icons:
     """Turns icon names into item display ids, remembering the displays the patch must add."""
 
@@ -292,6 +367,7 @@ def build(args):
     world_bounds = load_world_model_bounds(args.dbc)
     creature_boxes = load_creature_boxes(args.dbc)
     icons = Icons(args.dbc)
+    ghosts = Ghosts(args.dbc)
     client_items = [(HOUSE_KEY, HOUSE_KEY_DISPLAY)]
     infos = []   # the addon's piece list
     creatures = []
@@ -403,6 +479,13 @@ def build(args):
             model = os.path.splitext(model)[0] + ".m2"
         framing = model_frame(boxes.get(display)) if model and model != "player" and not model.startswith("creature:") else model_frame(None)
         previews.append((item, model) + preview_size + framing)
+        # Its ghost, for placing and moving it (buildings are carried as they are).
+        if stand:
+            ghosts.copy(item, MANNEQUIN_DISPLAY)
+        elif figure:
+            ghosts.copy(item, creature_display)
+        elif not building:
+            ghosts.model(item, models.get(display, ""), boxes.get(display))
 
         flags = FLAG_BITS["stand"] if stand else 0
         if figure:
@@ -527,6 +610,7 @@ def build(args):
         ",\n".join(rule_rows) + ";",
         "",
     ]
+    sql += ghosts.sql(901100, 902999)
     with open(os.path.join(MODULE, "sql/db_world/base/mod_playerhousing_world_content.sql"), "w") as f:
         f.write("\n".join(sql))
 
@@ -551,8 +635,8 @@ def build(args):
 
     curated_displays = {int(world.gameobject(p["go"])["display"]) for p in content.PIECES if "go" in p}
     curated_displays |= {p["display"] for p in content.PIECES if "display" in p}
-    catalog_count = build_catalog(world, models, boxes, curated_displays, previews, icons, client_items, infos)
-    write_client_items(icons, client_items)
+    catalog_count = build_catalog(world, models, boxes, curated_displays, previews, icons, client_items, infos, ghosts)
+    write_client_items(icons, client_items, ghosts)
     write_piece_info(infos)
     md += ["## Catalog (%d)" % catalog_count, "",
            "With `PlayerHousing.Catalog = everything`, every other object model in the game is a piece too, one per",
@@ -596,14 +680,20 @@ def write_piece_info(infos):
         f.write("\n".join(lua) + "\n")
 
 
-def write_client_items(icons, client_items):
-    """The rows make_client_patch.sh adds to the client's Item.dbc and ItemDisplayInfo.dbc."""
+def write_client_items(icons, client_items, ghosts):
+    """The rows make_client_patch.sh adds to the client: the housing items, so they show their
+    icons, and the ghosts' models."""
     lines = ["# Generated by tools/content/build_content.py: what make_client_patch.sh adds to the",
-             "# client so housing items show their icons.",
-             "#   item    <entry> <display>         a row of Item.dbc (class 15, miscellaneous)",
-             "#   display <id> <icon>               a row of ItemDisplayInfo.dbc with only an icon"]
+             "# client so housing items show their icons, and ghosts (see-through pieces) can be seen.",
+             "#   item       <entry> <display>        a row of Item.dbc (class 15, miscellaneous)",
+             "#   display    <id> <icon>              a row of ItemDisplayInfo.dbc with only an icon",
+             "#   ghostmodel <id> <model> <box>       rows of CreatureModelData.dbc and CreatureDisplayInfo.dbc (see-through)",
+             "#   ghostcopy  <id> <display>           a see-through copy of a CreatureDisplayInfo.dbc row",
+             "#   alpha      <0-255>                  how solid ghosts look"]
+    lines += ["alpha\t%d" % GHOST_ALPHA]
     lines += ["display\t%d\t%s" % (display, name) for display, name in sorted(icons.added.items())]
     lines += ["item\t%d\t%d" % (item, display) for item, display in sorted(client_items)]
+    lines += ghosts.client_lines()
     with open(CLIENT_ITEMS, "w") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -625,7 +715,7 @@ def catalog_name(go_name, model):
     return " ".join(word.capitalize() if word.islower() or (word.isupper() and len(word) > 2) else word for word in words) or "Object"
 
 
-def build_catalog(world, models, boxes, curated_displays, previews, icons, client_items, infos):
+def build_catalog(world, models, boxes, curated_displays, previews, icons, client_items, infos, ghosts):
     """Every other object model in the game, one piece each: the catalog. Returns how many."""
     rows = world.query("SELECT entry, displayId, name, size FROM gameobject_template WHERE displayId > 0 ORDER BY entry")
     chosen = {}
@@ -679,6 +769,7 @@ def build_catalog(world, models, boxes, curated_displays, previews, icons, clien
             item, CATEGORIES.index("Catalog"), sql_text(name), live_entry(item), repr(round(footprint, 2)), repr(round(max(height, 0.1), 2)),
             flags, CATALOG_COST, 100000 + item - CATALOG_FIRST, ", ".join(repr(round(v, 2)) for v in outline)))
         previews.append((item, os.path.splitext(model)[0] + ".m2", length, depth, height) + model_frame(box))
+        ghosts.model(item, model, box)
         item += 1
 
     go_columns = "`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, " + \
@@ -705,6 +796,7 @@ def build_catalog(world, models, boxes, curated_displays, previews, icons, clien
                 "`creature_entry`, `scale`, `footprint`, `height`, `flags`, `copy_cost`, `sort_order`, `hint`, `legacy_catalog_id`, "
                 "`outline_min_x`, `outline_min_y`, `outline_max_x`, `outline_max_y`) VALUES",
                 ",\n".join(piece_rows[start:start + 500]) + ";", ""]
+    sql += ghosts.sql(CATALOG_FIRST, CATALOG_LAST)
     with open(os.path.join(MODULE, "sql/db_world/base/mod_playerhousing_world_catalog.sql"), "w") as f:
         f.write("\n".join(sql))
     return len(piece_rows)

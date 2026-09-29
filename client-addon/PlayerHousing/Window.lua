@@ -20,7 +20,6 @@ local collection = { unlocked = {}, fresh = {}, storage = {}, placed = {}, recen
 local collectionView = { category = 0, unlockedOnly = false, inBags = false, search = "", page = 1, sort = 1 }
 local island = { weathers = {}, times = {}, tracks = {}, privacy = 0, weather = 0, time = 0, music = 0, musicBox = false, door = false, newNotes = 0 }
 local visitList = 1
-local collectionPending = false  -- the grid's secure buttons wait for combat to end
 local UpdateIsland  -- the Island tab, below; the guestbook clears its "new" count
 
 for index, info in ipairs(PlayerHousing_Pieces or {}) do
@@ -366,17 +365,10 @@ local function CategoryName(category)
     return PlayerHousing_Categories[category]
 end
 
--- The grid holds secure buttons (a piece in the bags is used with a click), which change
--- out of combat only: in combat it waits.
 local function UpdateCollection()
     if not categoryText then
         return
     end
-    if InCombatLockdown() then
-        collectionPending = true
-        return
-    end
-    collectionPending = false
     categoryText:SetText(CategoryName(collectionView.category))
     sortButton:SetText(SORTS[collectionView.sort][2])
 
@@ -398,16 +390,11 @@ local function UpdateCollection()
             button.count:SetText(have > 0 and have or "")
             button.new:SetText(collection.fresh[id] and "New" or "")
             if favorites[id] then button.star:Show() else button.star:Hide() end
-            -- On the island, a click on a piece in the bags uses it: the targeting circle.
-            local location = API.CanEdit() and API.PieceLocation(id) or nil
-            button.location = location
-            button:SetAttribute("type1", location and "item" or nil)
-            button:SetAttribute("item1", location)
+            -- Dragged onto an action bar: the one in the bags.
+            button.location = API.PieceLocation(id)
             button:Show()
         else
             button.location = nil
-            button:SetAttribute("type1", nil)
-            button:SetAttribute("item1", nil)
             button:Hide()
         end
     end
@@ -518,7 +505,7 @@ local function CreateCollection()
     collectionCount:SetPoint("TOPRIGHT", -14, -25)
 
     for index = 1, GRID_COLUMNS * GRID_ROWS do
-        local button = CreateFrame("Button", "PlayerHousingCollectionSlot" .. index, panel, "SecureActionButtonTemplate")
+        local button = CreateFrame("Button", "PlayerHousingCollectionSlot" .. index, panel)
         button:SetWidth(36)
         button:SetHeight(36)
         local column, row = (index - 1) % GRID_COLUMNS, math.floor((index - 1) / GRID_COLUMNS)
@@ -544,8 +531,9 @@ local function CreateCollection()
             GameTooltip_Hide()
             API.HidePreview()
         end)
-        -- After the secure click (which placed it, if it was in the bags): show it, or star it.
-        button:SetScript("PostClick", function(self, mouseButton)
+        -- A click shows it next to the window and, on the island, a ghost of it follows you to
+        -- where it goes; a right-click stars it.
+        button:SetScript("OnClick", function(self, mouseButton)
             if not self.info then
                 return
             end
@@ -558,6 +546,9 @@ local function CreateCollection()
                 if self.info then CollectionTooltip(self) else GameTooltip_Hide() end
             else
                 API.Pin({ id = id, name = self.info[2] })
+                if API.CanEdit() and (collection.unlocked[id] or GetItemCount(id) > 0 or (collection.storage[id] or 0) > 0) then
+                    API.StartGhost(id)
+                end
             end
         end)
         -- Onto an action bar, like dragging it out of the bag.
@@ -633,10 +624,9 @@ local function CreateStorage()
         "Take all", "Everything in House Storage that fits in your bags."):SetPoint("TOPRIGHT", -12, 0)
     storageList = MakeList(panel, -26, 9, {
         { "Place", 50, function(item)
-            -- One out of storage, and the preview's Place lights up for it.
             API.Pin({ id = item.id, name = item.name })
-            API.FetchPinned()
-        end, "Place one", "Takes one out, then Place (next to the window) puts it down." },
+            API.StartGhost(item.id)
+        end, "Place one", "One out of House Storage follows you: walk it where it goes, then G sets it down." },
         { "Take", 50, function(item) Do("take " .. item.id, "collection") end, "Take them all", "Back to your bags." },
     })
 end
@@ -1235,11 +1225,6 @@ API.OnState(function(state)
     UpdateVisitControls()
 end)
 API.OnBags(function() UpdateCollection() end)
-API.OnCombatEnd(function()
-    if collectionPending then
-        UpdateCollection()
-    end
-end)
 
 ---------------------------------------------------------------------------------------------
 

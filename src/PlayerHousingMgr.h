@@ -38,6 +38,10 @@ namespace Housing
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
+    constexpr uint32 GHOST_ENTRY = 900203;          // a see-through piece following its player
+    // Each piece's ghost model (tools/content/build_content.py): its see-through creature
+    // display is this plus the item's offset from 900000 (the client patch adds them).
+    constexpr uint32 GHOST_DISPLAY_BASE = 60000;
 
     // Krook's welcome tour: each quest completes when the player does the thing.
     constexpr uint32 QUEST_TOUR_HOME = 900400;
@@ -386,7 +390,6 @@ public:
     // Degrees; straighten sets both back to level.
     bool Tilt(Player* player, uint32 placementId, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason);
     bool PlaceAnother(Player* player, uint32 placementId, std::string& reason);
-    uint32 GetPendingCopy(Player const* player) const;
     // Grid snapping, in yards (0: off).
     float GetGridSize(ObjectGuid::LowType guid) const;
     void SetGridSize(Player* player, float yards, std::string& reason) const;
@@ -457,6 +460,24 @@ public:
     // GM: a building set up in front of the camera, one after another, for the addon's
     // pictures. what: start, next, stop, or an item entry.
     bool PhotoTour(Player* gm, std::string const& what, std::string& reason);
+
+    // ---- ghosts (HousingGhosts.cpp): a piece that follows its player until it's set down.
+    // Furniture shows as a see-through copy of itself (a creature with its model, from the
+    // client patch); buildings, and any piece without a ghost model, are carried as they are.
+    // A new piece from the bags or House Storage (or a new copy from the Collection); with
+    // copyOf, it takes after that placed piece (turn, size, tilt).
+    bool StartGhostNew(Player* player, uint32 itemEntry, uint32 copyOf, std::string& reason);
+    // Pieces already placed (0: the selection, with the rest of its group).
+    bool StartGhostMove(Player* player, uint32 placementId, std::string& reason);
+    // Farther (forward), to the left, up, and turned (degrees), from where the player faces.
+    bool AdjustGhost(Player* player, float forward, float left, float up, float degrees, std::string& reason);
+    // Sets it down where it's shown; another: then a new one of the same, if there is one.
+    bool PlaceGhost(Player* player, bool another, std::string& reason);
+    void CancelGhost(Player* player);
+    uint32 GetGhostItem(Player const* player) const;  // 0: not carrying anything
+    bool IsGhostMove(Player const* player) const;
+    void UpdateGhost(Player* player);
+    bool GhostsEnabled() const { return _ghosts; }
 
     // ---- the client addon's housing window (HousingAddon.cpp)
     void SendAddon(Player* player, std::string const& text) const;
@@ -741,10 +762,8 @@ private:
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);
     void SpawnMarkers(Session& session, Map* map);
     void DespawnMarkers(Session& session, Map* map);
-    // Each update: rings under the selected pieces while decorating, and in edit mode the
-    // Move a Piece item waiting in the bags so the addon's G starts the circle at once.
+    // Each update: rings under the selected pieces while decorating.
     void UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid);
-    void StageMover(Player* player, Session& session);
     void SpawnSteward(Session& session, Map* map);
     void PlaceStarterWreckage(Session& session, Map* map);
     bool CheckLimit(Session const& session, Housing::PieceDefinition const& piece, std::string& reason) const;
@@ -776,6 +795,8 @@ private:
     // includeInside) what's inside it; each with what stands on them in turn.
     std::vector<uint32> CarriedBy(Session const& session, uint32 placementId, bool includeInside) const;
     uint32 FindSurfaceUnder(Session const& session, float x, float y, float z, std::set<uint32> const& exclude = {}) const;
+    // Whether x, y is over that surface's top (within its outline, or its footprint).
+    bool IsOverSurface(Housing::PieceDefinition const& piece, Housing::Placement const& surface, float x, float y) const;
     bool ChangeStand(Player* player, uint32 placementId, Housing::Placement const& after, std::string const& label, std::string& reason);
     bool MoveGearToStand(Player* player, ObjectGuid::LowType ownerGuid, uint32 placementId, uint8 slot, uint32 itemGuid, std::string& reason);
     // Gear back to its owner: into the player's bags when it's theirs, otherwise by mail.
@@ -821,6 +842,61 @@ private:
     float GroundHeightNear(Player* player, float x, float y, float z) const;
     void DespawnPhoto(Session& session, Map* map);
 
+    // HousingGhosts.cpp
+    struct GhostPiece
+    {
+        uint32 placementId{0};  // moving: the piece; new: 0
+        uint32 itemEntry{0};
+        float dx{0.0f};         // from the lead piece, in its own frame (x: where it faces)
+        float dy{0.0f};
+        float dz{0.0f};
+        float dO{0.0f};
+        float scale{1.0f};
+        float pitch{0.0f};
+        float roll{0.0f};
+        uint32 look{0};
+        ObjectGuid shown;       // the ghost creature, or the carried building
+        float x{0.0f};          // where it's shown
+        float y{0.0f};
+        float z{0.0f};
+        float o{0.0f};
+        uint32 drawnMs{0};      // carried objects: when last redrawn
+    };
+    struct Ghost
+    {
+        bool isNew{true};
+        uint32 copyOf{0};
+        std::vector<GhostPiece> pieces;  // the lead first
+        float forward{3.0f};    // from the player: ahead, to the left, and up from what's under it
+        float side{0.0f};
+        float lift{0.0f};
+        float o{0.0f};          // the lead's turn
+        uint32 parent{0};       // what the lead stands on, where it's shown
+        bool posed{false};
+        // The player, as last heard: their position is guessed ahead from there.
+        float seenX{0.0f};
+        float seenY{0.0f};
+        float seenZ{0.0f};
+        float seenO{0.0f};
+        uint32 seenMs{0};
+        uint32 updatedMs{0};
+        float floorZ{0.0f};     // the floor the player stands on, kept while they jump
+        bool floorRaised{false};  // above the ground: a building's floor
+    };
+    uint32 GhostDisplayFor(uint32 itemEntry) const;
+    // The player where they are about now: their last movement packet, carried forward.
+    void PredictPlayer(Player* player, Ghost& ghost, float& x, float& y, float& z, float& o) const;
+    // What x, y would stand on: a table top (parent), else the floor.
+    float GhostFloor(Player* player, Session const& session, Ghost const& ghost, float x, float y, float playerZ, bool building,
+        uint32& parent) const;
+    // A new piece on the island: shown, saved, selected, and one undo step.
+    bool AddNewPlacement(Player* player, Session& session, Housing::Placement const& placement, std::string& reason);
+    // Where the lead goes now: in front of the player, on the grid, on a table or the floor.
+    void PoseGhost(Player* player, Session const& session, Ghost& ghost, float& x, float& y, float& z, uint32& parent);
+    void DrawGhost(Player* player, Session& session, Ghost& ghost, bool force);
+    void DespawnGhost(Ghost& ghost, Map* map);
+    void EndGhost(Player* player);
+
     // HousingLayouts.cpp
     std::vector<Housing::Placement> LoadSavedPieces(ObjectGuid::LowType ownerGuid, uint32 layoutId) const;
     // fromLayout 0 copies fromOwner's island as it is now.
@@ -861,6 +937,7 @@ private:
     float _tiltMax{45.0f};  // degrees either way
     uint32 _maxSavedLayouts{5};
     bool _catalogEverything{false};
+    bool _ghosts{true};     // see-through ghosts for furniture (the client patch has their models)
     std::string _layoutCode{"cleared"};
 
     Housing::LayoutDefinition _layout;
@@ -900,18 +977,10 @@ private:
     {
         uint32 placementId{0};
         uint32 moverItem{0};
-        bool staged{false};  // edit mode's, kept ready for the selected piece
         uint32 setId{0};     // not a piece: a saved set to set down
     };
     std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
     std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
-    // Edit mode's item didn't fit in the bags: which one, and when to try again.
-    struct StageRetry
-    {
-        uint32 moverItem{0};
-        uint64 at{0};
-    };
-    std::unordered_map<ObjectGuid, StageRetry> _stageRetries;
 
     // Players on an island: when their clock is resent, and their music replayed.
     struct AmbienceTimers
@@ -921,17 +990,8 @@ private:
     };
     std::unordered_map<ObjectGuid, AmbienceTimers> _ambienceTimers;
 
-    // "Place another like this": the next one placed takes the original's turn, size and tilt.
-    struct PendingCopy
-    {
-        uint32 itemEntry{0};
-        float o{0.0f};
-        float scale{1.0f};
-        float pitch{0.0f};
-        float roll{0.0f};
-    };
-    std::unordered_map<ObjectGuid, PendingCopy> _pendingCopies;
     std::unordered_map<ObjectGuid, uint32> _photoTours;  // GM -> the building on show
+    std::unordered_map<ObjectGuid, Ghost> _carrying;     // player -> what follows them
     ApplyReport _report;
     static constexpr uint32 MAX_SAVED_SETS = 20;
 };

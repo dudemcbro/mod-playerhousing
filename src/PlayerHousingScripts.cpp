@@ -413,6 +413,7 @@ public:
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
+        handler->SendSysMessage(".house ghost <item> | ghost move [id] | ghost adjust <forward> <left> <up> <degrees> | ghost place [another] | ghost cancel");
         handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name> | like | visitors");
         handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
@@ -490,7 +491,8 @@ public:
         // The addon's state request is quiet and cheap; edit mode's moves have their own
         // window; everything else counts.
         bool holdMessage = sub == "group" && tokens.size() > 1 && Lower(tokens[1]) == "hold";
-        if (sub == "shift")
+        bool ghostAdjust = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "adjust";
+        if (sub == "shift" || ghostAdjust)
         {
             if (!gm && mgr->ShiftFlood(player))
                 return true;
@@ -770,6 +772,29 @@ public:
         }
         else if (sub == "another" || sub == "copy")
             mgr->PlaceAnother(player, number(1), reason);
+        else if (sub == "ghost")
+        {
+            // A piece following the player until it's set down (the addon's keys drive it).
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (what == "move")
+                mgr->StartGhostMove(player, number(2), reason);
+            else if (what == "adjust")
+            {
+                // Quiet when it works: the ghost itself shows it.
+                if (mgr->AdjustGhost(player, decimal(2, 0.0f), decimal(3, 0.0f), decimal(4, 0.0f), decimal(5, 0.0f), reason))
+                    reason.clear();
+            }
+            else if (what == "place")
+                mgr->PlaceGhost(player, tokens.size() > 2 && Lower(tokens[2]) == "another", reason);
+            else if (what == "cancel")
+                mgr->CancelGhost(player);
+            else if (what == "new" && tokens.size() > 2)
+                mgr->StartGhostNew(player, number(2), 0, reason);
+            else if (uint32 item = number(1))
+                mgr->StartGhostNew(player, item, 0, reason);
+            else
+                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | place [another] | cancel";
+        }
         else if (sub == "group")
         {
             std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";

@@ -32,12 +32,14 @@ local state = {
     selected = 0, selectedName = "", selectedBuilding = false,
     furnishings = 0, maxFurnishings = 0, buildings = 0, maxBuildings = 0,
     undo = "", redo = "", islandOwner = "",
-    pendingMover = 0, pendingCopy = 0,
+    pendingMover = 0,       -- Move a Piece waiting for its circle (setting down a saved set)
     roommate = false,       -- decorating someone else's island, with their leave
     editMode = false,       -- keys move the selected piece (EditMode.lua)
     grid = 0,               -- yards; 0 is off
-    moverStaged = false,    -- edit mode keeps a Move a Piece ready in the bags, for G
     groupSize = 0,          -- pieces selected together (Ctrl-click); 1 or 0: just the one
+    ghostItem = 0,          -- the piece following you until you set it down (0: none)
+    ghostMove = false,      -- moving pieces already placed (else placing a new one)
+    ghosts = false,         -- see-through ghosts (else pieces are carried as they are)
 }
 
 -- Changing things: on your own island, or as a roommate on someone else's.
@@ -147,27 +149,18 @@ local function PieceLocation(id)
     end
 end
 
--- While a move or a copy waits for its spot, a button uses the item (Move a Piece, or the
--- copy), so there's no need to find it in the bags. It's a secure button too.
+-- While a saved set waits for its spot, a button uses its Move a Piece, so there's no need
+-- to find it in the bags. It's a secure button too.
 local function UpdateSpotButton()
-    local location, staged
-    if CanEdit() and state.pendingCopy > 0 then
-        location = PieceLocation(state.pendingCopy)
-        spotButton:SetText("Now place the copy")
-    elseif CanEdit() and state.pendingMover > 0 then
+    local location
+    if CanEdit() and state.pendingMover > 0 then
         location = movers[state.pendingMover]
-        staged = state.moverStaged
         spotButton:SetText("Now pick the spot")
     end
     if location then
         spotButton:SetAttribute("type", "item")
         spotButton:SetAttribute("item", location)
-        -- The one edit mode keeps ready is for G: no button needed.
-        if staged then
-            spotButton:Hide()
-        else
-            spotButton:Show()
-        end
+        spotButton:Show()
     else
         spotButton:SetAttribute("item", nil)
         spotButton:Hide()
@@ -288,12 +281,13 @@ local function OnState(fields)
     state.redo = fields[12] or ""
     state.selectedBuilding = fields[13] == "1"
     state.pendingMover = tonumber(fields[14] or "") or 0
-    state.pendingCopy = tonumber(fields[15] or "") or 0
     state.roommate = fields[16] == "1"
     state.editMode = fields[17] == "1"
     state.grid = tonumber(fields[18] or "") or 0
-    state.moverStaged = fields[19] == "1"
     state.groupSize = tonumber(fields[20] or "") or 0
+    state.ghostItem = tonumber(fields[21] or "") or 0
+    state.ghostMove = fields[22] == "move"
+    state.ghosts = fields[23] == "1"
     -- Once a session: the server learns the addon is here, and whether the House Key should
     -- open this window instead of the menu.
     if not registered and db then
@@ -461,7 +455,6 @@ end
 local PREVIEW_HEIGHT, PINNED_HEIGHT = 268, 360
 local view = { facing = 0, zoom = 1, lift = 0, spin = true }
 local shownPiece, pinned        -- { id = item, name = text }
-local fetched                   -- Place had none to use and got one: this item
 local dragging, dragX, dragY
 local detailsText, detailsCounts, detailsHint, placeButton, getOneButton, getFiveButton, takeButton
 
@@ -537,10 +530,7 @@ function UpdateDetails()
         return
     end
     if not pinned then
-        -- Unpinned in combat: its secure button goes once combat is over.
-        if placeButton:IsShown() and not InCombatLockdown() then
-            placeButton:Hide()
-        end
+        placeButton:Hide()
         return
     end
     local piece = pinned
@@ -553,27 +543,15 @@ function UpdateDetails()
     else
         status = "Open the Collection tab for how to unlock it."
     end
-    if bagsDirty and not InCombatLockdown() then
-        ScanBags()
-    end
-    local location = PieceLocation(piece.id)
-    if fetched == piece.id and location then
-        status = "|cff40ff40One's in your bags:|r click Place again, then the spot."
-    end
     detailsText:SetText((info.category and (info.category .. (info.building and ", building" or "") .. "\n") or "") .. status)
     detailsCounts:SetText(("Bags: %d   Storage: %d   Placed: %d"):format(GetItemCount(piece.id), info.storage or 0, info.placed or 0))
     if info.unlocked then getOneButton:Enable() getFiveButton:Enable() else getOneButton:Disable() getFiveButton:Disable() end
     if (info.storage or 0) > 0 then takeButton:Enable() else takeButton:Disable() end
-    -- Place uses the piece in the bags, like its icon in the Collection: a secure button, so it
-    -- changes out of combat only (and catches up after). With none in the bags, its click
-    -- gets one first.
-    if InCombatLockdown() then
-        layoutPending = true
+    -- Place: a ghost of it follows you (one from the bags or House Storage, else a new copy).
+    if CanEdit() and (GetItemCount(piece.id) > 0 or (info.storage or 0) > 0 or info.unlocked) then
+        placeButton:Enable()
     else
-        placeButton:SetAttribute("type", "item")
-        placeButton:SetAttribute("item", location)
-        if CanEdit() and (location or info.unlocked) then placeButton:Enable() else placeButton:Disable() end
-        if fetched == piece.id and location then placeButton:LockHighlight() else placeButton:UnlockHighlight() end
+        placeButton:Disable()
     end
 end
 
@@ -612,7 +590,7 @@ local function ShowPiece(piece)
         previewModel:SetModel(model)
         previewModel:Show()
     elseif data and PlayerHousing_Pictures and PlayerHousing_Pictures[piece.id] then
-        -- A building with a picture from the photo tour.
+        -- A building with a picture (Pictures.lua).
         previewModel:Hide()
         picture:SetTexture("Interface\\AddOns\\PlayerHousing\\Pictures\\" .. piece.id)
         picture:Show()
@@ -631,9 +609,7 @@ local function ShowPiece(piece)
     for _, region in ipairs({ detailsText, detailsCounts, getOneButton, getFiveButton, takeButton }) do
         if isPinned then region:Show() else region:Hide() end
     end
-    if not InCombatLockdown() then
-        if isPinned then placeButton:Show() else placeButton:Hide() end
-    end
+    if isPinned then placeButton:Show() else placeButton:Hide() end
     detailsHint:SetText(pinned and not isPinned and "Click it to show it here instead." or "")
     SetPreviewHeight()
     preview:Show()
@@ -672,11 +648,7 @@ local function Unpin()
         return
     end
     preview:Hide()
-    if InCombatLockdown() then
-        layoutPending = true
-    else
-        placeButton:Hide()
-    end
+    placeButton:Hide()
 end
 
 local function DetailsButton(name, text, width, onClick, tooltipTitle, tooltipText)
@@ -691,20 +663,14 @@ local function DetailsButton(name, text, width, onClick, tooltipTitle, tooltipTe
     return button
 end
 
--- None of the pinned piece in the bags: one from House Storage, else a new copy; then its
--- Place button lights up.
-local function FetchPinned()
-    if not pinned then
+-- A ghost of the piece follows you until you set it down (G), from the bags or House
+-- Storage, or a new copy from the Collection.
+local function StartGhost(id)
+    if not CanEdit() then
+        Print("pieces go on your own island (or one you're a roommate on). House Key, Go home.")
         return
     end
-    fetched = pinned.id
-    local info = PlayerHousingAPI.DescribePiece and PlayerHousingAPI.DescribePiece(pinned.id) or {}
-    if (info.storage or 0) > 0 then
-        PlayerHousing_Command(("take %d 1"):format(pinned.id))
-    else
-        PlayerHousing_Command(("get %d 1"):format(pinned.id))
-    end
-    PlayerHousing_Command("data collection")
+    PlayerHousing_Command("ghost " .. id)
 end
 
 local function GetCopies(count)
@@ -762,10 +728,12 @@ local function CreatePreview()
     previewNote:SetPoint("TOP", previewModel, "TOP", 0, -2)
     previewNote:SetWidth(180)
 
-    -- A building's picture (the photo tour's, see Photos.lua) or else its floor plan: what
-    -- world model buildings get instead of a model.
+    -- A building's picture (Pictures.lua: rendered from its model, or a GM's photo tour) or
+    -- else its floor plan: what world model buildings get instead of a model. The square
+    -- picture fills the 200 by 190 area, a sliver off its top and bottom.
     picture = preview:CreateTexture("PlayerHousingPreviewPicture", "ARTWORK")
     picture:SetAllPoints(previewModel)
+    picture:SetTexCoord(0, 1, 0.025, 0.975)
     picture:Hide()
     plan = CreateFrame("Frame", "PlayerHousingPreviewPlan", preview)
     plan:SetAllPoints(previewModel)
@@ -799,10 +767,7 @@ local function CreatePreview()
     detailsCounts:SetPoint("TOPRIGHT", -10, -284)
     detailsCounts:SetJustifyH("LEFT")
 
-    -- A secure button makes its parent protected: shown, hidden and sized out of combat only.
-    -- The window already is, so it's the window's, over the preview; the preview stays free
-    -- to come and go.
-    placeButton = CreateFrame("Button", "PlayerHousingDetailsPlace", frame, "SecureActionButtonTemplate,UIPanelButtonTemplate")
+    placeButton = CreateFrame("Button", "PlayerHousingDetailsPlace", frame, "UIPanelButtonTemplate")
     placeButton:SetWidth(76)
     placeButton:SetHeight(22)
     placeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", -214, -302)
@@ -811,17 +776,12 @@ local function CreatePreview()
     placeButton:SetText("Place")
     placeButton:RegisterForClicks("AnyUp")
     placeButton.tooltipTitle = "Place one"
-    placeButton.tooltipText = "Click, then click where it should go. With none in your bags, the first click gets one (from House Storage if it has one). On your island (or as a roommate) only."
+    placeButton.tooltipText = "It follows you: walk it where it goes (arrows: farther, nearer, sideways; wheel: turn), then G sets it down. From your bags or House Storage, or a new copy. On your island (or as a roommate) only."
     placeButton:SetScript("OnEnter", ShowButtonTooltip)
     placeButton:SetScript("OnLeave", GameTooltip_Hide)
-    placeButton:SetScript("PreClick", function(self)
-        if pinned and not self:GetAttribute("item") then
-            FetchPinned()
-        elseif fetched then
-            fetched = nil
-            if not InCombatLockdown() then
-                self:UnlockHighlight()
-            end
+    placeButton:SetScript("OnClick", function()
+        if pinned then
+            StartGhost(pinned.id)
         end
     end)
     getOneButton = DetailsButton("PlayerHousingDetailsGetOne", "Get 1", 60, GetCopies(1), "Get a copy", "Into your bags.")
@@ -942,8 +902,8 @@ local function CreateWindow()
         { "Turn right", TurnButton(-1), "Turn right", "15 degrees. Shift: 5. Ctrl: 90." },
         { "Face me", Command("face"), "Face me", "Turns it to face you." },
         { "Here", Command("here"), "Move here", "Moves it to where you're standing." },
-        { "Move", Command("move"), "Move with the targeting circle",
-          "A button appears below: click it, then click the new spot. What's on it moves too." },
+        { "Move", Command("ghost move"), "Move it",
+          "It follows you: walk it to its new spot, then G sets it down (Escape: never mind). What's on it moves too." },
         { "Pick up", function() PickUp(false) end, "Pick up", "Back to your bags. Undo puts it back." },
     })
 
@@ -1008,16 +968,10 @@ local function CreateWindow()
     spotButton:SetPoint("TOPLEFT", 86, -114)
     spotButton:SetText("Now pick the spot")
     spotButton:RegisterForClicks("AnyUp")
-    spotButton.tooltipTitle = "Pick the new spot"
-    spotButton.tooltipText = "The targeting circle is as big as the piece. Right-click or Escape cancels the circle; the menu can start over."
+    spotButton.tooltipTitle = "Pick the spot"
+    spotButton.tooltipText = "The targeting circle is as big as the set. Right-click or Escape cancels the circle."
     spotButton:SetScript("OnEnter", ShowButtonTooltip)
     spotButton:SetScript("OnLeave", GameTooltip_Hide)
-    -- Edit mode's G clicks this button: with no move under way yet, it starts one.
-    spotButton:SetScript("PreClick", function(self)
-        if not self:GetAttribute("item") and CanEdit() and state.selected > 0 then
-            PlayerHousing_Command("move")
-        end
-    end)
     spotButton:Hide()
     selectedPanel:Hide()
 
@@ -1189,7 +1143,16 @@ PlayerHousingAPI = {
     -- The Collection's click: the piece stays next to the window with its buttons.
     Pin = Pin,
     Unpin = Unpin,
-    FetchPinned = function() FetchPinned() end,
+    StartGhost = StartGhost,
+    -- The name of a piece by its item.
+    PieceName = function(id)
+        for _, info in ipairs(PlayerHousing_Pieces or {}) do
+            if info[1] == id then
+                return info[2]
+            end
+        end
+        return "piece"
+    end,
     RefreshPin = function() UpdateDetails() end,
     -- Window.lua fills this in: function(item) returning { category, building, unlocked,
     -- hint, cost, storage, placed }.

@@ -7,6 +7,7 @@
 SET @STEWARD := 900200;
 SET @MANNEQUIN := 900201;
 SET @CHEST_BANKER := 900202;
+SET @GHOST := 900203;
 SET @HOUSE_KEY := 902000;
 SET @MARKER := 903990;
 SET @RING := 903991;
@@ -132,6 +133,21 @@ INSERT INTO `creature_template`
 INSERT INTO `creature_template_model`
 (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (@CHEST_BANKER, 0, 11686, 1.0, 1.0, 0);
+
+-- A ghost: a see-through copy of a piece following its player until it's set down. The
+-- module gives it the piece's ghost model (tools/content/build_content.py adds those, and the
+-- client patch adds them to the client); the model here is only a placeholder.
+DELETE FROM `creature_template_model` WHERE `CreatureID` = @GHOST;
+DELETE FROM `creature_template_movement` WHERE `CreatureId` = @GHOST;
+DELETE FROM `creature_template` WHERE `entry` = @GHOST;
+INSERT INTO `creature_template`
+(`entry`, `name`, `subname`, `gossip_menu_id`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `unit_class`, `unit_flags`, `type`, `AIName`, `MovementType`, `RegenHealth`, `ScriptName`, `VerifiedBuild`) VALUES
+(@GHOST, 'Ghost of a piece', '', 0, 1, 1, 35, 0, 1, 33555202, 10, '', 0, 1, '', 0);
+INSERT INTO `creature_template_model`
+(`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(@GHOST, 0, 11686, 1.0, 1.0, 0);
+INSERT INTO `creature_template_movement` (`CreatureId`, `Ground`, `Swim`, `Flight`, `Rooted`, `Chase`, `Random`, `InteractionPauseTimer`) VALUES
+(@GHOST, 1, 1, 1, 0, 0, 0, 0);
 
 -- Krook in the capital cities, beside each innkeeper.
 SET @GUID := (SELECT COALESCE(MAX(`guid`), 0) FROM `creature`);

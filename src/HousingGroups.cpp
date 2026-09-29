@@ -891,7 +891,7 @@ bool PlayerHousingMgr::StartSetPlacement(Player* player, uint32 setId, std::stri
         reason = "Your bags are full: make room for a Move a Piece item first.";
         return false;
     }
-    _pendingMoves[player->GetGUID()] = PendingMove{ 0, mover, false, setId };
+    _pendingMoves[player->GetGUID()] = PendingMove{ 0, mover, setId };
     reason = Acore::StringFormat("Right-click Move a Piece in your bags, then click where {} should go. It faces you.", set->name);
     SendAddonState(player);
     return true;

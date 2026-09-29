@@ -123,6 +123,7 @@ void PlayerHousingMgr::LoadConfig()
     _catalogEverything = catalog == "everything";
     if (catalog != "everything" && catalog != "curated")
         LOG_WARN("module", "mod-playerhousing: PlayerHousing.Catalog = \"{}\" is neither curated nor everything; using curated.", catalog);
+    _ghosts = sConfigMgr->GetOption<bool>("PlayerHousing.Ghosts", true);
 }
 
 bool PlayerHousingMgr::LoadDefinitions()
@@ -816,7 +817,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
     ProcessPendingConsumes(player);
     // A move not finished before leaving the island is dropped, with its item (and a copy
     // not placed yet no longer takes after the original).
-    if ((GetPendingMover(player) || GetPendingCopy(player)) && !player->IsBeingTeleported() && !CanDecorate(player))
+    if (GetPendingMover(player) && !player->IsBeingTeleported() && !CanDecorate(player))
         CancelMove(player);
     UpdateAmbience(player, diffMs);
     UpdatePendingTrip(player);
@@ -891,6 +892,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
     if (arrived)
         OnArrived(player, ownerGuid);
     UpdateEditHelpers(player, ownerGuid);
+    UpdateGhost(player);
 
     // Swimmers and anyone falling through the world go back to the landing spot rather than
     // dropping out of their private copy.
@@ -1287,6 +1289,13 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
     _arrivals.erase(playerGuid);
     _editMode.erase(playerGuid);  // or it would come back with decorating, next visit
     _groupHold.erase(playerGuid);
+    // Whatever was following them goes; nothing was set down.
+    auto carrying = _carrying.find(playerGuid);
+    if (carrying != _carrying.end())
+    {
+        DespawnGhost(carrying->second, GetHousingMap());
+        _carrying.erase(carrying);
+    }
     if (_photoTours.erase(playerGuid) && ownerGuid)
     {
         // A GM leaving mid-tour takes the building being photographed along.
@@ -1594,20 +1603,16 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         CountPlaced(owner, furnishings, buildings);
 
     // Read by client-addon/PlayerHousing: tab separated, new fields only ever go at the end.
-    bool moverStaged = false;
-    {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
-        auto pending = _pendingMoves.find(player->GetGUID());
-        moverStaged = pending != _pendingMoves.end() && pending->second.staged;
-    }
-
     size_t groupSize = (own || roommate) ? GetGroup(player).size() : 0;
+    uint32 ghostItem = GetGhostItem(player);
 
-    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    // Fields 15 and 19 (a copy waiting for its spot, edit mode's Move a Piece) went with ghosts: 0.
+    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
         owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
-        GetPendingCopy(player), roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
-        FormatYards(GetGridSize(player->GetGUID().GetCounter())), moverStaged ? 1 : 0, groupSize);
+        0, roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
+        FormatYards(GetGridSize(player->GetGUID().GetCounter())), 0, groupSize,
+        ghostItem, ghostItem ? (IsGhostMove(player) ? "move" : "new") : "", _ghosts ? 1 : 0);
     SendAddon(player, message);
 }

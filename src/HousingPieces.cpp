@@ -576,100 +576,6 @@ void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType own
             session.rings.erase(self);
     }
 
-    if (IsInEditMode(player))
-        StageMover(player, session);
-    else
-    {
-        // Edit mode ended some other way (decorating turned off): its item goes too. Only
-        // that: a copy waiting for its spot keeps the original's turn, size and tilt.
-        auto pending = _pendingMoves.find(player->GetGUID());
-        if (pending != _pendingMoves.end() && pending->second.staged)
-        {
-            uint32 mover = pending->second.moverItem;
-            _pendingMoves.erase(pending);
-            if (uint32 count = player->GetItemCount(mover, true))
-                player->DestroyItemCount(mover, count, true);
-            SendAddonState(player);
-        }
-    }
-}
-
-void PlayerHousingMgr::StageMover(Player* player, Session& session)
-{
-    // A copy waiting for its spot ("Another") has G until it's placed; so does a move the
-    // player asked for (Move, or setting down a saved set) while its item is there.
-    if (_pendingCopies.count(player->GetGUID()))
-        return;
-    auto asked = _pendingMoves.find(player->GetGUID());
-    if (asked != _pendingMoves.end() && !asked->second.staged && player->GetItemCount(asked->second.moverItem))
-        return;
-
-    auto selectedItr = session.selected.find(player->GetGUID().GetCounter());
-    uint32 selected = selectedItr != session.selected.end() && session.placements.count(selectedItr->second) ? selectedItr->second : 0;
-
-    // The mover with the selected piece's circle.
-    uint32 wanted = 0;
-    if (selected)
-        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(session.placements[selected].itemEntry))
-        {
-            auto moverItr = _moverBySpell.find(proto->Spells[0].SpellId);
-            if (moverItr != _moverBySpell.end())
-                wanted = moverItr->second;
-        }
-
-    auto pending = _pendingMoves.find(player->GetGUID());
-    if (wanted && pending != _pendingMoves.end() && pending->second.moverItem == wanted && player->GetItemCount(wanted))
-    {
-        if (pending->second.placementId != selected)
-        {
-            pending->second.placementId = selected;
-            SendAddonState(player);
-        }
-        return;
-    }
-    if (!wanted && (pending == _pendingMoves.end() || !pending->second.staged))
-        return;
-
-    // The bags were full a moment ago: try again now and then, not every update.
-    uint64 now = GameTime::GetGameTimeMS().count();
-    auto retry = _stageRetries.find(player->GetGUID());
-    if (retry != _stageRetries.end())
-    {
-        if (wanted && pending == _pendingMoves.end() && retry->second.moverItem == wanted && now < retry->second.at)
-            return;
-        _stageRetries.erase(retry);
-    }
-
-    // Another circle, or none: the old item goes and the right one comes, quietly (it
-    // isn't loot; the chat would fill with it).
-    bool changed = pending != _pendingMoves.end();
-    for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
-    {
-        // Other circles go, and so does one put in the bank, where G can't reach it (and
-        // where, the item being unique, it would keep the bags from getting another).
-        uint32 everywhere = player->GetItemCount(entry, true);
-        if (everywhere && (entry != wanted || !player->GetItemCount(entry)))
-            player->DestroyItemCount(entry, everywhere, true);
-    }
-    _pendingMoves.erase(player->GetGUID());
-
-    if (wanted && !player->GetItemCount(wanted))
-    {
-        ItemPosCountVec dest;
-        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, wanted, 1) != EQUIP_ERR_OK)
-        {
-            // Bags full: G asks for the item as before, and hears why not.
-            _stageRetries[player->GetGUID()] = StageRetry{ wanted, now + 2000 };
-            if (changed)
-                SendAddonState(player);
-            return;
-        }
-        if (Item* item = player->StoreNewItem(dest, wanted, true))
-            player->SendNewItem(item, 1, true, false, false, false);
-    }
-    if (wanted)
-        _pendingMoves[player->GetGUID()] = PendingMove{ selected, wanted, true };
-    SendAddonState(player);
 }
 
 void PlayerHousingMgr::SpawnSteward(Session& session, Map* map)
@@ -787,18 +693,8 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     if (!piece->IsBuilding())
         placement.parent = FindSurfaceUnder(*session, placement.x, placement.y, placement.z);
 
-    // A copy of a piece takes after it; otherwise the grid (when on) squares it up.
-    float grid = GetGridSize(player->GetGUID().GetCounter());
-    auto copyItr = _pendingCopies.find(player->GetGUID());
-    bool copying = copyItr != _pendingCopies.end() && copyItr->second.itemEntry == piece->itemEntry;
-    if (copying)
-    {
-        placement.o = copyItr->second.o;
-        placement.scale = copyItr->second.scale;
-        placement.pitch = copyItr->second.pitch;
-        placement.roll = copyItr->second.roll;
-    }
-    else if (grid > 0.0f)
+    // The grid (when on) squares it up.
+    if (GetGridSize(player->GetGUID().GetCounter()) > 0.0f)
     {
         float step = PI_F / 4.0f;
         placement.o = NormalizeAngle(std::round(placement.o / step) * step);
@@ -806,27 +702,33 @@ bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Posit
     if (!placement.parent)
         SnapToGrid(player->GetGUID().GetCounter(), placement.x, placement.y);
 
+    if (!AddNewPlacement(player, *session, placement, reason))
+        return false;
+
+    // The item is still in use by the cast that brought us here; it is removed before the
+    // player's next packet or update (see ProcessPendingConsumes).
+    ++reserved;
+    return true;
+}
+
+bool PlayerHousingMgr::AddNewPlacement(Player* player, Session& session, Placement const& placement, std::string& reason)
+{
+    PieceDefinition const* piece = GetPiece(placement.itemEntry);
     Map* map = player->GetMap();
-    if (!SpawnPlacement(*session, map, placement))
+    if (!piece || !SpawnPlacement(session, map, placement))
     {
         reason = "Couldn't place that here.";
         return false;
     }
 
-    // The item is still in use by the cast that brought us here; it is removed before the
-    // player's next packet or update (see ProcessPendingConsumes).
-    ++reserved;
-
-    session->placements[placement.id] = placement;
-    SelectOne(*session, player->GetGUID().GetCounter(), placement.id);
-    SavePlacement(session->ownerGuid, placement, session->mapId);
-    if (session->decorating)
-        SpawnMarkers(*session, map);
-    if (copying)
-        _pendingCopies.erase(player->GetGUID());
+    session.placements[placement.id] = placement;
+    SelectOne(session, player->GetGUID().GetCounter(), placement.id);
+    SavePlacement(session.ownerGuid, placement, session.mapId);
+    if (session.decorating)
+        SpawnMarkers(session, map);
 
     Record(player, "placed " + piece->name, { Change{ placement.id, std::nullopt, placement } });
-    reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session->ownerGuid));
+    reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session.ownerGuid));
     QuestEvent(player, QUEST_TOUR_PLACE);
     Tip(player, TIP_FIRST_PLACE, "In decorate mode, click a piece to turn, move or pick it up. Mistake? House Key, Undo.");
     return true;
@@ -1543,24 +1445,22 @@ uint32 PlayerHousingMgr::FindSurfaceUnder(Session const& session, float x, float
         PieceDefinition const& piece = pieceItr->second;
         float scale = piece.scale > 0.0f ? surface.scale / piece.scale : 1.0f;
         float top = surface.z + piece.height * scale;
-        if (std::fabs(z - top) > 0.35f)
-            continue;
-
-        float dx = x - surface.x;
-        float dy = y - surface.y;
-        bool within;
-        if (piece.HasOutline())
-        {
-            float localX = (std::cos(surface.o) * dx + std::sin(surface.o) * dy) / scale;
-            float localY = (-std::sin(surface.o) * dx + std::cos(surface.o) * dy) / scale;
-            within = localX >= piece.outlineMinX && localX <= piece.outlineMaxX && localY >= piece.outlineMinY && localY <= piece.outlineMaxY;
-        }
-        else
-            within = dx * dx + dy * dy <= piece.footprint * piece.footprint;
-        if (within)
+        if (std::fabs(z - top) <= 0.35f && IsOverSurface(piece, surface, x, y))
             return id;
     }
     return 0;
+}
+
+bool PlayerHousingMgr::IsOverSurface(PieceDefinition const& piece, Placement const& surface, float x, float y) const
+{
+    float scale = piece.scale > 0.0f ? surface.scale / piece.scale : 1.0f;
+    float dx = x - surface.x;
+    float dy = y - surface.y;
+    if (!piece.HasOutline())
+        return dx * dx + dy * dy <= piece.footprint * piece.footprint * scale * scale;
+    float localX = (std::cos(surface.o) * dx + std::sin(surface.o) * dy) / scale;
+    float localY = (-std::sin(surface.o) * dx + std::cos(surface.o) * dy) / scale;
+    return localX >= piece.outlineMinX && localX <= piece.outlineMaxX && localY >= piece.outlineMinY && localY <= piece.outlineMaxY;
 }
 
 bool PlayerHousingMgr::StartMove(Player* player, uint32 placementId, std::string& reason)
@@ -1683,8 +1583,6 @@ void PlayerHousingMgr::CancelMove(Player* player)
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _pendingMoves.erase(player->GetGUID());
-        _pendingCopies.erase(player->GetGUID());
-        _stageRetries.erase(player->GetGUID());
     }
     for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
         if (uint32 count = player->GetItemCount(entry, true))
@@ -2106,71 +2004,15 @@ bool PlayerHousingMgr::Tilt(Player* player, uint32 placementId, float forwardDeg
 
 bool PlayerHousingMgr::PlaceAnother(Player* player, uint32 placementId, std::string& reason)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session* session = GetOwnerSession(player, reason);
-    if (!session)
-        return false;
-
+    // A ghost of a new one follows the player, with this one's turn, size and tilt.
     placementId = ResolvePlacementArgument(player, placementId);
-    auto itr = session->placements.find(placementId);
-    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
-    if (!piece)
+    std::optional<Placement> source = GetPlacement(player, placementId);
+    if (!source)
     {
         reason = "Choose a piece first: click it while decorating, or stand next to it.";
         return false;
     }
-
-    if (!CheckLimit(*session, *piece, reason))
-        return false;
-
-    // One from the bags, else from House Storage, else a new copy from the Collection.
-    std::string got;
-    uint32 reserved = 0;
-    auto consumes = _pendingConsumes.find(player->GetGUID());
-    if (consumes != _pendingConsumes.end())
-    {
-        auto entry = consumes->second.find(piece->itemEntry);
-        if (entry != consumes->second.end())
-            reserved = entry->second;
-    }
-    if (player->GetItemCount(piece->itemEntry) <= reserved)
-    {
-        ObjectGuid::LowType self = player->GetGUID().GetCounter();
-        std::map<uint32, uint32> storage = GetStorage(self);
-        auto stored = storage.find(piece->itemEntry);
-        if (stored != storage.end() && stored->second > 0)
-        {
-            if (!player->AddItem(piece->itemEntry, 1))
-            {
-                reason = "Your bags are full.";
-                return false;
-            }
-            AddToStorage(self, piece->itemEntry, -1);
-            got = "Took one out of House Storage. ";
-        }
-        else
-        {
-            uint32 cost = _freeMode ? 0 : piece->copyCost;
-            if (!GetCopy(player, piece->itemEntry, reason))
-                return false;
-            got = cost ? Acore::StringFormat("Here's a new one, for {}. ", FormatMoney(cost)) : "Here's a new one from your Collection. ";
-        }
-    }
-
-    CancelMove(player);
-    Placement const& source = itr->second;
-    _pendingCopies[player->GetGUID()] = PendingCopy{ piece->itemEntry, source.o, source.scale, source.pitch, source.roll };
-    reason = Acore::StringFormat("{}Right-click the {} in your bags, then click where it goes: it gets this one's turn, size and tilt.",
-        got, piece->name);
-    SendAddonState(player);
-    return true;
-}
-
-uint32 PlayerHousingMgr::GetPendingCopy(Player const* player) const
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto itr = _pendingCopies.find(player->GetGUID());
-    return itr != _pendingCopies.end() ? itr->second.itemEntry : 0;
+    return StartGhostNew(player, source->itemEntry, source->id, reason);
 }
 
 void PlayerHousingMgr::SnapToGrid(ObjectGuid::LowType guid, float& x, float& y) const
