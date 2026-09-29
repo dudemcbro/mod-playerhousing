@@ -30,7 +30,7 @@ quests that walk you through housing, each done the moment you do the thing:
 
 1. **Home Sweet Island**: use your House Key to go home.
 2. **Making It Yours**: place a furnishing.
-3. **A Fresh Look**: start decorating, then turn, nudge or move a piece.
+3. **A Fresh Look**: click a piece, then turn, nudge or move it.
 4. **Nothing Is Ever Lost**: undo a change.
 5. **Open House**: invite a guest, or open your island to friends or everyone.
 
@@ -56,9 +56,10 @@ Without the addon:
    the piece (from 1 yard for a candle to 20 for a manor), so you can see the room it takes.
 2. Click where it should go. It lands on that exact spot, facing you.
 
-After placing a building, its menu opens by itself: Keep it here, Take it back, turn or
-nudge it. The piece standing there is the preview. Island settings (or `.house adjust`)
-switches this to every piece, or off.
+Placing says nothing in chat (the piece is there to see) unless the island is nearly full.
+Change your mind with Undo. If you'd like a piece's menu to open by itself after placing
+(Keep it here, Take it back, turn or nudge it), Island settings (or `.house adjust`) turns
+that on for buildings or for everything.
 
 That's the whole flow. You can place anywhere on your island, indoors or out, up to the
 beach. The only rules: it has to be on your island, you have to be able to see the spot,
@@ -67,13 +68,15 @@ Swim too far out and you're brought back to the beach.
 
 ### Changing things
 
-- **Start decorating** (Home menu, or `.house decorate`). Now click any piece to open its
-  menu: turn it, face it toward you, move it to where you stand, nudge it, raise or lower
-  it, or pick it up.
-- **Move**: the piece follows you as a ghost, starting where it stands, and G sets it down
-  in its new spot (the same keys as placing). Whatever stands on it (a lantern on a table,
-  all the furniture in a building) goes along, and one undo puts it all back.
-  `.house move` does it with a targeting circle instead.
+- **Click a piece** to open its menu: turn it, face it toward you, move it, nudge it, raise
+  or lower it, or pick it up. That starts decorating by itself. Pieces that work like the
+  real thing (chairs, mailboxes, crafting stations) do their job when clicked instead, until
+  you **Start decorating** (Home menu, or `.house decorate`); **Change a piece near me** on
+  the Home menu reaches them any time.
+- **Move**: the piece follows you (or your mouse) as a ghost, starting where it stands, and
+  a click or G sets it down in its new spot (the same keys as placing). Whatever stands on
+  it (a lantern on a table, all the furniture in a building) goes along, and one undo puts
+  it all back. `.house move` does it with a targeting circle instead.
 - **More turns, tilt and size...** turns by 90, 15 or 5 degrees, tilts it 5 degrees at a
   time (forward, back, or to its left or right), and makes it bigger or smaller a tenth
   at a time. What stands on it keeps its place on the bigger or smaller top. The server
@@ -92,9 +95,11 @@ Swim too far out and you're brought back to the beach.
 - **Undo** and **Redo** are at the top of the Home menu, with the change they'd undo
   spelled out ("Undo: placed Westfall Chair"). Undo remembers your last 30 changes while
   you're on the island.
-- Picked-up pieces go back to your bags. When your bags are full they wait in **House
-  Storage** (Home menu), and "Take everything" empties it.
-- Buildings ask first: pick up the building only, or the building and everything inside.
+- Picked-up pieces go back to your bags, without a word in chat. When your bags are full
+  they wait in **House Storage** (Home menu), and "Take everything" empties it; chat says
+  so then.
+- A building's menu has both: pick up the building only, or the building and everything
+  inside. Nothing asks "are you sure": Undo puts it back.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone
   too.
 
@@ -110,9 +115,9 @@ is.
 ### The Bank Chest
 
 Unlocked at level 20 (or by buying 7 bank slots). Place it anywhere, and click it when
-you're not decorating: **Open my bank** brings up your own bank, right there, and **House
-Storage** lists the pieces waiting there. It works the way a banker does: only near the
-chest, for a few minutes after you open it. Visitors find it locked.
+you're not decorating: your own bank opens, right there. It works the way a banker does:
+only near the chest, for a few minutes after you open it. Visitors find it locked. (House
+Storage is on the Home menu and in the window.)
 
 ### Weather, time of day and music
 
@@ -164,8 +169,10 @@ Rings, necklaces, trinkets and relics don't show on a body, so they aren't offer
 
 House Key, Collection. It lists every piece by category with your progress, for example
 "Buildings (6/49, 2 new)". Click an unlocked piece for its page: how many you have (in
-your bags, in storage, placed) and Get one or Get 5 (free with FreeMode, a small gold
-cost otherwise). A locked piece tells you how to earn it, with your progress so far
+your bags, in storage, placed), **Place one** (its ghost follows you at once; a new copy is
+paid for only when you set it down, so Never mind costs nothing), and Get one or Get 5
+(free with FreeMode, a small gold cost otherwise, shown on the option). A locked piece
+tells you how to earn it, with your progress so far
 ("Reach level 20 (you're level 15)", "Exalted with Stormwind (you're Revered)").
 
 - **Search by name** (or `.house collection lamp`) finds pieces in every category,
@@ -302,6 +309,15 @@ menus, plus an edit mode that moves pieces with the keyboard and mouse. It's opt
 House Key menus do everything without it. With the addon, the House Key opens the window
 (`/housing key` switches back to the menu, which the window's Menu button also opens).
 
+The addon sends its commands over AzerothCore's addon command channel (on unless the server
+sets `AddonChannel = 0`): chat's flood limit doesn't count them, so holding a key or moving
+a piece with the mouse never gets anyone muted, and they don't fill the chat box. It checks
+the channel answers when you log in, and sends them as chat otherwise. What it does shows in
+the window and its banner, so the server keeps chat for errors and news: nothing asks "are
+you sure" before something Undo can put back (picking up a building, several pieces, the
+Delete key); only saving over or deleting a layout or a set, and throwing out a guestbook
+note, still ask.
+
 The window has a toolbar (go home or leave, Edit, Undo and Redo, whose tooltips say what
 they'd undo, and the full menu; right-click Undo for the last 15 changes, to undo back to any
 of them) and seven tabs:
@@ -311,8 +327,9 @@ of them) and seven tabs:
   you placed last, or a category; only unlocked ones, or only the ones in your bags; by name;
   sorted as the Collection lists them, by name, by cost, or bags first. A click keeps the
   piece in the preview next to the window with its details and buttons (Place, Get 1,
-  Get 5 and Take from storage), and on your island a ghost of it follows you, to set down
-  with G. Hover an icon to preview the piece: its
+  Get 5 and Take from storage), and on your island a ghost of any unlocked piece follows
+  you (or your mouse) at once, to set down with a click or G; a new copy is paid for only
+  when it's set down. Hover an icon to preview the piece: its
   model, slowly turning and centered in the frame, and its size. Buildings made of world
   models can't be drawn in a window, so they show a picture (see Pictures of buildings). Right-click a piece to star it as a
   favorite; drag one from your bags to an action bar to keep it handy. New unlocks are
@@ -497,7 +514,7 @@ the script again (it only needs a moment) to use yours.
 | `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
 | `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
 | `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
-| `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
+| `PlayerHousing.HouseKey.DelaySeconds` | 0 | How long "Go home" takes (0: at once); moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
 | `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
 
@@ -667,7 +684,7 @@ their next visit. Gold spent on stages isn't refunded.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (290 checks: placing, undo, decorating, edit mode, several pieces at once, ghosts,
+headless clients (302 checks: placing, undo, decorating, edit mode, several pieces at once, ghosts, the mouse,
 sets, the addon's window, storage, the Collection, buildings, mannequins, layouts,
 ambience, visitors, the guestbook, roommates, moderation, working furniture, addon
 messages, relogging, and the safety rules above), and a load test.

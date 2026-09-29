@@ -21,6 +21,9 @@ using namespace Housing;
 
 namespace
 {
+    // Weather, time and music go to everyone on the island: a quarter second apart at most
+    // (fast enough to step through the choices).
+    constexpr uint32 AMBIENCE_COOLDOWN_MS = 250;
     struct WeatherChoice
     {
         char const* name;
@@ -225,7 +228,7 @@ void PlayerHousingMgr::ApplyAmbienceToIsland(ObjectGuid::LowType ownerGuid, bool
 bool PlayerHousingMgr::SetWeather(Player* player, uint8 weather, std::string& reason)
 {
     // Everyone on the island gets each change: one a second.
-    if (OnCooldown(player, COOLDOWN_AMBIENCE, IN_MILLISECONDS, reason))
+    if (OnCooldown(player, COOLDOWN_AMBIENCE, AMBIENCE_COOLDOWN_MS, reason))
         return false;
     if (weather >= WeatherCount())
     {
@@ -244,7 +247,7 @@ bool PlayerHousingMgr::SetWeather(Player* player, uint8 weather, std::string& re
 bool PlayerHousingMgr::SetTimeOfDay(Player* player, uint8 timeOfDay, std::string& reason)
 {
     // Everyone on the island gets each change: one a second.
-    if (OnCooldown(player, COOLDOWN_AMBIENCE, IN_MILLISECONDS, reason))
+    if (OnCooldown(player, COOLDOWN_AMBIENCE, AMBIENCE_COOLDOWN_MS, reason))
         return false;
     if (timeOfDay >= TimeOfDayCount())
     {
@@ -264,7 +267,7 @@ bool PlayerHousingMgr::SetTimeOfDay(Player* player, uint8 timeOfDay, std::string
 bool PlayerHousingMgr::SetMusic(Player* player, uint32 soundId, std::string& reason)
 {
     ObjectGuid::LowType self = player->GetGUID().GetCounter();
-    if (OnCooldown(player, COOLDOWN_AMBIENCE, IN_MILLISECONDS, reason))
+    if (OnCooldown(player, COOLDOWN_AMBIENCE, AMBIENCE_COOLDOWN_MS, reason))
         return false;
     if (soundId && !MusicName(soundId))
     {

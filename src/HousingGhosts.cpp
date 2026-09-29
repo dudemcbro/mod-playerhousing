@@ -437,10 +437,8 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
         return false;
     }
 
-    // One to set down: from the bags or House Storage. With none, FreeMode hands one over when
-    // it's set down; otherwise a new copy is bought now, into House Storage (no bag space
-    // needed).
-    std::string got;
+    // One to set down: from the bags or House Storage, or else a new copy from the Collection,
+    // paid for (outside FreeMode) only when it's set down: Never mind costs nothing.
     if (!HasOneToPlace(player, itemEntry))
     {
         if (!IsUnlocked(player, *piece))
@@ -448,19 +446,10 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
             reason = Acore::StringFormat("{} is still locked: {}.", piece->name, DescribeProgress(player, *piece));
             return false;
         }
-        uint32 cost = piece->copyCost;
-        if (!_freeMode)
+        if (!_freeMode && piece->copyCost && player->GetMoney() < piece->copyCost)
         {
-            if (cost && player->GetMoney() < cost)
-            {
-                reason = Acore::StringFormat("A {} costs {}.", piece->name, FormatMoney(cost));
-                return false;
-            }
-            if (cost)
-                player->ModifyMoney(-int64(cost));
-            AddToStorage(player->GetGUID().GetCounter(), itemEntry, 1);
-            if (cost)
-                got = Acore::StringFormat("Bought a new one for {} (it waits in House Storage). ", FormatMoney(cost));
+            reason = Acore::StringFormat("A {} costs {}.", piece->name, FormatMoney(piece->copyCost));
+            return false;
         }
     }
 
@@ -493,12 +482,10 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
 
     Ghost& carried = _carrying[player->GetGUID()] = ghost;
     DrawGhost(player, *session, carried, true);
-    if (HasMouse(player))
-        reason = got + Acore::StringFormat("The {} follows your mouse: click where it goes (Shift-click: and another; Escape: never mind).",
-            piece->name);
-    else
-        reason = got + Acore::StringFormat("The {} follows you: walk it where it goes, then G sets it down (Escape: never mind). "
-            "Without the addon: House Key, Set it down.", piece->name);
+    // The addon's banner says what to do; without the addon, once.
+    reason.clear();
+    if (!HasAddon(player))
+        Tip(player, TIP_GHOST, "It follows you: walk it where it goes, then House Key, Set it down (or Never mind).");
     SendAddonState(player);
     return true;
 }
@@ -584,16 +571,10 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
 
     Ghost& shown = _carrying[player->GetGUID()] = ghost;
     DrawGhost(player, *session, shown, true);
-    size_t count = moving.size();
-    std::string what = count == 1 ? "The " + PieceName(lead.itemEntry) : Pieces(count);
-    if (HasMouse(player))
-        reason = Acore::StringFormat("{} {} your mouse: click where {} go (Escape: never mind).", what, count == 1 ? "follows" : "follow",
-            count == 1 ? "it should" : "they should");
-    else
-        reason = Acore::StringFormat("{} {} you: walk {} where {} go, then G sets {} down (Escape: never mind; without the addon, "
-            "the House Key's menu).",
-            what, count == 1 ? "follows" : "follow", count == 1 ? "it" : "them", count == 1 ? "it should" : "they should",
-            count == 1 ? "it" : "them");
+    // The addon's banner says what to do; without the addon, once.
+    reason.clear();
+    if (!HasAddon(player))
+        Tip(player, TIP_GHOST, "It follows you: walk it where it goes, then House Key, Set it down (or Never mind).");
     SendAddonState(player);
     return true;
 }
@@ -685,11 +666,15 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
         return false;
     }
 
-    // A building stands on the ground, whatever the mouse is on (a roof, a cliff's side).
+    // A building stands on the ground, whatever the mouse is on (a roof, a cliff's side): the
+    // land itself (a height search would find buildings' roofs, the one being moved too).
     PieceDefinition const* lead = GetPiece(ghost.pieces.front().itemEntry);
     bool building = lead && lead->IsBuilding();
     if (building)
-        z = GroundHeightNear(player, x, y, z);
+    {
+        float land = player->GetMap()->GetGridHeight(x, y);
+        z = land > INVALID_HEIGHT + 1.0f ? land : GroundHeightNear(player, x, y, z);
+    }
 
     // The mouse on a piece being moved (still standing where it was): where the lead stood, as
     // if it were on what that piece stands on.
@@ -807,16 +792,28 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
             reason = "That spot is off your island.";
             return false;
         }
-        // From the bags or House Storage; in FreeMode the Collection hands over a missing one.
+        // From the bags or House Storage, or a new copy from the Collection (bought now, outside
+        // FreeMode).
         bool handedOver = false;
+        uint32 paid = 0;
         if (!TakeItem(player, lead.itemEntry))
         {
-            if (!_freeMode || !IsUnlocked(player, *piece))
+            if (!IsUnlocked(player, *piece))
             {
                 reason = Acore::StringFormat("You don't have another {}.", piece->name);
                 EndGhost(player);
                 SendAddonState(player);
                 return false;
+            }
+            if (!_freeMode && piece->copyCost)
+            {
+                if (player->GetMoney() < piece->copyCost)
+                {
+                    reason = Acore::StringFormat("A new {} costs {}.", piece->name, FormatMoney(piece->copyCost));
+                    return false;
+                }
+                paid = piece->copyCost;
+                player->ModifyMoney(-int64(paid));
             }
             handedOver = true;
         }
@@ -838,17 +835,20 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
                 bool toStorage;
                 ReturnItem(player, lead.itemEntry, toStorage);
             }
+            if (paid)
+                player->ModifyMoney(int64(paid));
             return false;
         }
+        // Money spent is news (the piece itself is there to see).
+        if (paid)
+            reason = Acore::StringFormat("Bought a new {} for {}.{}", piece->name, FormatMoney(paid), reason.empty() ? "" : " " + reason);
 
-        // Another of the same, while there are more (and room for them).
+        // Another of the same, while there are more (and room, and money, for them).
         std::string more;
-        bool anotherOne = HasOneToPlace(player, lead.itemEntry) || (_freeMode && IsUnlocked(player, *piece));
+        bool anotherOne = HasOneToPlace(player, lead.itemEntry)
+            || (IsUnlocked(player, *piece) && (_freeMode || player->GetMoney() >= piece->copyCost));
         if (another && CheckLimit(*session, *piece, more) && anotherOne)
-        {
-            DrawGhost(player, *session, ghost, true);
-            reason += " Another follows you.";
-        }
+            DrawGhost(player, *session, ghost, true);  // another follows (the ghost shows it)
         else
         {
             if (another)

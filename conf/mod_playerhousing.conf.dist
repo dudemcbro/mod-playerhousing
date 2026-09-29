@@ -116,9 +116,9 @@ PlayerHousing.Ghosts = 1
 # PlayerHousing.HouseKey.DelaySeconds
 #    How long "Go home" takes (moving or combat cancels). 0 = instant.
 #    FreeMode always goes instantly.
-#    Default: 5
+#    Default: 0
 ###############################################################################
-PlayerHousing.HouseKey.DelaySeconds = 5
+PlayerHousing.HouseKey.DelaySeconds = 0
 
 ###############################################################################
 # PlayerHousing.StewardEntry

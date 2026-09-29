@@ -301,8 +301,8 @@ end
 
 ---------------------------------------------------------------------------------------------
 -- Collection: everything there is, unlocked or not. A click shows a piece in the preview
--- with its buttons and, on the island, a ghost of it follows you when you have one (in the
--- bags or House Storage, or free); buying a copy takes Place or Get.
+-- with its buttons and, on the island, a ghost of it follows you for any unlocked piece (one
+-- from the bags or House Storage, else a new copy, paid for when it's set down).
 
 local collectionSlots, categoryText, collectionPageText, collectionStatus, collectionPrev, collectionNext, sortButton, collectionCount =
     {}, nil, nil, nil, nil, nil, nil, nil
@@ -552,8 +552,10 @@ local function CreateCollection()
                 -- In Favorites, the piece under the mouse may have just gone.
                 if self.info then CollectionTooltip(self) else GameTooltip_Hide() end
             else
+                -- On your island, a ghost of it straight away (a new copy is paid for only when
+                -- it's set down).
                 API.Pin({ id = id, name = self.info[2] })
-                if API.CanEdit() and HaveOne(id) then
+                if API.CanEdit() and (HaveOne(id) or collection.unlocked[id]) then
                     API.StartGhost(id)
                 end
             end
@@ -677,7 +679,7 @@ local function CreatePlaced()
         { "+", 20, function(item) API.Command("group add " .. item.id) end, "Add it to the selection",
           "Selected with the others, it moves with them (like Ctrl-clicking it)." },
         { "Here", 40, function(item) Do("here " .. item.id, "placed") end, "Bring it here", "Moves it to where you're standing." },
-        { "Pick up", 50, function(item) API.PickUpPlacement(item.id, PieceName(item.item), IsBuilding(item.item)) end },
+        { "Pick up", 50, function(item) API.PickUpPlacement(item.id) end },
     })
     panel:SetScript("OnShow", function()
         if not API.CanEdit() then
@@ -919,6 +921,12 @@ API.OnData("guestbook", function(list)
             items[#items + 1] = { id = tonumber(row[2]), author = row[3], when = row[4], fresh = row[5] == "1", text = row[6] or "" }
             if row[5] == "1" then
                 fresh = fresh + 1
+            end
+        elseif row[1] == "more" then
+            -- The rest of a note too long for one message.
+            local item = items[#items]
+            if item and item.id == tonumber(row[2]) then
+                item.text = item.text .. (row[3] or "")
             end
         end
     end

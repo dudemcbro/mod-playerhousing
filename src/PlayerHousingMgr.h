@@ -137,8 +137,9 @@ namespace Housing
         CHAR_FLAG_VETERAN_DONE = 0x02,
         CHAR_FLAG_GREETED = 0x04,
         CHAR_FLAG_ADJUST_ALL = 0x08,     // adjust menu after placing anything
-        CHAR_FLAG_ADJUST_NEVER = 0x10,   // never; neither flag: after placing buildings
-        CHAR_FLAG_UNLOCKED_ONLY = 0x20   // the Collection lists only unlocked pieces
+        CHAR_FLAG_ADJUST_NEVER = 0x10,   // never (as with no flag: the default)
+        CHAR_FLAG_UNLOCKED_ONLY = 0x20,  // the Collection lists only unlocked pieces
+        CHAR_FLAG_ADJUST_BUILDINGS = 0x40  // adjust menu after placing buildings
     };
 
     // When the piece menu opens by itself right after placing.
@@ -155,7 +156,8 @@ namespace Housing
         TIP_FIRST_UNLOCK = 0x02,
         TIP_FIRST_STORAGE = 0x04,
         TIP_LIMIT = 0x08,
-        TIP_DECORATE = 0x10
+        TIP_DECORATE = 0x10,
+        TIP_GHOST = 0x20
     };
 
     enum MenuSourceType : uint8
@@ -495,6 +497,8 @@ public:
     void SetAddonClient(Player* player, bool keyOpensWindow, bool mouse);
     bool KeyOpensWindow(Player const* player) const;
     bool HasMouse(Player const* player) const;
+    // The addon is there: its window and banner show what just happened, so chat needn't.
+    bool HasAddon(Player const* player) const;
     // count: at most that many (0: all of that piece).
     bool TakeFromStorageCommand(Player* player, std::string const& what, uint32 count, std::string& reason);
     void MarkAllSeen(Player* player) const;
@@ -816,8 +820,10 @@ private:
     void SavePlacement(ObjectGuid::LowType ownerGuid, Housing::Placement const& placement, uint32 mapId) const;
     void DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const;
     std::string PieceName(uint32 itemEntry) const;
-    std::string DescribeReturns() const;
-    std::string DescribeItemReturns() const;
+    // Where things went back to. bagsToo false: only what the player couldn't guess (House
+    // Storage because the bags were full, someone else's storage, gear by mail).
+    std::string DescribeReturns(bool bagsToo = true) const;
+    std::string DescribeItemReturns(bool bagsToo = true) const;
 
 
     // HousingGroups.cpp

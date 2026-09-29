@@ -415,7 +415,10 @@ bool PlayerHousingMgr::PickUpGroup(Player* player, Session& session, std::vector
     Record(player, "picked up " + Pieces(count), std::move(changes));
     session.groups.erase(player->GetGUID().GetCounter());
 
-    reason = Acore::StringFormat("Picked up {}.{} ({})", Pieces(count), DescribeReturns(), CountsText(session.ownerGuid));
+    // Said only when some went somewhere other than the bags.
+    reason = DescribeReturns(false);
+    if (!reason.empty())
+        reason = Acore::StringFormat("Picked up {}.{}", Pieces(count), reason);
     SendAddonState(player);
     return true;
 }

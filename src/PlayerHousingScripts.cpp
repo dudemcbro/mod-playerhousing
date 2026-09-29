@@ -286,8 +286,9 @@ class spell_playerhousing_key : public SpellScript
     }
 };
 
-// Every placed piece and snap marker. While the owner decorates, clicking a piece opens its
-// menu; otherwise pieces behave like the real thing (chairs seat, mailboxes open).
+// Every placed piece and snap marker. Clicking a plain piece opens its menu for its owner (and
+// roommates); pieces that work like the real thing (chairs seat, mailboxes open) do that,
+// unless the owner is decorating.
 class go_playerhousing_piece : public GameObjectScript
 {
 public:
@@ -329,16 +330,18 @@ public:
             return true;
         }
 
-        // A Bank Chest opens for its owner only (it's their bank).
+        // A Bank Chest opens its owner's bank straight away (House Storage is in the House
+        // Key's menu and the window); for anyone else it's locked.
         if (std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId))
         {
             PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(placement->itemEntry);
             if (piece && piece->HasFlag(PIECE_FLAG_CHEST))
             {
-                if (sPlayerHousingMgr->IsOnOwnIsland(player))
-                    HousingMenus::ShowChest(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
-                else
+                std::string reason;
+                if (!sPlayerHousingMgr->IsOnOwnIsland(player))
                     Reply(player, "The chest is locked: it holds its owner's bank.");
+                else if (!sPlayerHousingMgr->OpenBankAtChest(player, placementId, reason))
+                    Reply(player, reason);
                 return true;
             }
             if (piece && piece->HasFlag(PIECE_FLAG_MUSIC))
@@ -356,10 +359,15 @@ public:
             }
         }
 
+        // A plain piece (nothing to sit on or open): its menu, decorating from now on. (The
+        // pieces that work like the real thing change only while decorating: House Key.)
         if (sPlayerHousingMgr->CanDecorate(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
         {
+            std::string ignored;
+            sPlayerHousingMgr->SetDecorating(player, true, ignored);
             sPlayerHousingMgr->SelectPlacement(player, placementId);
-            Reply(player, "To change this, start decorating: House Key, Start decorating.");
+            sPlayerHousingMgr->SendAddonState(player);
+            HousingMenus::ShowPiece(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
             return true;
         }
 
@@ -490,8 +498,9 @@ public:
         std::string reason;
         PlayerHousingMgr* mgr = sPlayerHousingMgr;
 
-        // The addon's state request is quiet and cheap; edit mode's moves have their own
-        // window; everything else counts.
+        // The addon's quiet reads (state, lists, marking seen, saying it's there) are cheap and
+        // don't count; edit mode's moves and the mouse's points have windows of their own;
+        // everything else counts.
         bool holdMessage = sub == "group" && tokens.size() > 1 && Lower(tokens[1]) == "hold";
         bool ghostAdjust = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "adjust";
         bool ghostAt = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "at";
@@ -505,7 +514,7 @@ public:
             if (!gm && mgr->ShiftFlood(player))
                 return true;
         }
-        else if (sub != "state" && !holdMessage && !gm && mgr->CommandFlood(player))
+        else if (sub != "state" && sub != "data" && sub != "seen" && sub != "addon" && !holdMessage && !gm && mgr->CommandFlood(player))
         {
             Reply(player, "Too many housing commands at once: give it a moment.");
             return true;
@@ -970,8 +979,8 @@ public:
             }
             if (id && mgr->GetPlacement(player, id))
             {
+                // Quiet: the ring under it (and the addon) show it.
                 mgr->SelectPlacement(player, id);
-                reason = "Selected " + mgr->GetPiece(mgr->GetPlacement(player, id)->itemEntry)->name + ".";
                 mgr->SendAddonState(player);
             }
             else

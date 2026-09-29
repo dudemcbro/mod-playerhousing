@@ -415,7 +415,9 @@ bool PlayerHousingMgr::GetCopies(Player* player, uint32 itemEntry, uint32 count,
         player->ModifyMoney(-int64(uint64(cost) * given));
 
     std::string where = piece->IsBuilding() ? "where it should stand" : "where it should go";
-    if (given == 1 && count == 1)
+    if (given == count && HasAddon(player))
+        reason.clear();  // the addon's Collection shows it in the bags, with Place next to it
+    else if (given == 1 && count == 1)
         reason = Acore::StringFormat("Here's a {}. Right-click it on your island, then click {}.", piece->name, where);
     else if (given == count)
         reason = Acore::StringFormat("Here are {} of the {}. Right-click one on your island, then click {}.", given, piece->name, where);

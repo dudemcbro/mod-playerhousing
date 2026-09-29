@@ -430,7 +430,7 @@ def main():
     check("the targeting circle fits the piece: small for a chair, large for a farmhouse",
           CIRCLE_RADIUS.get(spell_of(CHAIR), 99) <= 2 and CIRCLE_RADIUS.get(spell_of(FARMHOUSE), 0) >= 8,
           "chair %d, farmhouse %d" % (spell_of(CHAIR), spell_of(FARMHOUSE)))
-    check("placement message has the counts", has(msgs, "Placed Westfall Chair") and has(msgs, "furnishings"), joined(msgs))
+    check("placing is quiet: the chair is there to see", not has(msgs, "Placed Westfall Chair"), joined(msgs))
     check("tour: placing a piece completes Making It Yours", QUEST_PLACE in owner.quests_done, str(owner.quests_done))
     check("placed piece faces the player", chair is not None and angle_diff(chair["o"], math.atan2(L["landing"][1] - chair_spot[1], L["landing"][0] - chair_spot[0])) < 0.05,
           str(chair))
@@ -532,9 +532,9 @@ def main():
         moved_table = placement_of(owner_guid, TABLE)
         moved_lantern = placement_of(owner_guid, LANTERN)
         shift = (moved_table["x"] - table["x"], moved_table["y"] - table["y"])
-        check("the lantern moves with its table", math.hypot(*shift) > 0.4
+        check("the lantern moves with its table (quietly)", math.hypot(*shift) > 0.4
               and abs(moved_lantern["x"] - lantern["x"] - shift[0]) < 0.01 and abs(moved_lantern["y"] - lantern["y"] - shift[1]) < 0.01
-              and has(msgs, "with the Lantern"), joined(msgs))
+              and not msgs, joined(msgs))
         msgs = owner.command(".house rotate 90 %d" % table["id"])
         turned = placement_of(owner_guid, LANTERN)
         check("and turns with it", angle_diff(turned["o"], moved_lantern["o"] + math.pi / 2) < 0.02, joined(msgs))
@@ -557,7 +557,7 @@ def main():
         msgs = owner.command(".house size bigger %d" % table["id"])
         raised = placement_of(owner_guid, LANTERN)
         check("bigger: the table grows by a tenth", abs(shape_of(owner_guid, table["id"])["scale"] / normal - 1.1) < 0.001
-              and has(msgs, "made Tiny Table bigger (110%) with the Lantern"), joined(msgs))
+              and not msgs, joined(msgs))
         check("the lantern stays on the bigger table top", math.dist((raised["x"], raised["y"]), (lantern["x"], lantern["y"])) < 0.01
               and abs((raised["z"] - table["z"]) - (lantern["z"] - table["z"]) * 1.1) < 0.01, "%s -> %s" % (lantern, raised))
         # The table has no clickable copy: it's changed through its rune.
@@ -573,13 +573,13 @@ def main():
         msgs = owner.command(".house size normal %d" % table["id"])
         back = placement_of(owner_guid, LANTERN)
         check("normal size, and the lantern comes back down with the top", abs(shape_of(owner_guid, table["id"])["scale"] - normal) < 0.001
-              and abs(back["z"] - lantern["z"]) < 0.01 and has(msgs, "brought Tiny Table back to normal size"), joined(msgs))
+              and abs(back["z"] - lantern["z"]) < 0.01 and not msgs, joined(msgs))
 
     chair = placement_of(owner_guid, CHAIR)
     msgs = owner.command(".house tilt forward 10 %d" % chair["id"])
     shape = shape_of(owner_guid, chair["id"])
     check("tilt forward 10°", abs(math.degrees(shape["pitch"]) - 10) < 0.05 and shape["roll"] == 0
-          and has(msgs, "tilted Westfall Chair 10° forward"), joined(msgs) + " " + str(shape))
+          and not msgs, joined(msgs) + " " + str(shape))
 
     def tilted_go():
         go = nearest_go(owner, edit(CHAIR))
@@ -593,7 +593,7 @@ def main():
     check("tilting stops at the server's limit (45°)", abs(math.degrees(shape_of(owner_guid, chair["id"])["roll"]) - 45) < 0.05)
     msgs = owner.command(".house tilt straight %d" % chair["id"])
     shape = shape_of(owner_guid, chair["id"])
-    check("stand it straight", shape["pitch"] == 0 and shape["roll"] == 0 and has(msgs, "stood Westfall Chair straight"), joined(msgs))
+    check("stand it straight", shape["pitch"] == 0 and shape["roll"] == 0 and not msgs, joined(msgs))
 
     chair_go = nearest_go(owner, edit(CHAIR))
     if chair_go:
@@ -681,7 +681,7 @@ def main():
     owner.addon_messages.clear()
     msgs = owner.command(".house edit on")
     state = addon_state(owner)
-    check("edit mode on, and the addon hears of it", has(msgs, "Edit mode") and state is not None and len(state) > 18
+    check("edit mode on, and the addon hears of it (quietly: its banner shows it)", not msgs and state is not None and len(state) > 18
           and state[17] == "1" and state[3] == "1", joined(msgs) + " " + str(state))
     chair = placement_of(owner_guid, CHAIR)
     chair_go = nearest_go(owner, edit(CHAIR))
@@ -748,7 +748,8 @@ def main():
         owner.command(".house addon 1 1 mouse")
         msgs = owner.command(".house ghost move")
         wait_for(lambda: ghosts_in_sight(owner), 3, owner)
-        check("with the DLL, the ghost follows the mouse", has(msgs, "follows your mouse"), joined(msgs))
+        check("with the addon, a ghost starts without a word in chat (the banner says what to do)", not msgs and ghosts_in_sight(owner),
+              joined(msgs))
 
         def ghost_near(x, y):
             found = ghosts_in_sight(owner)
@@ -860,6 +861,18 @@ def main():
     check("edit mode off stops decorating too", state is not None and state[17] == "0" and state[3] == "0", joined(msgs) + " " + str(state))
     wait_for(lambda: nearest_go(owner, RING_GO) is None, 3, owner)
     check("and the ring goes", nearest_go(owner, RING_GO) is None, str(nearest_go(owner, RING_GO)))
+
+    # Not decorating: a click on a plain piece opens its menu anyway (decorating from then on).
+    table = placement_of(owner_guid, TABLE)
+    table_go = nearest_go(owner, live(TABLE))
+    if table and table_go:
+        move(owner, table["x"] - 2.0, table["y"], table["z"], 0.0)
+        owner.addon_messages.clear()
+        menu, msgs = owner.use_gameobject(table_go.guid)
+        state = addon_state(owner)
+        check("not decorating, a click on a plain piece opens its menu straight away", "Nudge..." in options(menu)
+              and state is not None and state[3] == "1" and state[4] == str(table["id"]), str(options(menu)) + " " + str(state and state[:5]))
+        owner.gossip_select("Done")
     owner.command(".house decorate on")
 
     # ------------------------------------------------------------- several pieces at once
@@ -919,7 +932,7 @@ def main():
         msgs = owner.command(".house nudge forward 0.25")
         c7, t7 = placement_of(owner_guid, CHAIR), placement_of(owner_guid, TABLE)
         check("Fwd nudges every selected piece", c7 and t7 and abs(c7["x"] - chair["x"] - 0.25) < 0.06 and abs(t7["x"] - table["x"] - 0.25) < 0.06
-              and (has(msgs, "2 pieces") or has(msgs, "3 pieces")), joined(msgs) + " %s %s" % (c7, t7))
+              and not msgs, joined(msgs) + " %s %s" % (c7, t7))
         owner.command(".house undo")
         msgs = owner.command(".house size bigger")
         check("size waits for one piece", has(msgs, "one piece at a time"), joined(msgs))
@@ -974,7 +987,7 @@ def main():
         msgs = owner.command(".house pickup")
         gone = count - len(placements(owner_guid))
         check("picking up the selection takes all of it", placement_of(owner_guid, CHAIR) is None and placement_of(owner_guid, TABLE) is None
-              and gone == (3 if lantern else 2) and has(msgs, "Picked up %d pieces" % gone), joined(msgs))
+              and gone == (3 if lantern else 2) and not has(msgs, "Picked up"), joined(msgs))
         msgs = owner.command(".house undo")
         check("and undo puts it all back", len(placements(owner_guid)) == count, joined(msgs))
 
@@ -1175,8 +1188,19 @@ def main():
     check("pieces unlocked by past progress are marked new", "Razorfen Lean-to (new)" in options(menu), str(options(menu)))
     _, _ = owner.gossip_select("Razorfen Lean-to")
     menu = owner.last_gossip
-    check("an unlocked piece has a page: what you have, get one or five", options(menu)[:3] == ["Razorfen Lean-to: you have none yet", "Get one", "Get 5"],
-          str(options(menu)))
+    check("an unlocked piece has a page: what you have, place one straight away, get one or five", options(menu)[:4] == [
+        "Razorfen Lean-to: you have none yet", "Place one (it follows you until you set it down)", "Get one", "Get 5"], str(options(menu)))
+    owner.gossip_select("Place one")
+    wait_for(lambda: ghosts_in_sight(owner), 3, owner)
+    state = addon_state(owner)
+    check("Place one: its ghost follows at once, nothing bought or taken yet", ghosts_in_sight(owner) and owner.last_gossip is None
+          and owner.count_item(RAZORFEN_LEANTO) == 0 and state is not None and state[21] == str(RAZORFEN_LEANTO),
+          "%s %s" % (ghosts_in_sight(owner), state and state[20:]))
+    owner.command(".house ghost cancel")
+    wait_for(lambda: not ghosts_in_sight(owner), 3, owner)
+    owner.command(".house collection")
+    owner.gossip_select("Buildings (")
+    owner.gossip_select("Razorfen Lean-to")
     _, msgs = owner.gossip_select("Get one")
     wait_for(lambda: owner.count_item(RAZORFEN_LEANTO) == 1, 3, owner)
     check("get one gives a free copy (FreeMode)", owner.count_item(RAZORFEN_LEANTO) == 1
@@ -1202,7 +1226,7 @@ def main():
     owner.gossip_select("Stormwind Lamp Post")
     _, msgs = owner.gossip_select("Get 5")
     wait_for(lambda: owner.count_item(LAMP_POST) == 5, 3, owner)
-    check("get 5 at once", owner.count_item(LAMP_POST) == 5 and has(msgs, "Here are 5 of the Stormwind Lamp Post"), joined(msgs))
+    check("get 5 at once", owner.count_item(LAMP_POST) == 5, joined(msgs))
     check("the page goes back to the search", "Back to the search" in options(owner.last_gossip), str(options(owner.last_gossip)))
     while owner.count_item(LAMP_POST):
         if not owner.destroy_item(LAMP_POST):
@@ -1280,13 +1304,11 @@ def main():
     owner.command(".house decorate off")  # decorating, a click opens the piece's own menu
     wait_for(lambda: nearest_go(owner, live(BANK_CHEST)) is not None, 3, owner)
     chest_go = nearest_go(owner, live(BANK_CHEST))
-    menu, msgs = owner.use_gameobject(chest_go.guid) if chest_go else (None, [])
-    check("clicking it offers the bank and House Storage", menu is not None and "Open my bank" in options(menu)
-          and any(o.startswith("House Storage (") for o in options(menu)), joined(msgs) + " " + str(options(menu)))
     owner.bank_banker = None
-    if menu:
-        owner.gossip_select("Open my bank")
+    menu, msgs = owner.use_gameobject(chest_go.guid) if chest_go else (None, [])
     wait_for(lambda: owner.bank_banker is not None, 3, owner)
+    check("clicking it opens the bank straight away, no menu first", menu is None and owner.bank_banker is not None,
+          joined(msgs) + " " + str(options(menu)))
     banker = owner.nearest(CHEST_BANKER, TYPEID_UNIT)
     check("the bank opens, with an unseen banker at the chest", owner.bank_banker is not None and banker is not None
           and owner.bank_banker == banker.guid and math.dist((banker.x, banker.y), L["chest"][:2]) < 1.0, str(owner.bank_banker))
@@ -1356,7 +1378,7 @@ def main():
     move(owner, L["farmhouse_stand"][0], L["farmhouse_stand"][1], L["ground"])
     msgs = owner.use_item(FARMHOUSE, spell_of(FARMHOUSE), L["farmhouse"])
     farmhouse = placement_of(owner_guid, FARMHOUSE)
-    check("a faction building places like furniture", farmhouse is not None and has(msgs, "buildings"), joined(msgs))
+    check("a faction building places like furniture", farmhouse is not None, joined(msgs))
     check("placing a building opens its menu right away", "Keep it here" in options(owner.last_gossip), str(options(owner.last_gossip)))
     owner.gossip_select("Keep it here")
     wait_for(lambda: owner.count_item(CHAIR) == 0, 1, owner)
@@ -1379,11 +1401,9 @@ def main():
     owner.gossip_select("Change a piece near me")
     _, _ = owner.gossip_select("Westfall Farmhouse")
     menu = owner.last_gossip
-    check("a building's menu asks before picking up", "Pick up..." in options(menu), str(options(menu)))
-    _, _ = owner.gossip_select("Pick up...")
-    menu = owner.last_gossip
-    check("choose the building only, or the building and what's inside",
-          "Pick up the building only" in options(menu) and any("inside it" in o for o in options(menu)), str(options(menu)))
+    check("a building's menu picks up straight away, either way: the building only, or with what's inside",
+          any(o.startswith("Pick up the building (the") for o in options(menu)) and any(o.endswith("inside it") for o in options(menu)),
+          str(options(menu)))
     check("inside follows the building's outline: the corner lantern counts, the table past the wall doesn't",
           any(o.startswith("Pick up the building and the 2 pieces inside it") for o in options(menu)), str(options(menu)))
     _, msgs = owner.gossip_select("Pick up the building and the")
@@ -1406,7 +1426,7 @@ def main():
     displays = sorted(o.fields.get(UNIT_FIELD_DISPLAYID) for o in ghosts_in_sight(owner))
     block = next((o for o in ghosts_in_sight(owner) if o.fields.get(UNIT_FIELD_DISPLAYID) == ghost_display(FARMHOUSE)), None)
     check("a building shows as a see-through block its size, the chair and lantern inside as see-through ghosts", len(buildings) == 1
-          and displays == sorted([ghost_display(FARMHOUSE), ghost_display(CHAIR), ghost_display(LANTERN)]) and has(msgs, "3 pieces follow you")
+          and displays == sorted([ghost_display(FARMHOUSE), ghost_display(CHAIR), ghost_display(LANTERN)])
           and block is not None and abs(block.scale() - buildings[0].scale()) < 0.01,
           joined(msgs) + " %s %s %s" % (buildings, displays, block and (block.scale(), buildings and buildings[0].scale())))
     owner.command(".house ghost adjust 0 2 0 0")
@@ -1742,6 +1762,22 @@ def main():
     msgs = owner.command(".house guestbook delete %s" % (notes[0][1] if notes else "0"))
     check("the owner throws a note out", has(msgs, "Threw the note out")
           and db("SELECT COUNT(*) FROM mod_playerhousing_guestbook WHERE owner_guid=%d" % owner_guid) == [["0"]], joined(msgs))
+
+    # A note as long as the table holds, in two-byte letters: it comes to the addon in pieces,
+    # each message within the client's 255 bytes, and joins up whole.
+    long_note = "A long note: " + "\u00e9" * 230 + " end"
+    long_note = long_note[:255]
+    guest_account = int(db("SELECT account FROM characters WHERE guid=%d" % guest_guid)[0][0])
+    db("INSERT INTO mod_playerhousing_guestbook (owner_guid, author_guid, author_account, text) VALUES (%d, %d, %d, '%s')"
+       % (owner_guid, guest_guid, guest_account, long_note))
+    owner.addon_messages.clear()
+    owner.command(".house data guestbook")
+    rows = addon_list(owner, "guestbook") or []
+    joined_note = "".join(r[5] if r[0] == "note" else r[2] for r in rows if r[0] in ("note", "more"))
+    longest = max((len(("HOUSING\t" + m[len("HOUSING\t"):]).encode("utf-8")) for m in owner.addon_messages if m.startswith("HOUSING\t")), default=0)
+    check("a long guestbook note fits the client's 255 bytes a message and reads whole", longest <= 255 and joined_note == long_note
+          and "\ufffd" not in joined_note and len(rows) > 1, "longest %d, %d rows, %r" % (longest, len(rows), joined_note[:40]))
+    db("DELETE FROM mod_playerhousing_guestbook WHERE owner_guid=%d" % owner_guid)
     owner.command(".house door reset")
     check("the guest sees the greeting", has(guest.messages_since(0), "Mind the coffins."), joined(guest.messages_since(0)[-5:]))
     check("the owner hears the guest arrive", has(owner.messages_since(owner_mark), "arrived on your island"), joined(owner.messages_since(owner_mark)))
@@ -1803,7 +1839,7 @@ def main():
     msgs = guest.command(".house nudge forward 0.25 %d" % table["id"]) if table else []
     moved = placement_of(owner_guid, TABLE)
     check("and moves the owner's pieces", moved is not None and math.dist((moved["x"], moved["y"]), (table["x"], table["y"])) > 0.2
-          and has(msgs, "Nudged Tiny Table"), joined(msgs))
+          and not msgs, joined(msgs))
     msgs = guest.command(".house undo")
     back = placement_of(owner_guid, TABLE)
     check("with their own undo", back is not None and math.dist((back["x"], back["y"]), (table["x"], table["y"])) < 0.01, joined(msgs))

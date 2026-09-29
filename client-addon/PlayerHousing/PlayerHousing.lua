@@ -85,26 +85,11 @@ local function IsHousingItem(id)
         and not IsMoverItem(id)
 end
 
-function PlayerHousing_Command(command)
-    if not known then
-        Print("this server hasn't reported player housing yet. Your House Key has every option.")
-        return
-    end
-    if command == nil or command == "" then
-        SendChatMessage(".house", "SAY")
-    else
-        SendChatMessage(".house " .. command, "SAY")
-    end
-end
-
-local function Command(command)
-    return function() PlayerHousing_Command(command) end
-end
-
--- Quick, quiet commands (where the mouse points, ten times a second) go over AzerothCore's
--- addon command channel, which chat's flood limit doesn't count and which answers the addon,
--- not the chat window. It's there unless the server turned it off (AddonChannel = 0): a ping
--- when the server first reports housing, and its answer, say so.
+-- Commands go over AzerothCore's addon command channel: chat's flood limit doesn't count it
+-- (holding a key, or the mouse moving a piece, never gets anyone muted) and nothing shows in
+-- the chat box. It's there unless the server turned it off (AddonChannel = 0): a ping when
+-- the server first reports housing, and its answer, say so; until then, and without it,
+-- commands go as chat.
 local commandChannel = false
 local pinged = false
 local fastCount = 0
@@ -116,12 +101,13 @@ local function PingChannel()
     end
 end
 
+-- Over the channel only: nothing when it isn't there (where the mouse points, many a second).
 local function FastCommand(command)
     if not known or not commandChannel then
         return
     end
     fastCount = fastCount % 9999 + 1
-    SendAddonMessage("AzerothCore", ("i%04dhouse %s"):format(fastCount, command), "WHISPER", UnitName("player"))
+    SendAddonMessage("AzerothCore", ("i%04dhouse%s"):format(fastCount, command ~= "" and (" " .. command) or ""), "WHISPER", UnitName("player"))
 end
 
 -- PlayerHousing.dll (client-dll/, started with PlayerHousingLauncher.exe) says where the mouse
@@ -129,6 +115,34 @@ end
 -- command channel is there to send it on.
 local function HasMouse()
     return type(PlayerHousing_CursorWorld) == "function" and commandChannel
+end
+
+function PlayerHousing_Command(command)
+    if not known then
+        Print("this server hasn't reported player housing yet. Your House Key has every option.")
+        return
+    end
+    command = command or ""
+    if commandChannel then
+        FastCommand(command)
+    elseif command == "" then
+        SendChatMessage(".house", "SAY")
+    else
+        SendChatMessage(".house " .. command, "SAY")
+    end
+end
+
+-- Typed (/housing <command>): as chat, so usage and errors show in the chat box.
+local function TypedCommand(command)
+    if not known then
+        Print("this server hasn't reported player housing yet. Your House Key has every option.")
+        return
+    end
+    SendChatMessage(".house " .. command, "SAY")
+end
+
+local function Command(command)
+    return function() PlayerHousing_Command(command) end
 end
 
 -- The server learns the addon is here, whether the House Key opens this window, and whether
@@ -433,47 +447,17 @@ local function OnMouseWheel(self, delta)
     end
 end
 
-StaticPopupDialogs["PLAYERHOUSING_PICKUP_BUILDING"] = {
-    text = "Pick up %s?\n\nThe building goes back to your bags. Anything inside stays where it is. Undo puts it back.",
-    button1 = "Pick up",
-    button2 = CANCEL,
-    OnAccept = function(self, data) PlayerHousing_Command("pickup " .. data) end,
-    timeout = 0, whileDead = 1, hideOnEscape = 1,
-}
-
-StaticPopupDialogs["PLAYERHOUSING_PICKUP_BUILDING_ALL"] = {
-    text = "Pick up %s and everything inside it?\n\nIt all goes back to your bags. Undo puts it back.",
-    button1 = "Pick up all",
-    button2 = CANCEL,
-    OnAccept = function(self, data) PlayerHousing_Command("pickup " .. data .. " inside") end,
-    timeout = 0, whileDead = 1, hideOnEscape = 1,
-}
-
-StaticPopupDialogs["PLAYERHOUSING_PICKUP_GROUP"] = {
-    text = "Pick up the %s selected pieces?\n\nThey go back to your bags, with what stands on them. Undo puts them back.",
-    button1 = "Pick up",
-    button2 = CANCEL,
-    OnAccept = function() PlayerHousing_Command("pickup") end,
-    timeout = 0, whileDead = 1, hideOnEscape = 1,
-}
-
+-- Straight away, whatever it is: Undo puts it back.
 local function PickUp(withInside)
     if state.selected == 0 then
         return
     end
-    -- Several selected: all of them, after asking.
     if state.groupSize > 1 then
-        StaticPopup_Show("PLAYERHOUSING_PICKUP_GROUP", state.groupSize)
-        return
-    end
-    if not state.selectedBuilding then
+        PlayerHousing_Command("pickup")  -- the selected pieces, with what stands on them
+    elseif state.selectedBuilding and withInside then
+        PlayerHousing_Command("pickup " .. state.selected .. " inside")
+    else
         PlayerHousing_Command("pickup " .. state.selected)
-        return
-    end
-    local which = withInside and "PLAYERHOUSING_PICKUP_BUILDING_ALL" or "PLAYERHOUSING_PICKUP_BUILDING"
-    local dialog = StaticPopup_Show(which, state.selectedName)
-    if dialog then
-        dialog.data = state.selected
     end
 end
 
@@ -942,17 +926,18 @@ local function CreateWindow()
         { "Face me", Command("face"), "Face me", "Turns it to face you." },
         { "Here", Command("here"), "Move here", "Moves it to where you're standing." },
         { "Move", Command("ghost move"), "Move it",
-          "It follows you: walk it to its new spot, then G sets it down (Escape: never mind). What's on it moves too." },
+          "It follows you (or your mouse, with PlayerHousing.dll): set it down with a click or G (Escape: never mind). What's on it moves too." },
         { "Pick up", function() PickUp(false) end, "Pick up", "Back to your bags. Undo puts it back." },
     })
 
     Row(selectedPanel, -42, {
-        { "Fwd", Command("nudge forward"), "Nudge forward", "A quarter yard, the way you're facing." },
-        { "Back", Command("nudge back"), "Nudge back", "A quarter yard toward you." },
-        { "Left", Command("nudge left"), "Nudge left", "A quarter yard to your left." },
-        { "Right", Command("nudge right"), "Nudge right", "A quarter yard to your right." },
-        { "Up", Command("up"), "Raise", "A tenth of a yard. Ctrl and the mouse wheel does it too." },
-        { "Down", Command("down"), "Lower", "A tenth of a yard." },
+        -- Quick clicks add up into one move (and one undo step), like the keys.
+        { "Fwd", function() Shift(0.25, 0, 0, 0) end, "Nudge forward", "A quarter yard, the way you're facing." },
+        { "Back", function() Shift(-0.25, 0, 0, 0) end, "Nudge back", "A quarter yard toward you." },
+        { "Left", function() Shift(0, 0.25, 0, 0) end, "Nudge left", "A quarter yard to your left." },
+        { "Right", function() Shift(0, -0.25, 0, 0) end, "Nudge right", "A quarter yard to your right." },
+        { "Up", function() Shift(0, 0, 0.1, 0) end, "Raise", "A tenth of a yard. Ctrl and the mouse wheel does it too." },
+        { "Down", function() Shift(0, 0, -0.1, 0) end, "Lower", "A tenth of a yard." },
     })
 
     Row(selectedPanel, -66, {
@@ -987,7 +972,7 @@ local function CreateWindow()
     groupButtons[6].needs = 1
 
     local anotherButton = MakeButton(selectedPanel, "Another", 70, Command("another"),
-        "Place another like this", "A button appears next to this one: click it, then click the spot. The new one gets this one's turn, size and tilt.")
+        "Place another like this", "One more of this piece follows you (or your mouse), with this one's turn, size and tilt: set it down with a click or G.")
     anotherButton:SetPoint("TOPLEFT", 12, -114)
 
     pickUpAllButton = MakeButton(selectedPanel, "Pick up all", 90, function() PickUp(true) end,
@@ -1034,16 +1019,9 @@ function PlayerHousing_Open()
     SetShown(true)
 end
 
--- A piece by its number (the Placed tab): buildings ask first, like the selected one.
-local function PickUpPlacement(id, name, building)
-    if not building then
-        PlayerHousing_Command("pickup " .. id)
-        return
-    end
-    local dialog = StaticPopup_Show("PLAYERHOUSING_PICKUP_BUILDING", name)
-    if dialog then
-        dialog.data = id
-    end
+-- A piece by its number (the Placed tab), straight away like the selected one.
+local function PickUpPlacement(id)
+    PlayerHousing_Command("pickup " .. id)
 end
 
 function PlayerHousing_Toggle()
@@ -1269,6 +1247,6 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
         Print(db.keyWindow and "the House Key opens this window." or "the House Key opens its menu.")
     else
         -- Anything else is a .house command: /housing undo, /housing rotate 90, ...
-        PlayerHousing_Command(message)
+        TypedCommand(message)
     end
 end

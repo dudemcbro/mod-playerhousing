@@ -124,7 +124,13 @@ local mouseFocus, mouseButtons, addonSent = nil, {}, {}
 function GetMouseFocus() return mouseFocus end
 function IsMouselooking() return false end
 function IsMouseButtonDown(button) return mouseButtons[button] or false end
-function SendAddonMessage(prefix, message, channel, target) addonSent[#addonSent + 1] = { prefix, message, channel, target } end
+function SendAddonMessage(prefix, message, channel, target)
+  addonSent[#addonSent + 1] = { prefix, message, channel, target }
+  -- Commands over AzerothCore's addon command channel count as sent, like chat ones (all but
+  -- the mouse's points, which the mouse checks count on their own).
+  local command = prefix == "AzerothCore" and channel == "WHISPER" and message:match("^i%d%d%d%d(house.*)$")
+  if command and not command:find("^house ghost at ") then sent[#sent + 1] = "." .. command end
+end
 function IsAltKeyDown() return false end
 local zoomed = 0
 function CameraZoomIn() zoomed = zoomed + 1 end
@@ -313,14 +319,16 @@ SEL("Bigger").scripts.OnClick(); assert(last() == ".house size bigger", last())
 SEL("Smaller").scripts.OnClick(); assert(last() == ".house size smaller", last())
 SEL("Tilt fwd").scripts.OnClick(); assert(last() == ".house tilt forward", last())
 SEL("Tilt R").scripts.OnClick(); assert(last() == ".house tilt right", last())
-SEL("Fwd").scripts.OnClick(); assert(last() == ".house nudge forward")
+-- Nudges add up into one quiet move, like the keys.
+SEL("Fwd").scripts.OnClick(); SEL("Fwd").scripts.OnClick(); SEL("Up").scripts.OnClick()
+now = now + 1; OnUpdate(driver, 1)
+assert(last() == ".house shift 0.50 0.00 0.10 0", last())
 
--- Buildings ask before being picked up.
-SEL("Pick up").scripts.OnClick()
-assert(popups[1][1] == "PLAYERHOUSING_PICKUP_BUILDING" and popups[1][2] == "Broken Cart")
-StaticPopupDialogs.PLAYERHOUSING_PICKUP_BUILDING.OnAccept({}, 12); assert(last() == ".house pickup 12")
-SEL("Pick up all").scripts.OnClick()
-StaticPopupDialogs.PLAYERHOUSING_PICKUP_BUILDING_ALL.OnAccept({}, 12); assert(last() == ".house pickup 12 inside")
+-- Buildings pick up straight away too (Undo puts them back): no question first.
+local popupCount = #popups
+SEL("Pick up").scripts.OnClick(); assert(last() == ".house pickup 12", last())
+SEL("Pick up all").scripts.OnClick(); assert(last() == ".house pickup 12 inside", last())
+assert(#popups == popupCount, "no popup")
 
 -- A furnishing picks up straight away.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicked up Broken Cart\tKrookowner\tplaced Barrel\t0", "WHISPER", "Krookowner")
@@ -421,6 +429,7 @@ end
 fire("CHAT_MSG_ADDON", "AzerothCore", "a0000", "WHISPER", "Krookowner")
 assert(sent[#sent - 1] == ".house addon 1 1 mouse" and last() == ".house state", "the channel answers: the server hears about the mouse: "
   .. tostring(sent[#sent - 1]) .. " " .. last())
+assert(addonSent[#addonSent][2]:match("^i%d%d%d%dhouse state$"), "and every command goes over the channel from now on, not as chat")
 wipe(addonSent)
 fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t", "WHISPER", "Krookowner")
 assert(PlayerHousingEditHudHelp.text:find("follows your mouse"), PlayerHousingEditHudHelp.text)
@@ -732,8 +741,8 @@ assert(PlayerHousingPreviewHint.text ~= "", "says how to show it instead")
 lockedSlot.scripts.OnLeave(lockedSlot)
 assert(PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == first.info[2] and PlayerHousingDetailsPlace:IsShown(),
   "back to the pinned piece: " .. tostring(PlayerHousingPreviewName.text))
--- None to hand: a click only shows it (no copy bought by looking); Place asks for one. In
--- combat too: nothing secure.
+-- None to hand: a click starts a ghost all the same (the server buys a copy only when it's set
+-- down), and so does Place. In combat too: nothing secure.
 local barrelSlot
 for index = 1, 36 do
   local slot = _G["PlayerHousingCollectionSlot" .. index]
@@ -742,7 +751,7 @@ end
 combat = true
 count = #sent
 barrelSlot:Click("LeftButton")
-assert(#sent == count and PlayerHousingDetailsPlace.enabled and PlayerHousingDetailsPlace:IsShown(), "only shown: " .. last())
+assert(#sent == count + 1 and last() == ".house ghost 901106" and PlayerHousingDetailsPlace:IsShown(), "a ghost at once: " .. last())
 PlayerHousingDetailsPlace:Click()
 assert(last() == ".house ghost 901106", last())
 first:Click("LeftButton")
@@ -836,9 +845,9 @@ PlayerHousingPlacedPanelRow1Button2.scripts.OnClick(); assert(last() == ".house 
 PlayerHousingPlacedPanelRow1Button3.scripts.OnClick(); assert(last() == ".house group add 3", last())
 PlayerHousingPlacedPanelRow1Button4.scripts.OnClick(); assert(sent[#sent - 1] == ".house here 3", sent[#sent - 1])
 PlayerHousingPlacedPanelRow1Button5.scripts.OnClick(); assert(last() == ".house pickup 3", last())
-local popupCount = #popups
+local placedPopups = #popups
 PlayerHousingPlacedPanelRow2Button5.scripts.OnClick()
-assert(#popups == popupCount + 1 and popups[#popups][2] == "Broken Cart", "the building asks first")
+assert(#popups == placedPopups and last():match("^%.house pickup %d+$"), "the building too, straight away: " .. last())
 -- Find a piece by name.
 PlayerHousingPlacedSearch.text = "cart"
 PlayerHousingPlacedSearch.scripts.OnTextChanged(PlayerHousingPlacedSearch)
@@ -917,9 +926,12 @@ PlayerHousingGuestbookButton.scripts.OnClick()
 assert(PlayerHousingGuestsPanel:IsShown() and last() == ".house data guestbook", "the guestbook from the Island tab: " .. last())
 
 -- The guestbook: the notes, a new one marked, the whole note on hover, thrown out.
-rows("guestbook", { "note\t7\tKrookfriend\t2026-09-29 10:15\t1\tWhat a lovely island!", "note\t5\tKrookother\t2026-09-20 18:02\t0\tNice." })
+-- A note too long for one message comes in pieces ("more" rows) and reads whole.
+rows("guestbook", { "note\t7\tKrookfriend\t2026-09-29 10:15\t1\tWhat a lovely island!", "note\t5\tKrookother\t2026-09-20 18:02\t0\tNice, ",
+  "more\t5\tand the lanterns ", "more\t5\tare perfect." })
 assert(PlayerHousingGuestbookPageRow1Text.text:find("new") and PlayerHousingGuestbookPageRow1Text.text:find("lovely island")
   and not PlayerHousingGuestsPanelRow1:IsShown(), PlayerHousingGuestbookPageRow1Text.text)
+assert(PlayerHousingGuestbookPageRow2Text.text:find("Nice, and the lanterns are perfect%."), "the long note joined up: " .. PlayerHousingGuestbookPageRow2Text.text)
 PlayerHousingGuestbookPageRow1Button1.scripts.OnClick()
 StaticPopupDialogs.PLAYERHOUSING_NOTE_DELETE.OnAccept({}, 7)
 assert(sent[#sent - 1] == ".house guestbook delete 7" and last() == ".house data guestbook", sent[#sent - 1])
@@ -1004,9 +1016,7 @@ assert(popups[#popups][1] == "PLAYERHOUSING_SAVE_SET")
 StaticPopupDialogs.PLAYERHOUSING_SAVE_SET.OnAccept({ editBox = { GetText = function() return " Dining " end } })
 assert(last() == ".house set save Dining", last())
 SEL("Pick up").scripts.OnClick()
-assert(popups[#popups][1] == "PLAYERHOUSING_PICKUP_GROUP" and popups[#popups][2] == 3, "several: ask first")
-StaticPopupDialogs.PLAYERHOUSING_PICKUP_GROUP.OnAccept({})
-assert(last() == ".house pickup", last())
+assert(last() == ".house pickup", "several: straight away too: " .. last())
 fire("CHAT_MSG_ADDON", "HOUSING", GROUP:gsub("\t3$", "\t2"), "WHISPER", "Krookowner")
 assert(SEL("Height").enabled and not SEL("Space").enabled, "spacing out takes three")
 -- Ctrl held while decorating: the server hears it, once each way.

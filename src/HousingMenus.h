@@ -17,7 +17,6 @@ namespace HousingMenus
     void ShowCollection(Player* player, Housing::MenuSource const& source);
     void ShowCollectionSearch(Player* player, Housing::MenuSource const& source, std::string const& text);
     void ShowSavedLayouts(Player* player, Housing::MenuSource const& source);
-    void ShowChest(Player* player, Housing::MenuSource const& source, uint32 placementId);
     void ShowMusicBox(Player* player, Housing::MenuSource const& source);
     void ShowStorage(Player* player, Housing::MenuSource const& source);
     void ShowVisit(Player* player, Housing::MenuSource const& source);

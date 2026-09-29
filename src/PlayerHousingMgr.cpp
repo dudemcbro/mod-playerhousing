@@ -106,7 +106,7 @@ void PlayerHousingMgr::LoadConfig()
 
     _maxFurnishings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxFurnishings", 200), 1, 5000);
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
-    _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 5), 60);
+    _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 0), 60);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
     // It goes into a query: letters, digits and underscores only.
     if (_layoutCode.empty() || _layoutCode.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
@@ -439,23 +439,26 @@ void PlayerHousingMgr::SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, b
 
 uint8 PlayerHousingMgr::GetAdjustMode(ObjectGuid::LowType guid) const
 {
+    // No menu unless asked for: Undo takes a piece back just as well.
     uint32 flags = GetCharacterFlags(guid);
     if (flags & CHAR_FLAG_ADJUST_NEVER)
         return ADJUST_NEVER;
-    return (flags & CHAR_FLAG_ADJUST_ALL) ? ADJUST_ALL : ADJUST_BUILDINGS;
+    if (flags & CHAR_FLAG_ADJUST_ALL)
+        return ADJUST_ALL;
+    return (flags & CHAR_FLAG_ADJUST_BUILDINGS) ? ADJUST_BUILDINGS : ADJUST_NEVER;
 }
 
 void PlayerHousingMgr::SetAdjustMode(Player* player, uint8 mode, std::string& reason) const
 {
-    uint32 set = mode == ADJUST_ALL ? CHAR_FLAG_ADJUST_ALL : (mode == ADJUST_NEVER ? CHAR_FLAG_ADJUST_NEVER : 0);
-    uint32 both = CHAR_FLAG_ADJUST_ALL | CHAR_FLAG_ADJUST_NEVER;
+    uint32 set = mode == ADJUST_ALL ? CHAR_FLAG_ADJUST_ALL : (mode == ADJUST_NEVER ? CHAR_FLAG_ADJUST_NEVER : CHAR_FLAG_ADJUST_BUILDINGS);
+    uint32 both = CHAR_FLAG_ADJUST_ALL | CHAR_FLAG_ADJUST_NEVER | CHAR_FLAG_ADJUST_BUILDINGS;
     CharacterDatabase.DirectExecute(
         "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) "
         "ON DUPLICATE KEY UPDATE flags = (flags & ~{}) | {}", player->GetGUID().GetCounter(), set, both, set);
     switch (mode)
     {
         case ADJUST_ALL: reason = "After placing anything, its menu opens so you can turn, nudge or take it back."; break;
-        case ADJUST_NEVER: reason = "Placing no longer opens a menu. Click a piece while decorating to change it."; break;
+        case ADJUST_NEVER: reason = "Placing no longer opens a menu. Click a piece to change it."; break;
         default: reason = "After placing a building, its menu opens so you can turn, nudge or take it back."; break;
     }
 }
