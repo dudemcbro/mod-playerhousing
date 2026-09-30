@@ -53,10 +53,14 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
    It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
    the server data (collision and pathing without the hall, one script) and a client patch
    every player installs once. The same patch gives the housing items their bag icons
-   (without it they show as question marks) and adds the ghosts' see-through models (a
-   patch from before ghosts needs building again). To keep the hall instead, set
-   `PlayerHousing.Layout = "guildhouse"`; players then build the patch with `--icons-only`.
+   (without it they show as question marks) and adds the ghosts' see-through models and the
+   buildings' see-through blocks (a patch from before those needs building again). To keep
+   the hall instead, set `PlayerHousing.Layout = "guildhouse"`; players then build the
+   patch with `--icons-only`.
 5. Restart the worldserver.
+6. Optional, for each player: [PlayerHousing.dll](client-dll/README.md) (copy two files next
+   to Wow.exe and start the game with the launcher) lets a piece being placed follow the
+   mouse, and a click set it down.
 
 ## Configuration
 
@@ -75,7 +79,7 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 | `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
 | `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
 | `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
-| `PlayerHousing.HouseKey.DelaySeconds` | 5 | How long "Go home" takes; moving or combat cancels |
+| `PlayerHousing.HouseKey.DelaySeconds` | 0 | How long "Go home" takes (0: at once); moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
 | `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
 
@@ -101,7 +105,7 @@ quests that walk you through housing, each done the moment you do the thing:
 
 1. **Home Sweet Island**: use your House Key to go home.
 2. **Making It Yours**: place a furnishing.
-3. **A Fresh Look**: start decorating, then turn, nudge or move a piece.
+3. **A Fresh Look**: click a piece, then turn, nudge or move it.
 4. **Nothing Is Ever Lost**: undo a change.
 5. **Open House**: invite a guest, or open your island to friends or everyone.
 
@@ -110,15 +114,16 @@ above Krook's menu, so skipping them costs nothing.
 
 ### Placing things
 
-With the client addon (below), click a piece in the Collection (or Place next to it): it
-follows you as a see-through ghost, a couple of yards ahead (a building comes along as it
-is). Walk it where it goes. The arrow keys push it farther or nearer and to the sides, the
-mouse wheel turns it, Ctrl+wheel (or Page Up and Page Down) raises and lowers it, and it
-sits on a table top it's over. G sets it down (Shift+G: then another of the same), Escape
-puts it back. Nothing is used until it's set down: it comes from your bags, House Storage,
-or a new copy from the Collection. The client can't tell anyone where the mouse points in
-the world, so the ghost follows you rather than the cursor: raise it and push it out to hang
-something on a wall or up under a roof.
+With the client addon (below), click a piece in the Collection (or Place next to it): a
+see-through ghost of it appears (a building shows as a see-through block its size). With
+[PlayerHousing.dll](client-dll/README.md) the ghost follows your mouse over the world: on the
+floor, on a table top, or on a wall facing out, and a click sets it down there (Shift-click:
+then another of the same). Without the DLL the game can't say where the mouse points, so the
+ghost follows you instead, a couple of yards ahead: walk it where it goes, and the arrow keys
+push it farther or nearer and to the sides. Either way the mouse wheel turns it, Ctrl+wheel
+(or Page Up and Page Down) raises and lowers it, G sets it down (Shift+G: then another), and
+Escape puts it back. Nothing is used until it's set down: it comes from your bags, House
+Storage, or a new copy from the Collection.
 
 Without the addon:
 
@@ -126,9 +131,10 @@ Without the addon:
    the piece (from 1 yard for a candle to 20 for a manor), so you can see the room it takes.
 2. Click where it should go. It lands on that exact spot, facing you.
 
-After placing a building, its menu opens by itself: Keep it here, Take it back, turn or
-nudge it. The piece standing there is the preview. Island settings (or `.house adjust`)
-switches this to every piece, or off.
+Placing says nothing in chat (the piece is there to see) unless the island is nearly full.
+Change your mind with Undo. If you'd like a piece's menu to open by itself after placing
+(Keep it here, Take it back, turn or nudge it), Island settings (or `.house adjust`) turns
+that on for buildings or for everything.
 
 That's the whole flow. You can place anywhere on your island, indoors or out, up to the
 beach. The only rules: it has to be on your island, you have to be able to see the spot,
@@ -137,13 +143,15 @@ Swim too far out and you're brought back to the beach.
 
 ### Changing things
 
-- **Start decorating** (Home menu, or `.house decorate`). Now click any piece to open its
-  menu: turn it, face it toward you, move it to where you stand, nudge it, raise or lower
-  it, or pick it up.
-- **Move**: the piece follows you as a ghost, starting where it stands, and G sets it down
-  in its new spot (the same keys as placing). Whatever stands on it (a lantern on a table,
-  all the furniture in a building) goes along, and one undo puts it all back.
-  `.house move` does it with a targeting circle instead.
+- **Click a piece** to open its menu: turn it, face it toward you, move it, nudge it, raise
+  or lower it, or pick it up. That starts decorating by itself. Pieces that work like the
+  real thing (chairs, mailboxes, crafting stations) do their job when clicked instead, until
+  you **Start decorating** (Home menu, or `.house decorate`); **Change a piece near me** on
+  the Home menu reaches them any time.
+- **Move**: the piece follows you (or your mouse) as a ghost, starting where it stands, and
+  a click or G sets it down in its new spot (the same keys as placing). Whatever stands on
+  it (a lantern on a table, all the furniture in a building) goes along, and one undo puts
+  it all back. `.house move` does it with a targeting circle instead.
 - **More turns, tilt and size...** turns by 90, 15 or 5 degrees, tilts it 5 degrees at a
   time (forward, back, or to its left or right), and makes it bigger or smaller a tenth
   at a time. What stands on it keeps its place on the bigger or smaller top. The server
@@ -162,9 +170,11 @@ Swim too far out and you're brought back to the beach.
 - **Undo** and **Redo** are at the top of the Home menu, with the change they'd undo
   spelled out ("Undo: placed Westfall Chair"). Undo remembers your last 30 changes while
   you're on the island.
-- Picked-up pieces go back to your bags. When your bags are full they wait in **House
-  Storage** (Home menu), and "Take everything" empties it.
-- Buildings ask first: pick up the building only, or the building and everything inside.
+- Picked-up pieces go back to your bags, without a word in chat. When your bags are full
+  they wait in **House Storage** (Home menu), and "Take everything" empties it; chat says
+  so then.
+- A building's menu has both: pick up the building only, or the building and everything
+  inside. Nothing asks "are you sure": Undo puts it back.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone
   too.
 
@@ -180,9 +190,9 @@ is.
 ### The Bank Chest
 
 Unlocked at level 20 (or by buying 7 bank slots). Place it anywhere, and click it when
-you're not decorating: **Open my bank** brings up your own bank, right there, and **House
-Storage** lists the pieces waiting there. It works the way a banker does: only near the
-chest, for a few minutes after you open it. Visitors find it locked.
+you're not decorating: your own bank opens, right there. It works the way a banker does:
+only near the chest, for a few minutes after you open it. Visitors find it locked. (House
+Storage is on the Home menu and in the window.)
 
 ### Weather, time of day and music
 
@@ -234,8 +244,10 @@ Rings, necklaces, trinkets and relics don't show on a body, so they aren't offer
 
 House Key, Collection. It lists every piece by category with your progress, for example
 "Buildings (6/49, 2 new)". Click an unlocked piece for its page: how many you have (in
-your bags, in storage, placed) and Get one or Get 5 (free with FreeMode, a small gold
-cost otherwise). A locked piece tells you how to earn it, with your progress so far
+your bags, in storage, placed), **Place one** (its ghost follows you at once; a new copy is
+paid for only when you set it down, so Never mind costs nothing), and Get one or Get 5
+(free with FreeMode, a small gold cost otherwise, shown on the option). A locked piece
+tells you how to earn it, with your progress so far
 ("Reach level 20 (you're level 15)", "Exalted with Stormwind (you're Revered)").
 
 - **Search by name** (or `.house collection lamp`) finds pieces in every category,
@@ -314,6 +326,7 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house ghost <item>` | A new piece follows you as a ghost, from your bags, House Storage or the Collection |
 | `.house ghost move [id]` | The piece (or the selection) follows you as a ghost, what's on it too |
 | `.house ghost adjust <forward> <left> <up> <degrees>` | Push the ghost farther, to the side, up, or turn it |
+| `.house ghost at <x> <y> <z> [<nx> <ny> <nz>]` | Show the ghost at that point (where the mouse points; the addon sends it with PlayerHousing.dll) |
 | `.house ghost place [another]`, `ghost cancel` | Set it down (then another of the same), or never mind |
 | `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
 | `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
@@ -371,6 +384,15 @@ menus, plus an edit mode that moves pieces with the keyboard and mouse. It's opt
 House Key menus do everything without it. With the addon, the House Key opens the window
 (`/housing key` switches back to the menu, which the window's Menu button also opens).
 
+The addon sends its commands over AzerothCore's addon command channel (on unless the server
+sets `AddonChannel = 0`): chat's flood limit doesn't count them, so holding a key or moving
+a piece with the mouse never gets anyone muted, and they don't fill the chat box. It checks
+the channel answers when you log in, and sends them as chat otherwise. What it does shows in
+the window and its banner, so the server keeps chat for errors and news: nothing asks "are
+you sure" before something Undo can put back (picking up a building, several pieces, the
+Delete key); only saving over or deleting a layout or a set, and throwing out a guestbook
+note, still ask.
+
 The window has a toolbar (go home or leave, Edit, Undo and Redo, whose tooltips say what
 they'd undo, and the full menu; right-click Undo for the last 15 changes, to undo back to any
 of them) and seven tabs:
@@ -380,8 +402,9 @@ of them) and seven tabs:
   you placed last, or a category; only unlocked ones, or only the ones in your bags; by name;
   sorted as the Collection lists them, by name, by cost, or bags first. A click keeps the
   piece in the preview next to the window with its details and buttons (Place, Get 1,
-  Get 5 and Take from storage), and on your island a ghost of it follows you, to set down
-  with G. Hover an icon to preview the piece: its
+  Get 5 and Take from storage), and on your island a ghost of any unlocked piece follows
+  you (or your mouse) at once, to set down with a click or G; a new copy is paid for only
+  when it's set down. Hover an icon to preview the piece: its
   model, slowly turning and centered in the frame, and its size. Buildings made of world
   models can't be drawn in a window, so they show a picture (see Pictures of buildings). Right-click a piece to star it as a
   favorite; drag one from your bags to an action bar to keep it handy. New unlocks are
@@ -450,15 +473,19 @@ undo step. The keys are only bound in edit mode, so the usual ones come back aft
 bindings can't change in combat, so they wait for it to end. The client can't slide a game
 object, so each step redraws the piece.
 
-**Ghosts**: a piece being placed or moved follows you, in or out of edit mode, until you set
-it down. Furniture is a see-through copy of itself that glides along; a building comes as it
-is, redrawn a few times a second (the client can't draw a building see-through). The banner
-says Placing or Moving and has Set it down, And another and Never mind buttons.
+**Ghosts**: a piece being placed or moved follows you (or your mouse, with
+[PlayerHousing.dll](client-dll/README.md)), in or out of edit mode, until you set it down.
+Furniture is a see-through copy of itself that glides along; a building is a see-through
+block its size (the client can't draw a building see-through), with whatever is inside it
+coming along as ghosts too. The banner says Placing or Moving and has Set it down, And
+another and Never mind buttons.
 
 | Key | Does |
 | --- | --- |
-| Walk, turn | It comes along, the same distance ahead |
-| Up, Down arrows | Farther, nearer |
+| Move the mouse (with the DLL) | It follows the cursor: floor, table top, or a wall, facing out |
+| Click, Shift-click (with the DLL) | Set it down there; Shift: then another of the same |
+| Walk, turn (without the DLL) | It comes along, the same distance ahead |
+| Up, Down arrows | Farther, nearer (with the DLL: nudge it from where the mouse put it) |
 | Left, Right arrows | To the side |
 | Mouse wheel | Turn it |
 | Page Up, Page Down, Ctrl+wheel | Raise, lower (on a wall, under a roof) |
@@ -467,10 +494,10 @@ says Placing or Moving and has Set it down, And another and Never mind buttons.
 | Shift+G | Set it down, then another of the same follows |
 | Escape | Never mind: a new piece stays in your bags, a moved one where it was |
 
-It lands on the grid when the grid is on, and stands on a table top it's over (held higher,
-it floats). The see-through ghosts need the client patch (see [Installation](#installation)) from this version:
-without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as it is
-instead.
+It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over
+(held higher, it floats). A building always stands on the ground, wherever the mouse is. The see-through ghosts and blocks need the client patch (see [Installation](#installation)) from this
+version: without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as
+it is instead.
 
 The window opens by itself when you arrive home (`/housing auto` turns that off).
 `/housing` shows or hides it, and `/housing <command>` runs any `.house` command. A button
@@ -584,8 +611,18 @@ fits, since players already see and track those.
   the content builder writes for the server (`creaturemodeldata_dbc`,
   `creaturedisplayinfo_dbc`) and the client patch adds to the client. It glides with a
   movement spline, its facing held. Figurines and the mannequin get a see-through copy of
-  their creature's display. Buildings, and pieces whose model has no ghost, are carried as
-  game objects, put down again in the new spot at most four times a second.
+  their creature's display. A building's ghost is a see-through block: a model the client
+  patch writes for each building (`tools/gm-island-cleared/make_ghost_blocks.py`, a box from
+  the building's outline and height, with one shared texture), under the same display
+  numbers. Pieces whose model has no ghost are carried as game objects, put down again in the
+  new spot at most four times a second. With PlayerHousing.dll the addon sends where the
+  mouse points (`.house ghost at x y z [facing]`) up to ten times a second over AzerothCore's
+  addon command channel (prefix `AzerothCore`), which chat's flood limit doesn't count and
+  which answers the addon rather than the chat window; the server keeps its own limit of 25
+  a second. The ghost then shows at that point instead of ahead of the player: on the table
+  top there when the point is on one, and turned to face out when the surface there is a
+  wall. A point on one of the pieces being moved (still standing where it was) counts as
+  what that stands on.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. Each player has
   their own list, in memory, cleared when they leave the island. A step only applies to
@@ -657,11 +694,51 @@ players came in the first run after a restart. The worldserver used about 1.8 GB
 
 No island showed another island's pieces, and no action failed.
 
+Then with everyone at home and their pieces out (`--hold 60`; `--walk` has them run in
+circles, as players moving about do):
+
+| Islands open | Pieces out | Players | Server update: mean, p99 |
+| --- | --- | --- | --- |
+| none | 0 | | 8 ms, 39 ms |
+| 100 | 2000 | standing | 8 ms, 53 ms |
+| 100 | 2000 | running about | 9 ms, 56 ms |
+| 50 | 3000 | running about | 9 ms, 51 ms |
+| 100 | 6000 | standing | 8 ms, 51 ms |
+| 100 | 6000 | running about | 19 ms, 195 ms |
+
+Placing those 6000 pieces (100 players at once, as fast as the test can click) ran at
+29 ms mean, 424 ms p99.
+
+### Thousands of players
+
+Every island is at the same spot on the same map (GM Island, on Kalimdor), told apart
+only by phase. That is cheap at the sizes above, and what limits it past them:
+
+- All open islands share one map thread, the one that also runs the rest of Kalimdor.
+  `MapUpdate.Threads` can't spread them.
+- Pieces left out cost next to nothing while their owners stand still. But whenever a
+  player moves, the server looks again at everything within sight to decide what to show,
+  and that includes every other island's pieces: hidden by phase, but still looked at. In a
+  profile of the 100 island, 6000 piece run, about half the map thread was there
+  (`PlayerRelocationNotifier`). The cost grows with the players moving about at home
+  times the pieces out on all islands.
+- Housing commands run on the world thread, one after another, and most do a few
+  database reads and writes while they wait.
+
+A rough extrapolation from the one cost that grows: 300 islands of 60 pieces each (a few
+thousand players online, 10% of them at home) is about 9 times the 6000 piece run, around
+100 ms more a tick for everyone on Kalimdor; 1000 islands open is past what one map
+thread can do. The fix is islands as instances: a map of their own (a Map.dbc row and a
+WDT listing GM Island's tiles, added to the client patch, with the server's maps, vmaps
+and mmaps extracted for it), so each island only looks at its own pieces and islands
+update in parallel. Until then, a lower `PlayerHousing.MaxFurnishings` keeps the cost
+down on busy servers.
+
 ## Testing
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (290 checks: placing, undo, decorating, edit mode, several pieces at once, ghosts,
+headless clients (302 checks: placing, undo, decorating, edit mode, several pieces at once, ghosts, the mouse,
 sets, the addon's window, storage, the Collection, buildings, mannequins, layouts,
 ambience, visitors, the guestbook, roommates, moderation, working furniture, addon
 messages, relogging, and the safety rules above), and a load test.

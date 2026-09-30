@@ -80,6 +80,9 @@ CLIENT_ITEMS = os.path.join(MODULE, "tools/gm-island-cleared/client_items.tsv")
 GHOST_DISPLAY_BASE = 60000
 GHOST_ALPHA = 150            # 0 (unseen) to 255 (solid)
 MANNEQUIN_DISPLAY = 49       # the mannequin's figure, as in mod_playerhousing_world.sql
+# A building's ghost: a see-through block its size, a model the client patch writes
+# (tools/gm-island-cleared/make_ghost_blocks.py).
+GHOST_BLOCK_PATH = "World\\PlayerHousing\\GhostBlock%d.m2"
 
 
 def ghost_id(item):
@@ -250,12 +253,20 @@ class Ghosts:
                          + [signed(v) for v in ints[10:16]] for ints, floats in rows}
         self.models = []   # (ghost id, model path, box)
         self.copies = []   # (ghost id, the display copied)
+        self.blocks = []   # (ghost id, model path, box): the models the client patch writes
 
     def model(self, item, path, box):
         # The server's creaturemodeldata_dbc keeps 100 characters of the path: a model with a
         # longer one gets no ghost (it's carried as it is instead).
         if path.lower().endswith((".m2", ".mdx")) and len(path) <= 100:
             self.models.append((ghost_id(item), path, tuple(box or (0.0,) * 6)))
+
+    def block(self, item, box):
+        # A building: a block from its bounds (in its model's units), for the patch to write.
+        if box[3] > box[0] and box[4] > box[1] and box[5] > box[2]:
+            entry = (ghost_id(item), GHOST_BLOCK_PATH % item, tuple(box))
+            self.models.append(entry)
+            self.blocks.append(entry)
 
     def copy(self, item, display):
         if display in self.displays:
@@ -293,6 +304,7 @@ class Ghosts:
     def client_lines(self):
         lines = ["ghostmodel\t%d\t%s\t%s" % (ghost, path, " ".join(repr(round(v, 3)) for v in box)) for ghost, path, box in self.models]
         lines += ["ghostcopy\t%d\t%d" % (ghost, source) for ghost, source in self.copies]
+        lines += ["ghostblock\t%d\t%s\t%s" % (ghost, path, " ".join(repr(round(v, 3)) for v in box)) for ghost, path, box in self.blocks]
         return lines
 
 
@@ -483,13 +495,18 @@ def build(args):
             model = os.path.splitext(model)[0] + ".m2"
         framing = model_frame(boxes.get(display)) if model and model != "player" and not model.startswith("creature:") else model_frame(None)
         previews.append((item, model) + preview_size + framing)
-        # Its ghost, for placing and moving it (buildings are carried as they are).
+        # Its ghost, for placing and moving it: a see-through copy, or for a building (a world
+        # model, which a creature can't show) a see-through block its size: its outline, from
+        # the bottom of its model to its top.
         if stand:
             ghosts.copy(item, MANNEQUIN_DISPLAY)
         elif figure:
             ghosts.copy(item, creature_display)
         elif not building:
             ghosts.model(item, models.get(display, ""), boxes.get(display))
+        elif size > 0:
+            bottom = min((world_box or box)[2], 0.0)
+            ghosts.block(item, (outline[0] / size, outline[1] / size, bottom, outline[2] / size, outline[3] / size, height / size))
 
         flags = FLAG_BITS["stand"] if stand else 0
         if figure:

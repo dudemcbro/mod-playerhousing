@@ -10,6 +10,7 @@ PieceInfo.lua
 Pictures.lua
 PlayerHousing.lua
 EditMode.lua
+Mouse.lua
 Window.lua
 Minimap.lua
 Extras.lua

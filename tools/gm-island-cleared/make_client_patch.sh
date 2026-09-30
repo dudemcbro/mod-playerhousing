@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the housing client patch MPQ from your own 3.3.5a client: it hides the GM Island
 # guild house, adds the housing items to the client so bags show their icons, and adds the
-# ghosts' models (the see-through pieces that follow you while you place or move them).
+# ghosts' models (the see-through pieces that follow you while you place or move them, and
+# the see-through blocks that stand for buildings).
 #
 #   make_client_patch.sh [--icons-only] /path/to/WoW-3.3.5a/Data [patch-H.MPQ]
 #
@@ -141,6 +142,11 @@ latest 'DBFilesClient\CreatureModelData.dbc' "$work/CreatureModelData.dbc"
 latest 'DBFilesClient\CreatureDisplayInfo.dbc' "$work/CreatureDisplayInfo.dbc"
 python3 "$HERE/dbc_add_ghosts.py" "$HERE/client_items.tsv" "$work/CreatureModelData.dbc" "$work/CreatureDisplayInfo.dbc" "$work/pack/DBFilesClient"
 files+=("DBFilesClient/CreatureModelData.dbc" "DBFilesClient/CreatureDisplayInfo.dbc")
+
+# The buildings' ghosts: see-through blocks their size (models and their texture).
+while IFS= read -r file; do
+    files+=("$file")
+done < <(python3 "$HERE/make_ghost_blocks.py" "$HERE/client_items.tsv" "$work/pack")
 
 rm -f "$OUTPUT"
 (cd "$work/pack" && smpq -c -q -M 2 "$work/out.MPQ" "${files[@]}")

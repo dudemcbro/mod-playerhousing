@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -285,8 +286,9 @@ class spell_playerhousing_key : public SpellScript
     }
 };
 
-// Every placed piece and snap marker. While the owner decorates, clicking a piece opens its
-// menu; otherwise pieces behave like the real thing (chairs seat, mailboxes open).
+// Every placed piece and snap marker. Clicking a plain piece opens its menu for its owner (and
+// roommates); pieces that work like the real thing (chairs seat, mailboxes open) do that,
+// unless the owner is decorating.
 class go_playerhousing_piece : public GameObjectScript
 {
 public:
@@ -328,16 +330,18 @@ public:
             return true;
         }
 
-        // A Bank Chest opens for its owner only (it's their bank).
+        // A Bank Chest opens its owner's bank straight away (House Storage is in the House
+        // Key's menu and the window); for anyone else it's locked.
         if (std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId))
         {
             PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(placement->itemEntry);
             if (piece && piece->HasFlag(PIECE_FLAG_CHEST))
             {
-                if (sPlayerHousingMgr->IsOnOwnIsland(player))
-                    HousingMenus::ShowChest(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
-                else
+                std::string reason;
+                if (!sPlayerHousingMgr->IsOnOwnIsland(player))
                     Reply(player, "The chest is locked: it holds its owner's bank.");
+                else if (!sPlayerHousingMgr->OpenBankAtChest(player, placementId, reason))
+                    Reply(player, reason);
                 return true;
             }
             if (piece && piece->HasFlag(PIECE_FLAG_MUSIC))
@@ -355,10 +359,15 @@ public:
             }
         }
 
+        // A plain piece (nothing to sit on or open): its menu, decorating from now on. (The
+        // pieces that work like the real thing change only while decorating: House Key.)
         if (sPlayerHousingMgr->CanDecorate(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
         {
+            std::string ignored;
+            sPlayerHousingMgr->SetDecorating(player, true, ignored);
             sPlayerHousingMgr->SelectPlacement(player, placementId);
-            Reply(player, "To change this, start decorating: House Key, Start decorating.");
+            sPlayerHousingMgr->SendAddonState(player);
+            HousingMenus::ShowPiece(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
             return true;
         }
 
@@ -413,7 +422,8 @@ public:
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
         handler->SendSysMessage(".house size <bigger|smaller|normal|percent> [id] | tilt <forward|back|left|right|straight> [degrees] [id]");
-        handler->SendSysMessage(".house ghost <item> | ghost move [id] | ghost adjust <forward> <left> <up> <degrees> | ghost place [another] | ghost cancel");
+        handler->SendSysMessage(".house ghost <item> | ghost move [id] | ghost adjust <forward> <left> <up> <degrees> | ghost at <x> <y> <z>");
+        handler->SendSysMessage(".house ghost place [another] | ghost cancel");
         handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name> | like | visitors");
         handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
         handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
@@ -488,16 +498,23 @@ public:
         std::string reason;
         PlayerHousingMgr* mgr = sPlayerHousingMgr;
 
-        // The addon's state request is quiet and cheap; edit mode's moves have their own
-        // window; everything else counts.
+        // The addon's quiet reads (state, lists, marking seen, saying it's there) are cheap and
+        // don't count; edit mode's moves and the mouse's points have windows of their own;
+        // everything else counts.
         bool holdMessage = sub == "group" && tokens.size() > 1 && Lower(tokens[1]) == "hold";
         bool ghostAdjust = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "adjust";
-        if (sub == "shift" || ghostAdjust)
+        bool ghostAt = sub == "ghost" && tokens.size() > 1 && Lower(tokens[1]) == "at";
+        if (ghostAt)
+        {
+            if (!gm && mgr->PointFlood(player))
+                return true;
+        }
+        else if (sub == "shift" || ghostAdjust)
         {
             if (!gm && mgr->ShiftFlood(player))
                 return true;
         }
-        else if (sub != "state" && !holdMessage && !gm && mgr->CommandFlood(player))
+        else if (sub != "state" && sub != "data" && sub != "seen" && sub != "addon" && !holdMessage && !gm && mgr->CommandFlood(player))
         {
             Reply(player, "Too many housing commands at once: give it a moment.");
             return true;
@@ -525,8 +542,9 @@ public:
         }
         else if (sub == "addon")
         {
-            // Quiet: the addon says it's there, and whether the House Key opens its window.
-            mgr->SetAddonClient(player, !(tokens.size() > 2 && tokens[2] == "0"));
+            // Quiet: the addon says it's there, whether the House Key opens its window, and
+            // whether PlayerHousing.dll is there (mouse).
+            mgr->SetAddonClient(player, !(tokens.size() > 2 && tokens[2] == "0"), tokens.size() > 3 && Lower(tokens[3]) == "mouse");
             mgr->SendAddonState(player);
             return true;
         }
@@ -776,6 +794,26 @@ public:
         {
             // A piece following the player until it's set down (the addon's keys drive it).
             std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            // x y z [facing x y z] from tokens[index] on: the ghost goes there. False, with why,
+            // when it can't (quiet when it's only the mouse wandering off the island).
+            auto pointAt = [&](size_t index, std::string& why) -> bool
+            {
+                float nan = std::numeric_limits<float>::quiet_NaN();
+                float x = decimal(index, nan);
+                float y = decimal(index + 1, nan);
+                float z = decimal(index + 2, nan);
+                if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+                {
+                    why = "Usage: .house ghost at <x> <y> <z> [<facing x> <facing y> <facing z>]";
+                    return false;
+                }
+                float facing[3] = { decimal(index + 3, nan), decimal(index + 4, nan), decimal(index + 5, nan) };
+                if (mgr->GhostAt(player, x, y, z, tokens.size() > index + 5 ? facing : nullptr, why))
+                    return true;
+                if (what == "at")
+                    why.clear();  // the addon shows why; chat stays quiet
+                return false;
+            };
             if (what == "move")
                 mgr->StartGhostMove(player, number(2), reason);
             else if (what == "adjust")
@@ -784,8 +822,27 @@ public:
                 if (mgr->AdjustGhost(player, decimal(2, 0.0f), decimal(3, 0.0f), decimal(4, 0.0f), decimal(5, 0.0f), reason))
                     reason.clear();
             }
+            else if (what == "at")
+            {
+                // Quiet: where the mouse points, a few times a second (the addon, with
+                // PlayerHousing.dll); x y z, then which way the surface there faces.
+                if (!pointAt(2, reason))
+                    Reply(player, reason);
+                return true;
+            }
             else if (what == "place")
-                mgr->PlaceGhost(player, tokens.size() > 2 && Lower(tokens[2]) == "another", reason);
+            {
+                // A click: set down where the mouse points (the point comes with it, so a spot
+                // that can't be used isn't swapped for an older one).
+                bool another = tokens.size() > 2 && Lower(tokens[2]) == "another";
+                size_t at = another ? 3 : 2;
+                if (tokens.size() > at && Lower(tokens[at]) == "at" && !pointAt(at + 1, reason))
+                {
+                    Reply(player, reason);
+                    return true;
+                }
+                mgr->PlaceGhost(player, another, reason);
+            }
             else if (what == "cancel")
                 mgr->CancelGhost(player);
             else if (what == "new" && tokens.size() > 2)
@@ -793,7 +850,7 @@ public:
             else if (uint32 item = number(1))
                 mgr->StartGhostNew(player, item, 0, reason);
             else
-                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | place [another] | cancel";
+                reason = "Usage: .house ghost <item> | move [id] | adjust <forward> <left> <up> <degrees> | at <x> <y> <z> | place [another] [at <x> <y> <z>] | cancel";
         }
         else if (sub == "group")
         {
@@ -922,8 +979,8 @@ public:
             }
             if (id && mgr->GetPlacement(player, id))
             {
+                // Quiet: the ring under it (and the addon) show it.
                 mgr->SelectPlacement(player, id);
-                reason = "Selected " + mgr->GetPiece(mgr->GetPlacement(player, id)->itemEntry)->name + ".";
                 mgr->SendAddonState(player);
             }
             else

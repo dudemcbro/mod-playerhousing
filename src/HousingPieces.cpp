@@ -728,9 +728,15 @@ bool PlayerHousingMgr::AddNewPlacement(Player* player, Session& session, Placeme
         SpawnMarkers(session, map);
 
     Record(player, "placed " + piece->name, { Change{ placement.id, std::nullopt, placement } });
-    reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session.ownerGuid));
+    // It's there to see: said only when the island is nearly full.
+    reason.clear();
+    uint32 furnishings = 0;
+    uint32 buildings = 0;
+    CountPlaced(session.ownerGuid, furnishings, buildings);
+    if (piece->IsBuilding() ? buildings + 2 >= _maxBuildings : furnishings + 10 >= _maxFurnishings)
+        reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session.ownerGuid));
     QuestEvent(player, QUEST_TOUR_PLACE);
-    Tip(player, TIP_FIRST_PLACE, "In decorate mode, click a piece to turn, move or pick it up. Mistake? House Key, Undo.");
+    Tip(player, TIP_FIRST_PLACE, "Click a piece to turn, move or pick it up. Mistake? House Key, Undo.");
     return true;
 }
 
@@ -959,7 +965,7 @@ std::string PlayerHousingMgr::RedoLabel(Player const* player) const
     return itr != _journals.end() && !itr->second.redo.empty() ? itr->second.redo.back().label : "";
 }
 
-std::string PlayerHousingMgr::DescribeReturns() const
+std::string PlayerHousingMgr::DescribeReturns(bool bagsToo) const
 {
     std::string gear;
     // Gear taken off a stand is the subject of the sentence before; gear coming back with
@@ -967,7 +973,7 @@ std::string PlayerHousingMgr::DescribeReturns() const
     bool piecesReturned = _report.toBags || _report.toStorage;
     if (_report.gearToBags && !piecesReturned)
         gear += _report.gearToBags == 1 ? " It's back in your bags." : " They're back in your bags.";
-    else if (_report.gearToBags)
+    else if (_report.gearToBags && bagsToo)
         gear += _report.gearToBags == 1 ? " A piece of gear went back to your bags too." : Acore::StringFormat(" {} pieces of gear went back to your bags too.", _report.gearToBags);
     if (_report.gearMailed)
         gear += Acore::StringFormat(" Your bags were full, so Krook mailed you {} (check your mailbox).",
@@ -979,17 +985,17 @@ std::string PlayerHousingMgr::DescribeReturns() const
             names += (names.empty() ? "" : ", ") + name;
         gear += " Not in your bags any more, so not put back: " + names + ".";
     }
-    return DescribeItemReturns() + gear;
+    return DescribeItemReturns(bagsToo) + gear;
 }
 
-std::string PlayerHousingMgr::DescribeItemReturns() const
+std::string PlayerHousingMgr::DescribeItemReturns(bool bagsToo) const
 {
     std::string mine;
     if (_report.toStorage && _report.toBags)
         mine = Acore::StringFormat(" {} went back to your bags and {} to House Storage (bags full).", _report.toBags, _report.toStorage);
     else if (_report.toStorage)
         mine = _report.toStorage == 1 ? " It's in your House Storage (bags full)." : " They're in your House Storage (bags full).";
-    else if (_report.toBags)
+    else if (_report.toBags && bagsToo)
         mine = _report.toBags == 1 ? " It's back in your bags." : " They're back in your bags.";
 
     // Pieces someone else placed went back to them.
@@ -1041,7 +1047,7 @@ bool PlayerHousingMgr::Undo(Player* player, std::string& reason, bool cooldown)
     KeepGroupAfterStep(*session, self, selectedBefore, groupBefore, entry.changes);
     journal.redo.push_back(entry);
 
-    reason = Acore::StringFormat("Undid: {}.{} ({})", entry.label, DescribeReturns(), CountsText(session->ownerGuid));
+    reason = Acore::StringFormat("Undid: {}.{}", entry.label, DescribeReturns(false));
     QuestEvent(player, QUEST_TOUR_UNDO);
     if (!ok)
         reason += " Not everything could be undone: " + failure;
@@ -1089,7 +1095,7 @@ bool PlayerHousingMgr::Redo(Player* player, std::string& reason)
     KeepGroupAfterStep(*session, self, selectedBefore, groupBefore, entry.changes);
     journal.undo.push_back(entry);
 
-    reason = Acore::StringFormat("Redid: {}.{} ({})", entry.label, DescribeReturns(), CountsText(session->ownerGuid));
+    reason = Acore::StringFormat("Redid: {}.{}", entry.label, DescribeReturns(false));
     if (!ok)
         reason += " Not everything could be redone: " + failure;
     SendAddonState(player);
@@ -1279,11 +1285,11 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     std::string label = insideCount ? Acore::StringFormat("picked up {} and {} {}", name, pieces, where) : "picked up " + name;
     Record(player, label, std::move(changes));
 
-    if (insideCount)
-        reason = Acore::StringFormat("Picked up {} and the {} {}.{} ({})", name, pieces, piece && piece->IsBuilding() ? "inside it" : "on it",
-            DescribeReturns(), CountsText(session->ownerGuid));
-    else
-        reason = Acore::StringFormat("Picked up {}.{} ({})", name, DescribeReturns(), CountsText(session->ownerGuid));
+    // Gone from where it stood, back in the bags: said only when it went somewhere else.
+    reason = DescribeReturns(false);
+    if (!reason.empty())
+        reason = Acore::StringFormat("Picked up {}{}.{}", name, insideCount ? Acore::StringFormat(" and the {} {}", pieces,
+            piece && piece->IsBuilding() ? "inside it" : "on it") : std::string(), reason);
     SendAddonState(player);
     return true;
 }
@@ -1397,8 +1403,8 @@ bool PlayerHousingMgr::Commit(Player* player, Session& session, std::string cons
     }
     Record(player, entryLabel, std::move(changes), merge);
 
-    reason = entryLabel + ".";
-    reason[0] = char(std::toupper(static_cast<unsigned char>(reason[0])));
+    // It's there to see (and Undo names it): nothing to say.
+    reason.clear();
     QuestEvent(player, QUEST_TOUR_CHANGE);
     SendAddonState(player);
     return true;
@@ -1761,8 +1767,7 @@ bool PlayerHousingMgr::SetEditMode(Player* player, bool on, std::string& reason)
     if (!on)
         CancelMove(player);
 
-    reason = on ? "Edit mode: click a piece (or press Tab), then use the arrow keys and the mouse wheel. Escape when you're done."
-                : "Edit mode off.";
+    reason.clear();  // the addon's banner says so
     SendAddonState(player);
     return true;
 }
@@ -2175,15 +2180,17 @@ bool PlayerHousingMgr::SetDecorating(Player* player, bool on, std::string& reaso
             RespawnPlacement(*session, map, id);
     }
 
+    // The addon shows it; without it, a line.
+    bool quiet = HasAddon(player);
     if (on)
     {
         SpawnMarkers(*session, map);
-        reason = "Decorating. Click any piece to turn, move or pick it up; blue runes on tables take small pieces. House Key, Done decorating, when you're finished.";
+        reason = quiet ? "" : "Decorating: click any piece to change it (blue runes on tables take small pieces). House Key, Done decorating, when you're finished.";
     }
     else
     {
         DespawnMarkers(*session, map);
-        reason = "Done decorating. Chairs, mailboxes and crafting stations work normally again.";
+        reason = quiet ? "" : "Done decorating: chairs, mailboxes and crafting stations work again.";
     }
 
     SendAddonState(player);
@@ -2231,7 +2238,8 @@ bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool al
         return false;
     }
 
-    reason = Acore::StringFormat("Took {} {} out of House Storage.{}", taken, taken == 1 ? "piece" : "pieces",
-        bagsFull ? " Your bags are full; the rest stays in storage." : "");
+    // In the bags to see: said only when some had to stay behind.
+    reason = bagsFull ? Acore::StringFormat("Took {} {} out of House Storage; your bags are full, so the rest stays there.", taken,
+        taken == 1 ? "piece" : "pieces") : "";
     return true;
 }

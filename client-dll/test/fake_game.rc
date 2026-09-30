@@ -1,0 +1,20 @@
+// The version Wow.exe 3.3.5a (12340) carries: PlayerHousing.dll checks it before doing anything.
+1 VERSIONINFO
+FILEVERSION 3,3,5,12340
+PRODUCTVERSION 3,3,5,12340
+FILEOS 0x4
+FILETYPE 0x1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Stand-in for Wow.exe 3.3.5a in PlayerHousing.dll's tests"
+            VALUE "FileVersion", "3, 3, 5, 12340"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

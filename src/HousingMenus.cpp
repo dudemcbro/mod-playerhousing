@@ -58,7 +58,7 @@ namespace
         CMD_PIECE,            // action: placement id
         CMD_PIECE_OP,         // action: placement id | op << 24
         CMD_NUDGE_MENU,       // action: placement id
-        CMD_PICKUP_MENU,      // action: placement id (buildings: choose what to take)
+        CMD_PICKUP_MENU,      // action: placement id (no longer offered: opens the piece's menu)
         CMD_HOOK_MENU,        // action: surface placement id
         CMD_HOOK_PLACE,       // action: surface id << 16 | (item entry - ITEM_BASE)
         CMD_PACKUP,
@@ -87,7 +87,7 @@ namespace
         CMD_LAYOUT_GET_MISSING, // action: layout id
         CMD_LAYOUT_COPYABLE,
         CMD_LAYOUT_COPY_ISLAND,
-        CMD_CHEST_BANK,       // action: placement id
+        CMD_CHEST_BANK,       // (no longer offered: the Bank Chest opens the bank itself)
         CMD_AMBIENCE,
         CMD_WEATHER,
         CMD_TIME_OF_DAY,
@@ -105,6 +105,7 @@ namespace
         CMD_DOOR_RESET,
         CMD_GHOST_PLACE,      // the piece following the player: set it down
         CMD_GHOST_CANCEL,
+        CMD_GHOST_NEW,        // action: item entry (a new one follows the player)
         CMD_CLOSE
     };
 
@@ -165,7 +166,8 @@ namespace
         OP_BIGGER,
         OP_SMALLER,
         OP_NORMAL_SIZE,
-        OP_ANOTHER
+        OP_ANOTHER,
+        OP_MOVE_GHOST
     };
 
     // Ops of the "More turns, tilt and size" menu, which comes back after each.
@@ -354,14 +356,21 @@ namespace
         Add(player, GOSSIP_ICON_CHAT, Acore::StringFormat("{}: {}", piece->name, Have(player, *piece)), CMD_PIECE_INFO, itemEntry | (origin << 24));
         if (sPlayerHousingMgr->IsUnlocked(player, *piece))
         {
+            // Where it's being decorated: straight to placing it (a new copy is paid for when
+            // it's set down).
+            if (sPlayerHousingMgr->CanDecorate(player) && sPlayerHousingMgr->GhostsEnabled())
+                Add(player, GOSSIP_ICON_INTERACT_1, "Place one (it follows you until you set it down)", CMD_GHOST_NEW, itemEntry);
             uint32 cost = sPlayerHousingMgr->IsFreeMode() ? 0 : piece->copyCost;
             for (uint32 count : { 1u, 5u })
             {
+                // The price is in the label: one is bought straight away, five after a question.
                 std::string label = count == 1 ? "Get one" : Acore::StringFormat("Get {}", count);
                 uint32 action = itemEntry | (count << 20) | (origin << 24);
-                if (cost)
+                if (cost && count > 1)
                     Confirm(player, GOSSIP_ICON_VENDOR, label + " (" + PlayerHousingMgr::FormatMoney(uint64(cost) * count) + ")", CMD_GET_COPIES, action,
-                        count == 1 ? "Get a " + piece->name + "?" : Acore::StringFormat("Get {} of the {}?", count, piece->name), cost * count);
+                        Acore::StringFormat("Get {} of the {}?", count, piece->name), cost * count);
+                else if (cost)
+                    Add(player, GOSSIP_ICON_VENDOR, label + " (" + PlayerHousingMgr::FormatMoney(cost) + ")", CMD_GET_COPIES, action);
                 else
                     Add(player, GOSSIP_ICON_VENDOR, label, CMD_GET_COPIES, action);
             }
@@ -694,31 +703,6 @@ namespace
         Send(player, source, TEXT_PIECE);
     }
 
-    void ShowPickupChoice(Player* player, MenuSource const& source, uint32 placementId)
-    {
-        std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId);
-        PieceDefinition const* piece = placement ? sPlayerHousingMgr->GetPiece(placement->itemEntry) : nullptr;
-        if (!piece)
-        {
-            HousingMenus::ShowHome(player, source);
-            return;
-        }
-
-        uint32 inside = uint32(sPlayerHousingMgr->GetPiecesInside(player->GetGUID().GetCounter(), placementId).size());
-        std::string pieces = Acore::StringFormat("{} {}", inside, inside == 1 ? "piece" : "pieces");
-        ClearGossipMenuFor(player);
-        Confirm(player, GOSSIP_ICON_INTERACT_1, "Pick up the building only", CMD_PIECE_OP, placementId | (OP_PICKUP << 24),
-            inside ? Acore::StringFormat("Return the {} to your bags? The {} inside {} where {}.", piece->name, pieces,
-                                         inside == 1 ? "stays" : "stay", inside == 1 ? "it is" : "they are")
-                   : Acore::StringFormat("Return the {} to your bags?", piece->name));
-        if (inside)
-            Confirm(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Pick up the building and the {} inside it", pieces),
-                CMD_PIECE_OP, placementId | (OP_PICKUP_WITH_INSIDE << 24),
-                Acore::StringFormat("Return the {} and the {} inside it to your bags?", piece->name, pieces));
-        Add(player, GOSSIP_ICON_CHAT, "Back to the building", CMD_PIECE, placementId);
-        Send(player, source, TEXT_PIECE);
-    }
-
     // After a change the piece is a new object; a menu opened from the old one would point
     // at nothing, so it follows the piece. `pieceObject` is the piece's object before the change.
     MenuSource FollowPiece(Player* player, MenuSource const& source, uint32 placementId, ObjectGuid const& pieceObject)
@@ -844,6 +828,11 @@ namespace
                 sPlayerHousingMgr->StartMove(player, placementId, reason);
                 keepMenu = false;
                 break;
+            case OP_MOVE_GHOST:
+                // The menu closes: the piece follows the player (or the mouse) until it's set down.
+                sPlayerHousingMgr->StartGhostMove(player, placementId, reason);
+                keepMenu = false;
+                break;
             default:
                 break;
         }
@@ -914,8 +903,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
         if (!redo.empty())
             Add(player, GOSSIP_ICON_INTERACT_2, "Redo: " + redo, CMD_REDO);
 
-        if (decorating)
-            Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
+        Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
         Add(player, GOSSIP_ICON_VENDOR, CollectionLabel(player, unlocked), CMD_COLLECTION);
         if (stored)
             Add(player, GOSSIP_ICON_MONEY_BAG, Acore::StringFormat("Storage ({})", stored), CMD_STORAGE, 0);
@@ -946,8 +934,7 @@ void HousingMenus::ShowHome(Player* player, MenuSource const& source)
             std::string redo = sPlayerHousingMgr->RedoLabel(player);
             if (!redo.empty())
                 Add(player, GOSSIP_ICON_INTERACT_2, "Redo: " + redo, CMD_REDO);
-            if (decorating)
-                Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
+            Add(player, GOSSIP_ICON_INTERACT_1, "Change a piece near me", CMD_NEARBY, 0);
         }
         Add(player, GOSSIP_ICON_TAXI, "Go home", CMD_GO_HOME);
         uint32 likes = sPlayerHousingMgr->CountLikes(islandOwner);
@@ -1017,19 +1004,6 @@ void HousingMenus::ShowCollection(Player* player, MenuSource const& source)
         Add(player, GOSSIP_ICON_MONEY_BAG, "Give me one of everything (test server)", CMD_GET_ALL);
     Add(player, GOSSIP_ICON_CHAT, "Back", CMD_HOME);
     Send(player, source, TEXT_COLLECTION);
-}
-
-void HousingMenus::ShowChest(Player* player, MenuSource const& source, uint32 placementId)
-{
-    uint32 stored = 0;
-    for (auto const& [itemEntry, count] : sPlayerHousingMgr->GetStorage(player->GetGUID().GetCounter()))
-        stored += count;
-
-    ClearGossipMenuFor(player);
-    Add(player, GOSSIP_ICON_MONEY_BAG, "Open my bank", CMD_CHEST_BANK, placementId);
-    Add(player, GOSSIP_ICON_MONEY_BAG, Acore::StringFormat("House Storage ({} {})", stored, stored == 1 ? "piece" : "pieces"), CMD_STORAGE, 0);
-    Add(player, GOSSIP_ICON_CHAT, "Done", CMD_CLOSE);
-    Send(player, source, TEXT_CHEST);
 }
 
 void HousingMenus::ShowMusicBox(Player* player, MenuSource const& source)
@@ -1155,7 +1129,16 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
         Add(player, GOSSIP_ICON_TABARD, "Figure: " + PlayerHousingMgr::LookName(placement->look) + " (change)", CMD_STAND_FIGURE, placementId);
     }
     if (piece->IsBuilding())
-        Add(player, GOSSIP_ICON_INTERACT_1, "Pick up...", CMD_PICKUP_MENU, placementId);
+    {
+        // Straight away, both ways (undo puts it back).
+        uint32 inside = uint32(sPlayerHousingMgr->GetPiecesInside(islandOwner, placementId).size());
+        std::string pieces = Acore::StringFormat("{} {}", inside, inside == 1 ? "piece" : "pieces");
+        Add(player, GOSSIP_ICON_INTERACT_1, inside ? Acore::StringFormat("Pick up the building (the {} inside {})", pieces, inside == 1 ? "stays" : "stay")
+            : std::string("Pick up the building"), CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
+        if (inside)
+            Add(player, GOSSIP_ICON_INTERACT_1, Acore::StringFormat("Pick up the building and the {} inside it", pieces),
+                CMD_PIECE_OP, placementId | (OP_PICKUP_WITH_INSIDE << 24));
+    }
     else if (!placement->gear.empty())
         Add(player, GOSSIP_ICON_INTERACT_1, itemOwner == self ? "Pick up (it and its gear go back to your bags)"
             : "Pick up (it goes " + whereTo + ", its gear by mail)", CMD_PIECE_OP, placementId | (OP_PICKUP << 24));
@@ -1166,7 +1149,10 @@ void HousingMenus::ShowPiece(Player* player, MenuSource const& source, uint32 pl
     Add(player, GOSSIP_ICON_INTERACT_2, "Turn toward me", CMD_PIECE_OP, placementId | (OP_FACE_ME << 24));
     Add(player, GOSSIP_ICON_INTERACT_2, "More turns, tilt and size...", CMD_SHAPE_MENU, placementId);
     Add(player, GOSSIP_ICON_INTERACT_1, "Nudge...", CMD_NUDGE_MENU, placementId);
-    Add(player, GOSSIP_ICON_INTERACT_1, "Move with the targeting circle", CMD_PIECE_OP, placementId | (OP_MOVE_CIRCLE << 24));
+    if (sPlayerHousingMgr->GhostsEnabled())
+        Add(player, GOSSIP_ICON_INTERACT_1, "Move (it follows you until you set it down)", CMD_PIECE_OP, placementId | (OP_MOVE_GHOST << 24));
+    else
+        Add(player, GOSSIP_ICON_INTERACT_1, "Move with the targeting circle", CMD_PIECE_OP, placementId | (OP_MOVE_CIRCLE << 24));
     Add(player, GOSSIP_ICON_INTERACT_1, "Move to where I'm standing", CMD_PIECE_OP, placementId | (OP_MOVE_HERE << 24));
     if (piece->HasFlag(PIECE_FLAG_SURFACE))
         Add(player, GOSSIP_ICON_VENDOR, "Put something on top", CMD_HOOK_MENU, placementId);
@@ -1319,6 +1305,11 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             sPlayerHousingMgr->CancelGhost(player);
             CloseGossipMenuFor(player);
             return;
+        case CMD_GHOST_NEW:
+            CloseGossipMenuFor(player);
+            sPlayerHousingMgr->StartGhostNew(player, action, 0, reason);
+            Say(player, reason);
+            return;
         case CMD_DOOR_HERE:
         case CMD_DOOR_RESET:
             sPlayerHousingMgr->SetDoor(player, sender == CMD_DOOR_RESET, reason);
@@ -1402,11 +1393,6 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             sPlayerHousingMgr->SetMusic(player, action, reason);
             Say(player, reason);
             ShowMusic(player, source);
-            return;
-        case CMD_CHEST_BANK:
-            CloseGossipMenuFor(player);
-            if (!sPlayerHousingMgr->OpenBankAtChest(player, action, reason))
-                Say(player, reason);
             return;
         case CMD_LAYOUT_SAVE_NEW:
             sPlayerHousingMgr->SaveLayout(player, 0, text, reason);
@@ -1603,7 +1589,8 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
             return;
         }
         case CMD_PICKUP_MENU:
-            ShowPickupChoice(player, source, action);
+            // (A building's pickup options used to be a menu of their own: now the piece's.)
+            ShowPiece(player, source, action);
             return;
         case CMD_HOOK_MENU:
             ShowHook(player, source, action);
@@ -1626,7 +1613,7 @@ void HousingMenus::HandleSelect(Player* player, MenuSource const& source, uint32
         case CMD_ADJUST_MODE:
         {
             uint8 mode = sPlayerHousingMgr->GetAdjustMode(player->GetGUID().GetCounter());
-            uint8 next = mode == ADJUST_BUILDINGS ? ADJUST_ALL : (mode == ADJUST_ALL ? ADJUST_NEVER : ADJUST_BUILDINGS);
+            uint8 next = mode == ADJUST_NEVER ? ADJUST_BUILDINGS : (mode == ADJUST_BUILDINGS ? ADJUST_ALL : ADJUST_NEVER);
             sPlayerHousingMgr->SetAdjustMode(player, next, reason);
             Say(player, reason);
             ShowSettings(player, source);

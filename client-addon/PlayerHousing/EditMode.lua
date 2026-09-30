@@ -8,7 +8,8 @@
 -- A ghost (a piece being placed or moved, following you until it's set down) takes the same
 -- keys, in or out of edit mode: arrows push it farther or nearer and to the sides, the wheel
 -- turns it, Ctrl+wheel and Page Up/Down raise and lower it, G sets it down (Shift+G: then
--- another), Escape puts it back.
+-- another), Escape puts it back. With PlayerHousing.dll it follows the mouse instead, and a
+-- click sets it down (Mouse.lua); the arrows nudge it from there.
 --
 -- The keys are override bindings, active only then, so the usual ones come back afterwards.
 -- Bindings can't change in combat; they wait for it to end.
@@ -59,6 +60,8 @@ local function Feedback(key, what)
         lastShown = GetTime()
     end
 end
+
+API.Feedback = Feedback
 
 local function Yd(value)
     return (("%.2f"):format(math.abs(value)):gsub("%.?0+$", "")) .. " yd"
@@ -385,9 +388,18 @@ function UpdateHud()
         hudTitle:SetText(state.ghostMove and "Moving" or "Placing")
         local name = API.PieceName(state.ghostItem)
         hudName:SetText(state.ghostMove and state.groupSize > 1 and ("%s and %d more"):format(name, state.groupSize - 1) or name)
-        hudHelp:SetText("It follows you: walk it where it goes.   Up/Down arrows: farther, nearer   Left/Right: sideways\n" ..
-            (wheelRaises and "Wheel: raise, lower" or "Wheel: turn") .. "   Ctrl+wheel, Page Up/Down: raise, lower   Shift: finer   Alt+wheel: zoom\n" ..
-            "G: set it down" .. (state.ghostMove and "" or "   Shift+G: set it down, then another") .. "   Escape: never mind")
+        local wheel = (wheelRaises and "Wheel: raise, lower" or "Wheel: turn") .. "   Ctrl+wheel, Page Up/Down: raise, lower   Shift: finer   Alt+wheel: zoom\n"
+        if API.HasMouse() then
+            hudHelp:SetText("It follows your mouse: click where it goes.   Arrows: nudge it   On a wall, it faces out\n" .. wheel ..
+                (state.ghostMove and "Click or G: set it down" or "Click or G: set it down   Shift-click: and another") .. "   Escape: never mind")
+        else
+            hudHelp:SetText("It follows you: walk it where it goes.   Up/Down arrows: farther, nearer   Left/Right: sideways\n" .. wheel ..
+                "G: set it down" .. (state.ghostMove and "" or "   Shift+G: set it down, then another") .. "   Escape: never mind")
+        end
+        -- Why it stopped following the mouse (off the island, too far).
+        if state.ghostNote ~= "" then
+            Feedback("Mouse", state.ghostNote)
+        end
         wheelButton:Hide()
         undoButton:Hide()
         redoButton:Hide()

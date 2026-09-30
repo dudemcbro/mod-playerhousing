@@ -130,7 +130,7 @@ More accounts: `python3 tools/test-server/testclient/create_account.py NAME PASS
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (290 checks, 291 with `PlayerHousing.Catalog = everything`):
+checking the database and what the client sees after each step (302 checks, 303 with `PlayerHousing.Catalog = everything`):
 
 - first login: House Key, starter furnishings, past progress unlocking pieces
 - the Home menu from `.house` and from the key, going home, Krook's greeting, the
@@ -254,6 +254,17 @@ In the development container (`dev-container.sh start`; use `docker` instead of
 
 ```bash
 podman exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/load_test.py --players 99
+```
+
+Each piece is placed the way the addon does it with the mouse: the ghost appears, a few
+points where the mouse moved are sent (`--mouse-points`, ten a second), then the click.
+`--hold 60` keeps everyone at home with their pieces out for a minute once all are done,
+and reports the server's update times for that stretch on their own; add `--walk` to have
+them run in circles meanwhile, which is what makes the server look at other islands'
+pieces.
+
+```
+docker exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-server/testclient/load_test.py --players 100 --pieces 60 --mouse-points 3 --hold 60 --walk
 ```
 
 It waits for its characters to be out of the world before resetting them, and logs them

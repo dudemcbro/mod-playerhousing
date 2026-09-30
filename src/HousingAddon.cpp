@@ -8,6 +8,7 @@
 #include "WorldSession.h"
 
 #include <algorithm>
+#include <cstring>
 
 using namespace Housing;
 
@@ -19,6 +20,10 @@ using namespace Housing;
 namespace
 {
     constexpr size_t ROW_LIMIT = 200;   // characters of list data in one row
+    // The most an addon message can be, prefix, tab and text together: the client takes no
+    // more than 255 bytes.
+    constexpr size_t ADDON_MESSAGE_LIMIT = 255;
+    constexpr char const* ADDON_PREFIX = "HOUSING\t";
     constexpr size_t PLACED_ROWS = 250;
     constexpr size_t RECENT_PIECES = 12;
     constexpr uint32 HISTORY_ROWS = 15;
@@ -55,8 +60,12 @@ void PlayerHousingMgr::SendAddon(Player* player, std::string const& text) const
 
     // A whisper to themselves, always the plain kind: for a GM in GM mode the core would send
     // the GM variant, which the test client (and, it may be, some addons) doesn't read.
+    // Never over the client's limit (rows with free text split themselves before this; this
+    // only guards against one that doesn't).
+    std::string message = ADDON_PREFIX + text;
+    TruncateUtf8(message, ADDON_MESSAGE_LIMIT);
     WorldPacket data;
-    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player->GetGUID(), player->GetGUID(), "HOUSING\t" + text, 0);
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player->GetGUID(), player->GetGUID(), message, 0);
     player->SendDirectMessage(&data);
 }
 
@@ -77,10 +86,26 @@ void PlayerHousingMgr::SendAddonRows(Player* player, std::string const& kind, st
         SendAddon(player, "row\t" + kind + "\t" + label + "\t" + row);
 }
 
-void PlayerHousingMgr::SetAddonClient(Player* player, bool keyOpensWindow)
+void PlayerHousingMgr::SetAddonClient(Player* player, bool keyOpensWindow, bool mouse)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     _addonClients[player->GetGUID()] = keyOpensWindow;
+    if (mouse)
+        _mouseClients.insert(player->GetGUID());
+    else
+        _mouseClients.erase(player->GetGUID());
+}
+
+bool PlayerHousingMgr::HasAddon(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    return _addonClients.count(player->GetGUID()) > 0;
+}
+
+bool PlayerHousingMgr::HasMouse(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    return _mouseClients.count(player->GetGUID()) > 0;
 }
 
 bool PlayerHousingMgr::KeyOpensWindow(Player const* player) const
@@ -241,8 +266,24 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
         // The owner reading it marks the notes read.
         SendAddon(player, "begin\tguestbook");
         for (GuestbookNote const& note : GetGuestbook(self, GUESTBOOK_ROWS))
-            SendAddon(player, Acore::StringFormat("row\tguestbook\tnote\t{}\t{}\t{}\t{}\t{}", note.id, Clean(note.author), note.when,
-                note.fresh ? 1 : 0, Clean(note.text)));
+        {
+            // A long note doesn't fit one message with its author and date: what doesn't fit
+            // follows in "more" rows, which the addon adds back on.
+            std::string head = Acore::StringFormat("row\tguestbook\tnote\t{}\t{}\t{}\t{}\t", note.id, Clean(note.author), note.when,
+                note.fresh ? 1 : 0);
+            std::string rest = Clean(note.text);
+            do
+            {
+                size_t room = ADDON_MESSAGE_LIMIT - std::strlen(ADDON_PREFIX) - std::min(head.size(), ADDON_MESSAGE_LIMIT / 2);
+                std::string piece = rest;
+                TruncateUtf8(piece, room);
+                if (piece.empty() && !rest.empty())
+                    break;  // can't happen with notes of whole characters; never loop forever
+                SendAddon(player, head + piece);
+                rest.erase(0, piece.size());
+                head = Acore::StringFormat("row\tguestbook\tmore\t{}\t", note.id);
+            } while (!rest.empty());
+        }
         SendAddon(player, "end\tguestbook");
         MarkGuestbookRead(self);
         return true;

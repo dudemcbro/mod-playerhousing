@@ -106,7 +106,7 @@ void PlayerHousingMgr::LoadConfig()
 
     _maxFurnishings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxFurnishings", 200), 1, 5000);
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
-    _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 5), 60);
+    _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 0), 60);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
     // It goes into a query: letters, digits and underscores only.
     if (_layoutCode.empty() || _layoutCode.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
@@ -439,23 +439,26 @@ void PlayerHousingMgr::SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, b
 
 uint8 PlayerHousingMgr::GetAdjustMode(ObjectGuid::LowType guid) const
 {
+    // No menu unless asked for: Undo takes a piece back just as well.
     uint32 flags = GetCharacterFlags(guid);
     if (flags & CHAR_FLAG_ADJUST_NEVER)
         return ADJUST_NEVER;
-    return (flags & CHAR_FLAG_ADJUST_ALL) ? ADJUST_ALL : ADJUST_BUILDINGS;
+    if (flags & CHAR_FLAG_ADJUST_ALL)
+        return ADJUST_ALL;
+    return (flags & CHAR_FLAG_ADJUST_BUILDINGS) ? ADJUST_BUILDINGS : ADJUST_NEVER;
 }
 
 void PlayerHousingMgr::SetAdjustMode(Player* player, uint8 mode, std::string& reason) const
 {
-    uint32 set = mode == ADJUST_ALL ? CHAR_FLAG_ADJUST_ALL : (mode == ADJUST_NEVER ? CHAR_FLAG_ADJUST_NEVER : 0);
-    uint32 both = CHAR_FLAG_ADJUST_ALL | CHAR_FLAG_ADJUST_NEVER;
+    uint32 set = mode == ADJUST_ALL ? CHAR_FLAG_ADJUST_ALL : (mode == ADJUST_NEVER ? CHAR_FLAG_ADJUST_NEVER : CHAR_FLAG_ADJUST_BUILDINGS);
+    uint32 both = CHAR_FLAG_ADJUST_ALL | CHAR_FLAG_ADJUST_NEVER | CHAR_FLAG_ADJUST_BUILDINGS;
     CharacterDatabase.DirectExecute(
         "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) "
         "ON DUPLICATE KEY UPDATE flags = (flags & ~{}) | {}", player->GetGUID().GetCounter(), set, both, set);
     switch (mode)
     {
         case ADJUST_ALL: reason = "After placing anything, its menu opens so you can turn, nudge or take it back."; break;
-        case ADJUST_NEVER: reason = "Placing no longer opens a menu. Click a piece while decorating to change it."; break;
+        case ADJUST_NEVER: reason = "Placing no longer opens a menu. Click a piece to change it."; break;
         default: reason = "After placing a building, its menu opens so you can turn, nudge or take it back."; break;
     }
 }
@@ -544,6 +547,20 @@ bool PlayerHousingMgr::ShiftFlood(Player* player)
         window.count = 0;
     }
     return ++window.count > 12;
+}
+
+bool PlayerHousingMgr::PointFlood(Player* player)
+{
+    // The addon sends where the mouse points about ten times a second while it moves.
+    uint64 now = GameTime::GetGameTimeMS().count();
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    CommandWindow& window = _pointWindows[player->GetGUID()];
+    if (now - window.start > 1000)
+    {
+        window.start = now;
+        window.count = 0;
+    }
+    return ++window.count > 25;
 }
 
 std::string PlayerHousingMgr::FormatYards(float yards)
@@ -740,8 +757,10 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         _cooldowns.erase(player->GetGUID());
         _commandWindows.erase(player->GetGUID());
         _shiftWindows.erase(player->GetGUID());
+        _pointWindows.erase(player->GetGUID());
         _editMode.erase(player->GetGUID());
         _addonClients.erase(player->GetGUID());
+        _mouseClients.erase(player->GetGUID());
         _knownHouses.erase(player->GetGUID().GetCounter());
         _gridSizes.erase(player->GetGUID().GetCounter());
         _notified.erase(player->GetGUID().GetCounter());
@@ -1619,12 +1638,12 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
     uint32 ghostItem = GetGhostItem(player);
 
     // Fields 15 and 19 (a copy waiting for its spot, edit mode's Move a Piece) went with ghosts: 0.
-    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
         owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
         0, roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
         FormatYards(GetGridSize(player->GetGUID().GetCounter())), 0, groupSize,
-        ghostItem, ghostItem ? (IsGhostMove(player) ? "move" : "new") : "", _ghosts ? 1 : 0);
+        ghostItem, ghostItem ? (IsGhostMove(player) ? "move" : "new") : "", _ghosts ? 1 : 0, ghostItem ? GetGhostNote(player) : "");
     SendAddon(player, message);
 }

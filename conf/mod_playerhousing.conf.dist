@@ -101,10 +101,11 @@ PlayerHousing.Catalog = "curated"
 
 ###############################################################################
 # PlayerHousing.Ghosts
-#    1  a piece being placed or moved follows its player as a see-through ghost
-#       (buildings are carried as they are). Players need the client patch
-#       from tools/gm-island-cleared built with this version: it adds the
-#       ghosts' models, and without it the ghost can't be seen.
+#    1  a piece being placed or moved follows its player (or, with
+#       PlayerHousing.dll, the mouse) as a see-through ghost; a building as a
+#       see-through block its size. Players need the client patch from
+#       tools/gm-island-cleared built with this version: it adds the ghosts'
+#       models, and without it the ghost can't be seen.
 #    0  every piece is carried as it is (no see-through ghosts); for clients
 #       with an older patch.
 #    Default: 1
@@ -115,9 +116,9 @@ PlayerHousing.Ghosts = 1
 # PlayerHousing.HouseKey.DelaySeconds
 #    How long "Go home" takes (moving or combat cancels). 0 = instant.
 #    FreeMode always goes instantly.
-#    Default: 5
+#    Default: 0
 ###############################################################################
-PlayerHousing.HouseKey.DelaySeconds = 5
+PlayerHousing.HouseKey.DelaySeconds = 0
 
 ###############################################################################
 # PlayerHousing.StewardEntry
