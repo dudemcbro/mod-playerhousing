@@ -42,7 +42,7 @@ using namespace PlayerHousingDll;
 
 namespace
 {
-    constexpr int VERSION = 3;
+    constexpr int VERSION = 4;
     constexpr uint32_t DEFAULT_FLAGS = 0x100111;  // the game's line of sight: ground, buildings, doodads, objects
     constexpr float DEFAULT_REACH = 200.0f;       // yards
     constexpr float NORMAL_STEP = 0.004f;         // of the view: the points beside the cursor for a surface's facing
@@ -99,6 +99,7 @@ namespace
     char g_status[160] = "not started";
     char g_logPath[MAX_PATH] = "";
     unsigned g_registrations = 0;
+    volatile LONG g_running = TRUE;
     ScreenAxes g_axes;
 
     void Log(char const* format, ...)
@@ -350,6 +351,11 @@ namespace
     // Each new Lua (logging in, /reload) gets the functions on its first frame.
     void RegisterIfNeeded()
     {
+        // FrameScript_FireOnUpdate can run while WoW is tearing down one Lua state and before
+        // it has stopped rendering frames. GetLuaState may still point at the state being
+        // destroyed then, so do not enter Lua once the world has gone away or begun loading.
+        if (!WorldReady())
+            return;
         lua_State* L = GetLuaState();
         if (!L)
             return;
@@ -382,7 +388,8 @@ namespace
 
     int FireOnUpdateHook(int a1, int a2, int a3, int a4)
     {
-        RegisterIfNeeded();
+        if (InterlockedCompareExchange(&g_running, TRUE, TRUE))
+            RegisterIfNeeded();
         return OriginalFireOnUpdate(a1, a2, a3, a4);
     }
 
@@ -404,6 +411,16 @@ namespace
             char text[160];
             std::snprintf(text, sizeof(text), "off: this game is %s, not 3.3.5a (12340)", version);
             SetStatus(text);
+            return;
+        }
+        // The frame hook points into this module for the rest of the game's life. Pin it so an
+        // accidental FreeLibrary cannot leave that hook pointing at unmapped code. Windows
+        // releases pinned modules normally when the process exits.
+        HMODULE pinned = nullptr;
+        if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                reinterpret_cast<LPCSTR>(&Start), &pinned))
+        {
+            SetStatus("off: could not pin PlayerHousing.dll");
             return;
         }
         if (MH_Initialize() != MH_OK)
@@ -432,5 +449,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(instance);
         Start(instance);
     }
+    else if (reason == DLL_PROCESS_DETACH)
+        InterlockedExchange(&g_running, FALSE);
     return TRUE;
 }

@@ -53,6 +53,8 @@ namespace
     std::vector<std::string> g_problems;
     lua_State* const FAKE_STATE = reinterpret_cast<lua_State*>(0x5EED);
     int g_frames = 0;
+    int g_luaStateRequests = 0;
+    bool g_luaAvailable = true;
     uint32_t g_lastFlags = 0;
     int g_traces = 0;
     int g_worldToScreenCalls = 0;
@@ -86,7 +88,13 @@ namespace
         return v;
     }
 
-    lua_State* FakeGetLuaState() { return FAKE_STATE; }
+    lua_State* FakeGetLuaState()
+    {
+        ++g_luaStateRequests;
+        if (!g_luaAvailable)
+            Problem("the DLL asked for Lua while the world was tearing down");
+        return g_luaAvailable ? FAKE_STATE : nullptr;
+    }
     int FakeGetTop(lua_State* L) { CheckState(L, "lua_gettop"); return int(g_stack.size()); }
     void FakeSetTop(lua_State* L, int index)
     {
@@ -395,12 +403,31 @@ namespace
             Problem("the log doesn't say ready: " + log);
 
         auto frame = reinterpret_cast<int (*)(int, int, int, int)>(0x00495810);
+
+        // Frames also run at the login screen and while a world/Lua state is being destroyed.
+        // The hook must pass those frames through without asking the game for its dying Lua.
+        *reinterpret_cast<char*>(0x00BD0792) = 0;
+        g_luaAvailable = false;
+        int luaRequests = g_luaStateRequests;
+        if (frame(1, 2, 3, 4) != 4321 || g_frames != 1)
+            Problem("a teardown frame didn't pass through the hook");
+        if (g_luaStateRequests != luaRequests)
+            Problem("a teardown frame entered Lua");
+        *reinterpret_cast<char*>(0x00BD0792) = 1;
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 1;
+        if (frame(1, 2, 3, 4) != 4321 || g_frames != 2)
+            Problem("a loading frame didn't pass through the hook");
+        if (g_luaStateRequests != luaRequests)
+            Problem("a loading frame entered Lua");
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 0;
+        g_luaAvailable = true;
+
         if (frame(1, 2, 3, 4) != 4321)
             Problem("the frame update's result didn't come back through the hook");
-        if (g_frames != 1)
+        if (g_frames != 3)
             Problem("the frame update didn't run once");
-        if (g_globals.count("PlayerHousingDLL") != 1 || g_globals["PlayerHousingDLL"].number != 3.0)
-            Problem("PlayerHousingDLL isn't 3 after a frame");
+        if (g_globals.count("PlayerHousingDLL") != 1 || g_globals["PlayerHousingDLL"].number != 4.0)
+            Problem("PlayerHousingDLL isn't 4 after a frame");
         if (!g_stack.empty())
             Problem("the frame left things on the Lua stack");
         frame(0, 0, 0, 0);
