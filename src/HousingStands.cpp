@@ -201,7 +201,7 @@ void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType islandOwne
         "DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={} AND placement_id={} AND slot={}", islandOwner, placementId, uint32(slot));
     ObjectGuid::LowType ownerGuid = gearOwner;
     // Someone else's gear (a roommate's mannequin picked up by the owner) goes by mail.
-    if (player && player->GetGUID().GetCounter() != gearOwner)
+    if (player && HomeOf(player) != gearOwner)
         player = nullptr;
 
     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(gear.itemEntry);
@@ -403,7 +403,7 @@ bool PlayerHousingMgr::ChangeStand(Player* player, uint32 placementId, Placement
     }
 
     // Gear on a stand belongs to whoever placed the stand, so only they dress it.
-    if (ItemOwnerOf(*session, itr->second) != player->GetGUID().GetCounter())
+    if (ItemOwnerOf(*session, itr->second) != HomeOf(player))
     {
         reason = Acore::StringFormat("Only {} can dress this mannequin: it holds their gear.", NameOf(ItemOwnerOf(*session, itr->second)));
         return false;
@@ -462,6 +462,29 @@ bool PlayerHousingMgr::PutOnStand(Player* player, uint32 placementId, uint32 ite
         label += Acore::StringFormat(" ({} came off)", StandItemName(worn->second.itemEntry));
     after.gear[uint8(slot)] = GearItem{ itemGuid, item->GetEntry() };
     return ChangeStand(player, placementId, after, label, reason);
+}
+
+bool PlayerHousingMgr::PutOnStandByEntry(Player* player, uint32 placementId, uint32 itemEntry, std::string& reason)
+{
+    for (Item* item : GetWearableItems(player))
+        if (item->GetEntry() == itemEntry)
+            return PutOnStand(player, placementId, item->GetGUID().GetCounter(), reason);
+    reason = "That isn't in your bags any more.";
+    return false;
+}
+
+std::string PlayerHousingMgr::DescribeStand(Player const* player, uint32 placementId) const
+{
+    std::optional<Placement> placement = GetPlacement(player, placementId);
+    PieceDefinition const* piece = placement ? GetPiece(placement->itemEntry) : nullptr;
+    if (!piece)
+        return "";
+    if (placement->gear.empty())
+        return Acore::StringFormat("The {} isn't wearing anything yet.", piece->name);
+    std::string worn;
+    for (auto const& [slot, gear] : placement->gear)
+        worn += (worn.empty() ? "" : ", ") + Acore::StringFormat("{} ({})", StandItemName(gear.itemEntry), StandSlotName(slot));
+    return Acore::StringFormat("The {} wears {}.", piece->name, worn);
 }
 
 bool PlayerHousingMgr::TakeOffStand(Player* player, uint32 placementId, int32 slot, std::string& reason)

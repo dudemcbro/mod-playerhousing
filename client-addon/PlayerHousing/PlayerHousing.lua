@@ -1,10 +1,13 @@
--- Player Housing: an optional window for mod-playerhousing.
+-- Player Housing: the window for mod-playerhousing, and the way into housing (the House Key,
+-- Krook and /housing open it).
 --
--- Every button sends one of the .house chat commands a player could type, so nothing here
--- is needed to play: the House Key menus do all of it. What the addon adds is the whole
--- Collection as icons (the ones in your bags placed with a click: then click where it goes),
--- undo and redo one click away with the history on a right-click, and quick controls for the
--- pieces you're working on, including turning them with the mouse wheel.
+-- Every button sends one of the .house chat commands a player could type. One way to do each
+-- thing: a piece goes on the mouse (a click on its icon in the Collection, or a right-click
+-- on it on the island), a left-click sets it down, a right-click or Escape puts it back. While
+-- one is held, every change to it is the mouse wheel with a modifier (EditMode.lua); the held
+-- panel only shows it. Undo and Redo are at the top, the history on a right-click.
+-- While the window is open on your island you're decorating: chairs and chests pick up
+-- instead of working.
 --
 -- The server whispers the island state to the player as an addon message with the prefix
 -- HOUSING (PlayerHousingMgr::SendAddonState): tab separated, new fields only at the end.
@@ -13,7 +16,7 @@ local PREFIX = "HOUSING"
 
 local COLUMNS, SLOT_SIZE, SLOT_GAP = 9, 36, 4
 local WIDTH = 24 + COLUMNS * (SLOT_SIZE + SLOT_GAP)
-local BASE_HEIGHT, SELECTED_HEIGHT = 400, 168
+local BASE_HEIGHT, SELECTED_HEIGHT = 400, 150
 local CONTENT_TOP, CONTENT_HEIGHT = -130, 258  -- where the tabs' panels go
 local SEND_INTERVAL = 0.15  -- seconds between moves sent; key presses and wheel turns in between add up
 
@@ -21,26 +24,22 @@ BINDING_HEADER_PLAYERHOUSING = "Player Housing"
 BINDING_NAME_PLAYERHOUSING_TOGGLE = "Show or hide the housing window"
 BINDING_NAME_PLAYERHOUSING_UNDO = "Undo"
 BINDING_NAME_PLAYERHOUSING_REDO = "Redo"
-BINDING_NAME_PLAYERHOUSING_DECORATE = "Start or stop decorating"
-BINDING_NAME_PLAYERHOUSING_EDIT = "Start or stop edit mode (move pieces with the keys)"
-BINDING_NAME_PLAYERHOUSING_TURN_LEFT = "Turn the selected piece left"
-BINDING_NAME_PLAYERHOUSING_TURN_RIGHT = "Turn the selected piece right"
-BINDING_NAME_PLAYERHOUSING_SELECT_NEAREST = "Select the nearest piece"
 
 local state = {
     own = false, decorating = false,
     selected = 0, selectedName = "", selectedBuilding = false,
+    selectedStand = false,  -- the selected piece is a mannequin (it can be dressed)
     furnishings = 0, maxFurnishings = 0, buildings = 0, maxBuildings = 0,
     undo = "", redo = "", islandOwner = "",
-    pendingMover = 0,       -- Move a Piece waiting for its circle (setting down a saved set)
     roommate = false,       -- decorating someone else's island, with their leave
-    editMode = false,       -- keys move the selected piece (EditMode.lua)
     grid = 0,               -- yards; 0 is off
-    groupSize = 0,          -- pieces selected together (Ctrl-click); 1 or 0: just the one
+    groupSize = 0,          -- pieces selected together (Ctrl-right-click); 1 or 0: just the one
     ghostItem = 0,          -- the piece following you until you set it down (0: none)
     ghostMove = false,      -- moving pieces already placed (else placing a new one)
     ghosts = false,         -- see-through ghosts (else pieces are carried as they are)
     ghostNote = "",         -- why the ghost isn't where the mouse points ("off your island")
+    ghostSize = 100,        -- the held piece: size (percent), tilt (degrees), pieces with it
+    ghostPitch = 0, ghostRoll = 0, ghostCount = 0, ghostFront = 0,
 }
 
 -- Changing things: on your own island, or as a roommate on someone else's.
@@ -48,41 +47,31 @@ local function CanEdit()
     return state.own or state.roommate
 end
 
+local SyncDecorating
 local db                    -- PlayerHousingDB, once loaded
 local known = false         -- the server has housing: it sent us a state
-local pieces = {}           -- housing items in the bags, one entry per kind of item
-local movers = {}           -- Move a Piece items in the bags: item id to "bag slot"
-local bagsDirty, layoutPending = true, false
+local layoutPending = false
 local autoShown = false
 -- Moves waiting to go: yards forward, left and up (the player's way), and degrees of turn.
 local pending = { forward = 0, left = 0, up = 0, turn = 0 }
 local sinceSend = 0
-local stateHooks, windowHooks, dataHooks, bagHooks, combatEndHooks, messageHooks = {}, {}, {}, {}, {}, {}
+local stateHooks, windowHooks, dataHooks, combatEndHooks, messageHooks = {}, {}, {}, {}, {}
 local lists = {}            -- lists from the server for the window's tabs, by kind
 local registered = false    -- told the server this session that the addon is here
 
-local frame, statusText, selectedPanel, selectedText
+local frame, statusText, selectedPanel
 local preview, previewModel, previewName, previewSize, previewNote
 local plan, planRect, planBorder, planYou, planYouLabel, picture
 local UpdateDetails         -- the pinned piece's details, next to the window (defined there)
-local homeButton, decorateButton, undoButton, redoButton
-local pickUpAllButton, spotButton
-local groupButtons = {}     -- the selected panel's buttons for several pieces
+local homeButton, undoButton, redoButton
+local heldText, heldShape, heldHelp, heldKeys
+local heldButtons = {}      -- the second row while a piece is held: { button, applies }
+local groupButtons = {}     -- the buttons for several selected pieces (none held)
+local GROUP_NEEDS = { 1 }  -- how many selected each of those needs
+local decoratingAsked       -- what the window last asked the server: decorating on or off
 
 local function Print(text)
     DEFAULT_CHAT_FRAME:AddMessage("|cffffd000Housing:|r " .. text)
-end
-
--- Move a Piece: one item per size of targeting circle, handed out by .house move.
-local function IsMoverItem(id)
-    return id >= 901190 and id <= 901199
-end
-
--- Furnishings and buildings from the module's content generator (902000 is the House Key),
--- and the catalog of every object (940000 and up).
-local function IsHousingItem(id)
-    return ((id >= 901100 and id <= 901199) or (id >= 902001 and id <= 902999) or (id >= 940000 and id <= 944999))
-        and not IsMoverItem(id)
 end
 
 -- Commands go over AzerothCore's addon command channel: chat's flood limit doesn't count it
@@ -117,9 +106,15 @@ local function HasMouse()
     return type(PlayerHousing_CursorWorld) == "function" and commandChannel
 end
 
+-- Version 2 of the DLL moves the ghost on this screen itself, every frame (Mouse.lua); the
+-- server then only follows along. /housing localghost turns that off (the server moves it).
+local function HasLocalGhosts()
+    return HasMouse() and type(PlayerHousing_PlaceUnit) == "function" and not (db and db.localGhosts == false)
+end
+
 function PlayerHousing_Command(command)
     if not known then
-        Print("this server hasn't reported player housing yet. Your House Key has every option.")
+        Print("this server hasn't reported player housing yet. Try again in a moment.")
         return
     end
     command = command or ""
@@ -135,7 +130,7 @@ end
 -- Typed (/housing <command>): as chat, so usage and errors show in the chat box.
 local function TypedCommand(command)
     if not known then
-        Print("this server hasn't reported player housing yet. Your House Key has every option.")
+        Print("this server hasn't reported player housing yet. Try again in a moment.")
         return
     end
     SendChatMessage(".house " .. command, "SAY")
@@ -145,98 +140,10 @@ local function Command(command)
     return function() PlayerHousing_Command(command) end
 end
 
--- The server learns the addon is here, whether the House Key opens this window, and whether
--- the mouse can place pieces.
+-- The server learns the addon is here, whether the mouse can place pieces, and whether this
+-- client moves the ghost itself.
 local function Register()
-    PlayerHousing_Command("addon 1 " .. (db.keyWindow == false and "0" or "1") .. (HasMouse() and " mouse" or ""))
-end
-
----------------------------------------------------------------------------------------------
--- Bags
-
-local function ScanBags()
-    wipe(pieces)
-    wipe(movers)
-    local byId = {}
-    for bag = 0, NUM_BAG_SLOTS do
-        for slot = 1, GetContainerNumSlots(bag) do
-            local link = GetContainerItemLink(bag, slot)
-            local id = link and tonumber(link:match("item:(%d+)"))
-            if id and IsMoverItem(id) then
-                movers[id] = bag .. " " .. slot
-            elseif id and IsHousingItem(id) then
-                local texture, count = GetContainerItemInfo(bag, slot)
-                local entry = byId[id]
-                if entry then
-                    entry.count = entry.count + (count or 1)
-                else
-                    local fullName = link:match("%[(.-)%]") or ""
-                    local name = (fullName:gsub("^Furnishing: ", ""):gsub("^Building: ", ""))
-                    entry = {
-                        id = id, name = name, lowerName = name:lower(),
-                        building = fullName:find("^Building: ") ~= nil,
-                        bag = bag, slot = slot, count = count or 1, texture = texture,
-                    }
-                    byId[id] = entry
-                    pieces[#pieces + 1] = entry
-                end
-            end
-        end
-    end
-    table.sort(pieces, function(left, right)
-        if left.building ~= right.building then
-            return not left.building
-        end
-        return left.name < right.name
-    end)
-    bagsDirty = false
-end
-
-local function PieceLocation(id)
-    for _, piece in ipairs(pieces) do
-        if piece.id == id then
-            return piece.bag .. " " .. piece.slot
-        end
-    end
-end
-
--- While a saved set waits for its spot, a button uses its Move a Piece, so there's no need
--- to find it in the bags. It's a secure button too.
-local function UpdateSpotButton()
-    local location
-    if CanEdit() and state.pendingMover > 0 then
-        location = movers[state.pendingMover]
-        spotButton:SetText("Now pick the spot")
-    end
-    if location then
-        spotButton:SetAttribute("type", "item")
-        spotButton:SetAttribute("item", location)
-        spotButton:Show()
-    else
-        spotButton:SetAttribute("item", nil)
-        spotButton:Hide()
-    end
-end
-
--- Where each piece is in the bags, for the buttons that use them: secure ones, which only
--- change out of combat. The Collection (Window.lua) follows through OnBags.
-local function UpdateBags()
-    if not frame then
-        return
-    end
-    if InCombatLockdown() then
-        layoutPending = true
-        return
-    end
-    layoutPending = false
-    if bagsDirty then
-        ScanBags()
-        for _, hook in ipairs(bagHooks) do
-            hook()
-        end
-    end
-    UpdateSpotButton()
-    UpdateDetails()
+    PlayerHousing_Command("addon 2" .. (HasMouse() and " mouse" or "") .. (HasLocalGhosts() and " local" or ""))
 end
 
 ---------------------------------------------------------------------------------------------
@@ -249,7 +156,7 @@ local function UpdateButtons()
 
     local onIsland = state.own or state.islandOwner ~= ""
     if not known then
-        statusText:SetText("Waiting for the server. Your House Key has every option.")
+        statusText:SetText("Waiting for the server...")
     elseif state.own then
         statusText:SetText(("Your island: %d/%d furnishings, %d/%d buildings.%s"):format(
             state.furnishings, state.maxFurnishings, state.buildings, state.maxBuildings,
@@ -265,35 +172,98 @@ local function UpdateButtons()
     end
 
     homeButton:SetText(onIsland and "Leave" or "Go home")
-    decorateButton:SetText(state.editMode and "Done" or "Edit")
-    if CanEdit() then decorateButton:Enable() else decorateButton:Disable() end
     if CanEdit() and state.undo ~= "" then undoButton:Enable() else undoButton:Disable() end
     if CanEdit() and state.redo ~= "" then redoButton:Enable() else redoButton:Disable() end
 
-    local showSelected = CanEdit() and state.selected > 0
-    if showSelected then
-        if state.groupSize > 1 then
-            selectedText:SetText(("Selected: |cffffffff%s|r and %d more"):format(state.selectedName, state.groupSize - 1))
+    -- Holding a piece: what it is, its size and tilt, and what can be done with it. Several
+    -- selected (Ctrl-right-click), none held: what can be done with them together.
+    local holding = CanEdit() and state.ghostItem > 0
+    local several = CanEdit() and not holding and state.groupSize > 1
+    local showSelected = holding or several
+    if holding then
+        local name = PlayerHousingAPI.PieceName(state.ghostItem)
+        if state.ghostCount > 1 then
+            name = ("%s and %d more"):format(name, state.ghostCount - 1)
+        end
+        heldText:SetText(("%s |cffffffff%s|r"):format(state.ghostMove and "Moving:" or "Placing:", name))
+        local front = state.ghostFront
+        local frontText
+        if math.abs(front) <= 22 then
+            frontText = "away from you"
+        elseif math.abs(front) >= 158 then
+            frontText = "toward you"
+        elseif front > 0 then
+            frontText = front <= 112 and "to your left" or "back-left"
         else
-            selectedText:SetText(("Selected: |cffffffff%s|r  |cffa0a0a0Ctrl-click others to add them|r"):format(state.selectedName))
+            frontText = front >= -112 and "to your right" or "back-right"
         end
-        if state.selectedBuilding and state.groupSize <= 1 then
-            pickUpAllButton:Show()
+        local shape = ("Size %d%%   Front points %s"):format(state.ghostSize, frontText)
+        if state.ghostPitch ~= 0 or state.ghostRoll ~= 0 then
+            shape = shape .. ("   Tilted %d\194\176 forward, %d\194\176 to its side"):format(state.ghostPitch, state.ghostRoll)
+        end
+        shape = shape .. (state.grid > 0 and ("   Grid %s yd"):format(state.grid) or "")
+        if state.ghostNote ~= "" then
+            shape = shape .. "   |cffff6060" .. state.ghostNote .. "|r"
+        end
+        heldShape:SetText(shape)
+        -- What the mouse does: a key in gold, what it does in white, one to a line, in two
+        -- columns (the left one the clicks, the right one the wheel).
+        local function Lines(rows)
+            local text = {}
+            for _, row in ipairs(rows) do
+                text[#text + 1] = "|cffffd100" .. row[1] .. "|r  " .. row[2]
+            end
+            return table.concat(text, "\n")
+        end
+        if PlayerHousingAPI.HasMouse() then
+            heldHelp:SetText(Lines({
+                { "Left-click", "set it down" }, { "Shift+left-click", "and another" },
+                { "Right-click, Esc", "never mind" }, { "Shift+right-click", "put it away" },
+                { "Middle-click", "stand it straight" }, { "Ctrl+middle", "normal size" }, { "Shift+middle", "grid" },
+            }))
         else
-            pickUpAllButton:Hide()
+            heldHelp:SetText(Lines({
+                { "G", "set it down" }, { "Shift+G", "and another" }, { "Esc", "never mind" },
+                { "Arrows", "farther, nearer, sideways" },
+                { "Middle-click", "stand it straight" }, { "Ctrl+middle", "normal size" }, { "Shift+middle", "grid" },
+            }))
         end
-        for _, button in ipairs(groupButtons) do
-            if state.groupSize >= (button.needs or 1) then button:Enable() else button:Disable() end
+        heldKeys:SetText(Lines({
+            { "Wheel", "zoom (as ever)" }, { "Shift+wheel", "turn" }, { "Ctrl+wheel", "up, down" },
+            { "Ctrl+Shift+wheel", "turn finely" }, { "Alt+wheel", "tilt forward, back" },
+            { "Alt+Shift+wheel", "tilt to its side" }, { "Ctrl+Alt+wheel", "size" },
+        }))
+        -- The second row: the ones that apply, side by side.
+        local x = 12
+        for _, held in ipairs(heldButtons) do
+            local button = held[1]
+            if held[2]() then
+                button:ClearAllPoints()
+                button:SetPoint("TOPLEFT", selectedPanel, "TOPLEFT", x, -124)
+                button:Show()
+                x = x + button:GetWidth() + 4
+            else
+                button:Hide()
+            end
         end
-        selectedPanel:Show()
-    else
-        selectedPanel:Hide()
+    elseif several then
+        heldText:SetText(("Selected: |cffffffff%d pieces|r"):format(state.groupSize))
+        heldShape:SetText("")
+        heldHelp:SetText("|cffffd100Right-click|r one of them: they all go on the mouse together.\n|cffffd100Ctrl+right-click|r: add a piece, or take it out.")
+        heldKeys:SetText("")
     end
+    for _, held in ipairs(heldButtons) do
+        if not holding then held[1]:Hide() end
+    end
+    for index, button in ipairs(groupButtons) do
+        if several then button:Show() else button:Hide() end
+        if state.groupSize >= GROUP_NEEDS[index] then button:Enable() else button:Disable() end
+    end
+    if showSelected then selectedPanel:Show() else selectedPanel:Hide() end
 
     -- Resizing a window that holds secure buttons also waits for the end of combat.
     if not InCombatLockdown() then
         frame:SetHeight(BASE_HEIGHT + (showSelected and SELECTED_HEIGHT or 0))
-        UpdateBags()
     else
         layoutPending = true
     end
@@ -310,6 +280,22 @@ local function SetShown(show)
         frame:Hide()
     end
     return true
+end
+
+-- The window open on an island you may change: decorating (chairs, chests and the rest pick
+-- up instead of working). Closed: they work again, once nothing is held.
+SyncDecorating = function()
+    if not frame or not known or not CanEdit() then
+        decoratingAsked = nil
+        return
+    end
+    local want = frame:IsShown() or state.ghostItem > 0
+    if want == state.decorating then
+        decoratingAsked = nil
+    elseif decoratingAsked ~= want then
+        decoratingAsked = want
+        PlayerHousing_Command(want and "decorate on" or "decorate off")
+    end
 end
 
 local function OnState(fields)
@@ -331,17 +317,20 @@ local function OnState(fields)
     state.islandOwner = fields[11] or ""
     state.redo = fields[12] or ""
     state.selectedBuilding = fields[13] == "1"
-    state.pendingMover = tonumber(fields[14] or "") or 0
     state.roommate = fields[16] == "1"
-    state.editMode = fields[17] == "1"
     state.grid = tonumber(fields[18] or "") or 0
     state.groupSize = tonumber(fields[20] or "") or 0
     state.ghostItem = tonumber(fields[21] or "") or 0
     state.ghostMove = fields[22] == "move"
     state.ghosts = fields[23] == "1"
     state.ghostNote = fields[24] or ""
-    -- Once a session: the server learns the addon is here, and whether the House Key should
-    -- open this window instead of the menu.
+    state.selectedStand = fields[25] == "1"
+    state.ghostSize = tonumber(fields[26] or "") or 100
+    state.ghostPitch = tonumber(fields[27] or "") or 0
+    state.ghostRoll = tonumber(fields[28] or "") or 0
+    state.ghostCount = tonumber(fields[29] or "") or 0
+    state.ghostFront = tonumber(fields[30] or "") or 0
+    -- Once a session: the server learns the addon is here.
     if not registered and db then
         registered = true
         Register()
@@ -363,6 +352,7 @@ local function OnState(fields)
         end
     end
     UpdateButtons()
+    SyncDecorating()
 end
 
 ---------------------------------------------------------------------------------------------
@@ -419,34 +409,6 @@ local function Shift(forward, left, up, turn)
     pending.turn = pending.turn + (turn or 0)
 end
 
-local function Turn(degrees)
-    Shift(0, 0, 0, degrees)
-end
-
--- The turn buttons: 15 degrees, Shift for 5, Ctrl for 90.
-local function TurnButton(direction)
-    return function()
-        local step = IsShiftKeyDown() and 5 or (IsControlKeyDown() and 90 or 15)
-        Turn(direction * step)
-    end
-end
-
-local function Lift(yards)
-    Shift(0, 0, yards, 0)
-end
-
-local function OnMouseWheel(self, delta)
-    if CanEdit() and state.selected > 0 then
-        if IsControlKeyDown() then
-            Lift(delta * 0.1)
-        elseif IsShiftKeyDown() then
-            Turn(delta * 5)
-        else
-            Turn(delta * 15)
-        end
-    end
-end
-
 -- Straight away, whatever it is: Undo puts it back.
 local function PickUp(withInside)
     if state.selected == 0 then
@@ -479,7 +441,7 @@ local PREVIEW_HEIGHT, PINNED_HEIGHT = 268, 360
 local view = { facing = 0, zoom = 1, lift = 0, spin = true }
 local shownPiece, pinned        -- { id = item, name = text }
 local dragging, dragX, dragY
-local detailsText, detailsCounts, detailsHint, placeButton, getOneButton, getFiveButton, takeButton
+local detailsText, detailsCounts, detailsHint, getOneButton, getFiveButton
 
 local function Yards(value)
     if value < 1 then
@@ -553,7 +515,6 @@ function UpdateDetails()
         return
     end
     if not pinned then
-        placeButton:Hide()
         return
     end
     local piece = pinned
@@ -567,15 +528,8 @@ function UpdateDetails()
         status = "Open the Collection tab for how to unlock it."
     end
     detailsText:SetText((info.category and (info.category .. (info.building and ", building" or "") .. "\n") or "") .. status)
-    detailsCounts:SetText(("Bags: %d   Storage: %d   Placed: %d"):format(GetItemCount(piece.id), info.storage or 0, info.placed or 0))
+    detailsCounts:SetText(("Owned: %d   Placed: %d"):format(info.owned or 0, info.placed or 0))
     if info.unlocked then getOneButton:Enable() getFiveButton:Enable() else getOneButton:Disable() getFiveButton:Disable() end
-    if (info.storage or 0) > 0 then takeButton:Enable() else takeButton:Disable() end
-    -- Place: a ghost of it follows you (one from the bags or House Storage, else a new copy).
-    if CanEdit() and (GetItemCount(piece.id) > 0 or (info.storage or 0) > 0 or info.unlocked) then
-        placeButton:Enable()
-    else
-        placeButton:Disable()
-    end
 end
 
 local function SetPreviewHeight()
@@ -629,10 +583,9 @@ local function ShowPiece(piece)
     if isPinned then
         UpdateDetails()
     end
-    for _, region in ipairs({ detailsText, detailsCounts, getOneButton, getFiveButton, takeButton }) do
+    for _, region in ipairs({ detailsText, detailsCounts, getOneButton, getFiveButton }) do
         if isPinned then region:Show() else region:Hide() end
     end
-    if isPinned then placeButton:Show() else placeButton:Hide() end
     detailsHint:SetText(pinned and not isPinned and "Click it to show it here instead." or "")
     SetPreviewHeight()
     preview:Show()
@@ -671,7 +624,6 @@ local function Unpin()
         return
     end
     preview:Hide()
-    placeButton:Hide()
 end
 
 local function DetailsButton(name, text, width, onClick, tooltipTitle, tooltipText)
@@ -686,11 +638,11 @@ local function DetailsButton(name, text, width, onClick, tooltipTitle, tooltipTe
     return button
 end
 
--- A ghost of the piece follows you until you set it down (G), from the bags or House
--- Storage, or a new copy from the Collection.
+-- A ghost of the piece follows you (or your mouse) until you set it down: one you own, or a
+-- new copy from the Collection.
 local function StartGhost(id)
     if not CanEdit() then
-        Print("pieces go on your own island (or one you're a roommate on). House Key, Go home.")
+        Print("pieces go on your own island (or one you're a roommate on): Go home first.")
         return
     end
     PlayerHousing_Command("ghost " .. id)
@@ -790,35 +742,10 @@ local function CreatePreview()
     detailsCounts:SetPoint("TOPRIGHT", -10, -284)
     detailsCounts:SetJustifyH("LEFT")
 
-    placeButton = CreateFrame("Button", "PlayerHousingDetailsPlace", frame, "UIPanelButtonTemplate")
-    placeButton:SetWidth(76)
-    placeButton:SetHeight(22)
-    placeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", -214, -302)
-    placeButton:SetFrameStrata("DIALOG")
-    placeButton:SetFrameLevel(preview:GetFrameLevel() + 10)
-    placeButton:SetText("Place")
-    placeButton:RegisterForClicks("AnyUp")
-    placeButton.tooltipTitle = "Place one"
-    placeButton.tooltipText = "It follows you: walk it where it goes (arrows: farther, nearer, sideways; wheel: turn), then G sets it down. From your bags or House Storage, or a new copy. On your island (or as a roommate) only."
-    placeButton:SetScript("OnEnter", ShowButtonTooltip)
-    placeButton:SetScript("OnLeave", GameTooltip_Hide)
-    placeButton:SetScript("OnClick", function()
-        if pinned then
-            StartGhost(pinned.id)
-        end
-    end)
-    getOneButton = DetailsButton("PlayerHousingDetailsGetOne", "Get 1", 60, GetCopies(1), "Get a copy", "Into your bags.")
+    getOneButton = DetailsButton("PlayerHousingDetailsGetOne", "Buy 1", 60, GetCopies(1), "Buy a copy", "Into your Collection, to place any time.")
     getOneButton:SetPoint("TOPLEFT", 88, -302)
-    getFiveButton = DetailsButton("PlayerHousingDetailsGetFive", "Get 5", 60, GetCopies(5), "Get five copies", "Into your bags.")
+    getFiveButton = DetailsButton("PlayerHousingDetailsGetFive", "Buy 5", 60, GetCopies(5), "Buy five copies", "Into your Collection.")
     getFiveButton:SetPoint("LEFT", getOneButton, "RIGHT", 2, 0)
-    takeButton = DetailsButton("PlayerHousingDetailsTake", "Take from storage", 200, function()
-        if pinned then
-            PlayerHousing_Command("take " .. pinned.id)
-            PlayerHousing_Command("data collection")
-        end
-    end, "Take from House Storage", "The ones that came back while your bags were full.")
-    takeButton:SetPoint("TOPLEFT", 10, -326)
-    placeButton:Hide()
 
     preview:SetScript("OnUpdate", function(self, elapsed)
         if dragging then
@@ -848,7 +775,6 @@ local function CreateWindow()
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
-    frame:EnableMouseWheel(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -865,11 +791,11 @@ local function CreateWindow()
         self:StopMovingOrSizing()
         SavePosition()
     end)
-    frame:SetScript("OnMouseWheel", OnMouseWheel)
     frame:SetScript("OnShow", function()
-        UpdateBags()
         UpdateButtons()
+        SyncDecorating()
     end)
+    frame:HookScript("OnHide", function() SyncDecorating() end)
     frame:Hide()
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -892,8 +818,6 @@ local function CreateWindow()
     local row = Row(frame, -56, {
         { "Go home", function() PlayerHousing_Command((state.own or state.islandOwner ~= "") and "leave" or "home") end,
           "Go home or leave", "Takes you to your island, or back to where you came from." },
-        { "Edit", Command("edit"),
-          "Edit mode", "Click a piece (or press Tab) and move it with the keys: arrows slide it, the mouse wheel turns it, Page Up and Page Down raise and lower it. Escape when you're done." },
         { "Undo", function(self, mouseButton)
             if mouseButton == "RightButton" and PlayerHousingAPI.ShowHistory then
                 PlayerHousingAPI.ShowHistory(self)
@@ -906,97 +830,58 @@ local function CreateWindow()
         { "Redo", Command("redo"), function()
             return "Redo", state.redo ~= "" and ("Redo: " .. state.redo) or "Nothing to redo."
         end },
-        { "Menu", Command(""), "Housing menu", "The House Key menu: everything the window has, and pack up, help and more." },
+        { "Help", function() PlayerHousing_Help() end, "How housing works", "A few lines in your chat." },
     })
-    homeButton, decorateButton, undoButton, redoButton = row[1], row[2], row[3], row[4]
+    homeButton, undoButton, redoButton = row[1], row[2], row[3]
     undoButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
+    -- The held panel: the piece on the mouse (or following you), until it's set down. With
+    -- several pieces selected and none held, what can be done with them together.
     selectedPanel = CreateFrame("Frame", "PlayerHousingSelected", frame)
     selectedPanel:SetPoint("TOPLEFT", 0, -BASE_HEIGHT + 12)
     selectedPanel:SetWidth(WIDTH)
     selectedPanel:SetHeight(SELECTED_HEIGHT)
-    selectedText = selectedPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    selectedText:SetPoint("TOPLEFT", 14, 0)
-    selectedText:SetPoint("TOPRIGHT", -14, 0)
-    selectedText:SetJustifyH("LEFT")
+    heldText = selectedPanel:CreateFontString("PlayerHousingHeldText", "OVERLAY", "GameFontNormal")
+    heldText:SetPoint("TOPLEFT", 14, 0)
+    heldText:SetPoint("TOPRIGHT", -14, 0)
+    heldText:SetJustifyH("LEFT")
+    heldShape = selectedPanel:CreateFontString("PlayerHousingHeldShape", "OVERLAY", "GameFontHighlightSmall")
+    heldShape:SetPoint("TOPLEFT", 14, -16)
+    heldShape:SetPoint("TOPRIGHT", -14, -16)
+    heldShape:SetJustifyH("LEFT")
 
-    Row(selectedPanel, -18, {
-        { "Turn left", TurnButton(1), "Turn left", "15 degrees. Shift: 5. Ctrl: 90. The mouse wheel over this window turns it too." },
-        { "Turn right", TurnButton(-1), "Turn right", "15 degrees. Shift: 5. Ctrl: 90." },
-        { "Face me", Command("face"), "Face me", "Turns it to face you." },
-        { "Here", Command("here"), "Move here", "Moves it to where you're standing." },
-        { "Move", Command("ghost move"), "Move it",
-          "It follows you (or your mouse, with PlayerHousing.dll): set it down with a click or G (Escape: never mind). What's on it moves too." },
-        { "Pick up", function() PickUp(false) end, "Pick up", "Back to your bags. Undo puts it back." },
-    })
+    -- Everything done to a held piece is the mouse's (EditMode.lua, Mouse.lua): the panel only
+    -- says what it is and which wheel does what. A mannequin's clothes aren't placing: Dress.
+    local function HeldButton(text, width, onClick, applies, tooltipTitle, tooltipText)
+        local button = MakeButton(selectedPanel, text, width, onClick, tooltipTitle, tooltipText)
+        button:Hide()
+        heldButtons[#heldButtons + 1] = { button, applies }
+        return button
+    end
+    HeldButton("Dress...", 70, function()
+        if PlayerHousingAPI.ShowDress then
+            PlayerHousingAPI.ShowDress(state.selected)
+        end
+    end, function() return state.ghostMove and state.selectedStand and state.ghostCount <= 1 end,
+        "Dress the mannequin", "Put gear from your bags on it, take it off, or change its figure.")
 
-    Row(selectedPanel, -42, {
-        -- Quick clicks add up into one move (and one undo step), like the keys.
-        { "Fwd", function() Shift(0.25, 0, 0, 0) end, "Nudge forward", "A quarter yard, the way you're facing." },
-        { "Back", function() Shift(-0.25, 0, 0, 0) end, "Nudge back", "A quarter yard toward you." },
-        { "Left", function() Shift(0, 0.25, 0, 0) end, "Nudge left", "A quarter yard to your left." },
-        { "Right", function() Shift(0, -0.25, 0, 0) end, "Nudge right", "A quarter yard to your right." },
-        { "Up", function() Shift(0, 0, 0.1, 0) end, "Raise", "A tenth of a yard. Ctrl and the mouse wheel does it too." },
-        { "Down", function() Shift(0, 0, -0.1, 0) end, "Lower", "A tenth of a yard." },
-    })
-
-    Row(selectedPanel, -66, {
-        { "Bigger", function() PlayerHousing_Command(IsShiftKeyDown() and "size normal" or "size bigger") end,
-          "Bigger", "A tenth bigger, up to the server's limit. What stands on it keeps its place. Shift: normal size." },
-        { "Smaller", function() PlayerHousing_Command(IsShiftKeyDown() and "size normal" or "size smaller") end,
-          "Smaller", "A tenth smaller. Shift: normal size." },
-        { "Tilt fwd", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt forward") end,
-          "Tilt forward", "5 degrees, its front down. Shift: stand it straight." },
-        { "Tilt back", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt back") end,
-          "Tilt back", "5 degrees. Shift: stand it straight." },
-        { "Tilt L", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt left") end,
-          "Tilt to its left", "5 degrees, toward its own left. Shift: stand it straight." },
-        { "Tilt R", function() PlayerHousing_Command(IsShiftKeyDown() and "tilt straight" or "tilt right") end,
-          "Tilt to its right", "5 degrees. Shift: stand it straight." },
-    })
-
-    -- Several pieces at once (Ctrl-click them), and rows and sets.
-    groupButtons = Row(selectedPanel, -90, {
-        { "Row...", function() if PlayerHousingAPI.ShowRowDialog then PlayerHousingAPI.ShowRowDialog() end end,
-          "A row of copies", "Copies of the selected piece in a straight row: how many, how far apart, and which way." },
-        { "Height", Command("match height"), "Same height", "The other selected pieces go to the first one's height." },
-        { "Turn", Command("match turn"), "Same turn", "The other selected pieces turn the way the first one faces." },
-        { "Line up", Command("match line"), "Line up", "The selected pieces line up in a straight row across your view, through the first one." },
-        { "Space", Command("match space"), "Space evenly", "The selected pieces spread out evenly between the two at the ends (three or more)." },
-        { "Save set", function() StaticPopup_Show("PLAYERHOUSING_SAVE_SET") end, "Save as a set",
+    -- Several selected (Ctrl-right-click), none held: moving them is a right-click on one.
+    groupButtons = Row(selectedPanel, -70, {
+        { "Save as a set", function() StaticPopup_Show("PLAYERHOUSING_SAVE_SET") end, "Save as a set",
           "The selected pieces, and what stands on them, saved together to set down anywhere (Layouts tab, Sets)." },
     })
-    groupButtons[1].needs = 1
-    groupButtons[2].needs, groupButtons[3].needs, groupButtons[4].needs = 2, 2, 2
-    groupButtons[5].needs = 3
-    groupButtons[6].needs = 1
 
-    local anotherButton = MakeButton(selectedPanel, "Another", 70, Command("another"),
-        "Place another like this", "One more of this piece follows you (or your mouse), with this one's turn, size and tilt: set it down with a click or G.")
-    anotherButton:SetPoint("TOPLEFT", 12, -114)
+    heldHelp = selectedPanel:CreateFontString("PlayerHousingHeldHelp", "OVERLAY", "GameFontHighlightSmall")
+    heldHelp:SetPoint("TOPLEFT", 14, -34)
+    heldHelp:SetWidth(WIDTH / 2 - 14)
+    heldHelp:SetJustifyH("LEFT")
+    heldHelp:SetJustifyV("TOP")
+    heldKeys = selectedPanel:CreateFontString("PlayerHousingHeldKeys", "OVERLAY", "GameFontHighlightSmall")
+    heldKeys:SetPoint("TOPLEFT", WIDTH / 2, -34)
+    heldKeys:SetWidth(WIDTH / 2 - 14)
+    heldKeys:SetJustifyH("LEFT")
+    heldKeys:SetJustifyV("TOP")
 
-    pickUpAllButton = MakeButton(selectedPanel, "Pick up all", 90, function() PickUp(true) end,
-        "Pick up with contents", "The building and everything inside it go back to your bags. Undo puts it all back.")
-    pickUpAllButton:SetPoint("TOPRIGHT", -12, -114)
-    pickUpAllButton:Hide()
-
-    local help = selectedPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    help:SetPoint("TOPLEFT", 14, -142)
-    help:SetPoint("TOPRIGHT", -14, -142)
-    help:SetJustifyH("LEFT")
-    help:SetText("Mouse wheel: turn. Shift: finer. Ctrl: up and down. Ctrl-click pieces: several at once.")
-
-    spotButton = CreateFrame("Button", "PlayerHousingSpotButton", selectedPanel, "SecureActionButtonTemplate,UIPanelButtonTemplate")
-    spotButton:SetWidth(150)
-    spotButton:SetHeight(22)
-    spotButton:SetPoint("TOPLEFT", 86, -114)
-    spotButton:SetText("Now pick the spot")
-    spotButton:RegisterForClicks("AnyUp")
-    spotButton.tooltipTitle = "Pick the spot"
-    spotButton.tooltipText = "The targeting circle is as big as the set. Right-click or Escape cancels the circle."
-    spotButton:SetScript("OnEnter", ShowButtonTooltip)
-    spotButton:SetScript("OnLeave", GameTooltip_Hide)
-    spotButton:Hide()
     selectedPanel:Hide()
 
     CreatePreview()
@@ -1006,8 +891,8 @@ local function CreateWindow()
     end
 end
 
--- The House Key, with the addon: open the window.
-function PlayerHousing_Open()
+-- The House Key, Krook, a click on a piece: open the window (on a tab, when given).
+function PlayerHousing_Open(tab)
     if not frame then
         return
     end
@@ -1017,6 +902,18 @@ function PlayerHousing_Open()
     end
     autoShown = false
     SetShown(true)
+    if tab and tab ~= "" and PlayerHousing_SelectTab then
+        PlayerHousing_SelectTab(tab)
+    end
+end
+
+function PlayerHousing_Help()
+    Print("Placing: click a piece in the Collection and it goes on your mouse. Left-click sets it down, right-click or Escape puts it back.")
+    Print("Moving: right-click a piece on your island and it goes on your mouse the same way. Buildings: the Placed tab's Move.")
+    Print("While you hold it, the wheel zooms as ever, and with a key it changes the piece: turn (Shift), up and down (Ctrl), fine turn (Ctrl+Shift), tilt forward and back (Alt), tilt to its side (Alt+Shift), size (Ctrl+Alt).")
+    Print("Middle-click stands it straight, Ctrl+middle-click: normal size, Shift+middle-click: grid. Shift+right-click puts it away. Undo takes back anything.")
+    Print("Ctrl-right-click pieces to select several, then right-click one of them to move them all.")
+    Print("/housing opens this window; /housing <command> runs any .house command; .house help lists them.")
 end
 
 -- A piece by its number (the Placed tab), straight away like the selected one.
@@ -1056,10 +953,6 @@ driver:SetScript("OnUpdate", function(self, elapsed)
         sinceSend = 0
     end
     pending.forward, pending.left, pending.up, pending.turn = 0, 0, 0, 0
-    -- Even with the window shut: edit mode's G uses the spot button.
-    if bagsDirty and frame then
-        UpdateBags()
-    end
 end)
 
 local function RequestState()
@@ -1087,11 +980,8 @@ driver:SetScript("OnEvent", function(self, event, ...)
         UpdateButtons()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         RequestState()
-    elseif event == "BAG_UPDATE" then
-        bagsDirty = true
     elseif event == "PLAYER_REGEN_ENABLED" then
         if layoutPending then
-            UpdateBags()
             UpdateButtons()
         end
         for _, hook in ipairs(combatEndHooks) do
@@ -1122,7 +1012,7 @@ driver:SetScript("OnEvent", function(self, event, ...)
         if kind == "state" then
             OnState(fields)
         elseif kind == "open" then
-            PlayerHousing_Open()
+            PlayerHousing_Open(fields[2])
         elseif kind == "begin" then
             -- A list for the window: begin, a row a message, end.
             lists[fields[2]] = { rows = {}, arg = fields[3] }
@@ -1153,7 +1043,7 @@ driver:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
-for _, event in ipairs({ "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "BAG_UPDATE",
+for _, event in ipairs({ "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
                          "PLAYER_REGEN_ENABLED", "CHAT_MSG_ADDON" }) do
     driver:RegisterEvent(event)
 end
@@ -1164,6 +1054,7 @@ PlayerHousingAPI = {
     Command = PlayerHousing_Command,
     FastCommand = FastCommand,
     HasMouse = HasMouse,
+    HasLocalGhosts = HasLocalGhosts,
     CanEdit = CanEdit,
     Shift = Shift,
     PickUp = PickUp,
@@ -1187,29 +1078,21 @@ PlayerHousingAPI = {
     end,
     RefreshPin = function() UpdateDetails() end,
     -- Window.lua fills this in: function(item) returning { category, building, unlocked,
-    -- hint, cost, storage, placed }.
+    -- hint, cost, owned, placed }.
     DescribePiece = nil,
     WIDTH = WIDTH,
     CONTENT_TOP = CONTENT_TOP,
     CONTENT_HEIGHT = CONTENT_HEIGHT,
     GetFrame = function() return frame end,
-    -- "bag slot" of a piece in the bags, or nil (the bags are scanned first if they changed).
-    PieceLocation = function(id)
-        if bagsDirty and not InCombatLockdown() then
-            ScanBags()
-        end
-        return PieceLocation(id)
-    end,
-    -- Runs when the bags change (out of combat), and when combat ends.
-    OnBags = function(hook) bagHooks[#bagHooks + 1] = hook end,
+    -- Runs when combat ends.
     OnCombatEnd = function(hook) combatEndHooks[#combatEndHooks + 1] = hook end,
     OnMessage = function(kind, hook)
         messageHooks[kind] = messageHooks[kind] or {}
         table.insert(messageHooks[kind], hook)
     end,
-    -- Extras.lua fills these in: the Undo history under a button, and the row dialog.
+    -- Extras.lua fills these in: the Undo history under a button, and a mannequin's dress list.
     ShowHistory = nil,
-    ShowRowDialog = nil,
+    ShowDress = nil,
     IsKnown = function() return known end,
     OnState = function(hook) stateHooks[#stateHooks + 1] = hook end,
     -- Runs once the window exists (at ADDON_LOADED).
@@ -1241,10 +1124,14 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
         db.framing = db.framing ~= "model" and "model" or nil
         FrameModel()
         Print(db.framing and "previews use the second way of centering. /housing framing goes back." or "previews use the usual centering.")
-    elseif message == "key" then
-        db.keyWindow = db.keyWindow == false
+    elseif message == "help" then
+        PlayerHousing_Help()
+    elseif message == "localghost" then
+        -- The DLL moving the ghost on this screen itself, or the server moving it.
+        db.localGhosts = db.localGhosts == false
         Register()
-        Print(db.keyWindow and "the House Key opens this window." or "the House Key opens its menu.")
+        Print(db.localGhosts ~= false and "a piece being placed moves on your screen as fast as your mouse (needs PlayerHousing.dll 2)."
+            or "a piece being placed is moved by the server (smoother on a fast connection only).")
     else
         -- Anything else is a .house command: /housing undo, /housing rotate 90, ...
         TypedCommand(message)

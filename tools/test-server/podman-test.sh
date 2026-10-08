@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the end-to-end housing test in a throwaway container from the prebuilt test server
 # image (apps/test-server-image in the core fork): mounts this checkout, lets the container
-# build the module, waits for the worldserver, then runs housing_smoke.py inside it.
+# build the module, waits for the worldserver, then runs collection_smoke.py inside it.
 #
 #   IMAGE   image to use     (default: ghcr.io/dudemcbro/acore-test-server:latest)
 #   ENGINE  podman or docker (default: podman)
@@ -11,7 +11,7 @@
 #                  is on a drive without SELinux labels (NTFS, exFAT); labeling is then
 #                  switched off for the container instead.
 #
-# Extra arguments go to housing_smoke.py, e.g. --verbose.
+# Extra arguments go to collection_smoke.py, e.g. --verbose.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,4 +68,13 @@ if [ "$ready" != 1 ]; then
     exit 1
 fi
 
-"$ENGINE" exec "$NAME" python3 "$IN/tools/test-server/testclient/housing_smoke.py" "$@"
+# On a brand-new image volume the authserver can reach the realm list before the image has
+# inserted its first row, then exit while the worldserver continues. Start it again after the
+# databases and world are ready; on normal runs this is a no-op.
+if ! "$ENGINE" exec "$NAME" pgrep -x authserver >/dev/null; then
+    "$ENGINE" exec "$NAME" bash -lc \
+        "tmux new-window -t acore -n auth-retry -c /opt/acore/server/bin './authserver -c /opt/acore/server/etc/authserver.conf'"
+    sleep 2
+fi
+
+"$ENGINE" exec "$NAME" python3 "$IN/tools/test-server/testclient/collection_smoke.py" "$@"

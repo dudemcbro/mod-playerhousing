@@ -75,10 +75,12 @@ PlayerHousing.Size.Max = 2
 ###############################################################################
 # PlayerHousing.Tilt.Max
 #    How far players may tilt a piece, in degrees each way (forward and back,
-#    left and right). 0 turns tilting off. Mannequins always stand upright.
-#    Default: 45
+#    left and right). 180 is no limit: pieces turn right over, upside down and
+#    on round. 0 turns tilting off. Mannequins and figurines always stand
+#    upright (the client can't tilt a creature).
+#    Default: 180
 ###############################################################################
-PlayerHousing.Tilt.Max = 45
+PlayerHousing.Tilt.Max = 180
 
 ###############################################################################
 # PlayerHousing.SavedLayouts

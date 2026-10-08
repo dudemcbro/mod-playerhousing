@@ -236,7 +236,7 @@ bool PlayerHousingMgr::SetWeather(Player* player, uint8 weather, std::string& re
         return false;
     }
 
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     EnsureHouse(self);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET weather={} WHERE owner_guid={}", uint32(weather), self);
     ApplyAmbienceToIsland(self, false);
@@ -255,7 +255,7 @@ bool PlayerHousingMgr::SetTimeOfDay(Player* player, uint8 timeOfDay, std::string
         return false;
     }
 
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     EnsureHouse(self);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET time_of_day={} WHERE owner_guid={}", uint32(timeOfDay), self);
     ApplyAmbienceToIsland(self, false);
@@ -266,7 +266,7 @@ bool PlayerHousingMgr::SetTimeOfDay(Player* player, uint8 timeOfDay, std::string
 
 bool PlayerHousingMgr::SetMusic(Player* player, uint32 soundId, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     if (OnCooldown(player, COOLDOWN_AMBIENCE, AMBIENCE_COOLDOWN_MS, reason))
         return false;
     if (soundId && !MusicName(soundId))

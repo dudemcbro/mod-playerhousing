@@ -2,6 +2,7 @@
 
 #include "Chat.h"
 #include "DatabaseEnv.h"
+#include "Item.h"
 #include "Player.h"
 #include "StringFormat.h"
 #include "WorldPacket.h"
@@ -86,14 +87,18 @@ void PlayerHousingMgr::SendAddonRows(Player* player, std::string const& kind, st
         SendAddon(player, "row\t" + kind + "\t" + label + "\t" + row);
 }
 
-void PlayerHousingMgr::SetAddonClient(Player* player, bool keyOpensWindow, bool mouse)
+void PlayerHousingMgr::SetAddonClient(Player* player, bool mouse, bool local)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    _addonClients[player->GetGUID()] = keyOpensWindow;
+    _addonClients.insert(player->GetGUID());
     if (mouse)
         _mouseClients.insert(player->GetGUID());
     else
         _mouseClients.erase(player->GetGUID());
+    if (mouse && local)
+        _localGhostClients.insert(player->GetGUID());
+    else
+        _localGhostClients.erase(player->GetGUID());
 }
 
 bool PlayerHousingMgr::HasAddon(Player const* player) const
@@ -108,19 +113,33 @@ bool PlayerHousingMgr::HasMouse(Player const* player) const
     return _mouseClients.count(player->GetGUID()) > 0;
 }
 
-bool PlayerHousingMgr::KeyOpensWindow(Player const* player) const
+bool PlayerHousingMgr::HasLocalGhosts(Player const* player) const
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto itr = _addonClients.find(player->GetGUID());
-    return itr != _addonClients.end() && itr->second;
+    return _localGhostClients.count(player->GetGUID()) > 0;
+}
+
+void PlayerHousingMgr::OpenWindow(Player* player, std::string const& tab) const
+{
+    if (HasAddon(player))
+    {
+        SendAddon(player, tab.empty() ? std::string("open") : "open\t" + tab);
+        return;
+    }
+    // Without the addon there's no window: housing is the addon's (Interface/AddOns/PlayerHousing
+    // in the module's client-addon folder), or .house commands typed.
+    Say(player, "Housing happens in the Player Housing addon's window, and this client doesn't have the addon. "
+        "Copy the PlayerHousing folder into Interface/AddOns, or type .house help for the commands.");
 }
 
 bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, std::string const& argument, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
 
     if (kind == "collection")
     {
+        // Old furnishing items in the bags or the bank join the counts first.
+        SweepHousingItems(player, true);
         SendAddon(player, "begin\tcollection");
         SendAddon(player, Acore::StringFormat("row\tcollection\tsettings\t{}\t{}\t{}\t{}\t{}", _freeMode ? 1 : 0, _catalogEverything ? 1 : 0,
             _maxFurnishings, _maxBuildings, _unlockAll ? 1 : 0));
@@ -192,11 +211,48 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
     if (kind == "layouts")
     {
         SendAddon(player, "begin\tlayouts");
-        SendAddon(player, Acore::StringFormat("row\tlayouts\tlimit\t{}", _maxSavedLayouts));
+        SendAddon(player, Acore::StringFormat("row\tlayouts\tlimit\t{}\t{}", _maxSavedLayouts, IsLayoutCopyable(self) ? 1 : 0));
+        // Each with what setting it out would still need: pieces to buy (and what they cost) and
+        // pieces still locked.
         for (SavedLayout const& layout : GetSavedLayouts(self))
-            SendAddon(player, Acore::StringFormat("row\tlayouts\tlayout\t{}\t{}\t{}\t{}\t{}", layout.id, Clean(layout.name), layout.pieces,
-                layout.savedAt, Clean(layout.source)));
+        {
+            uint32 gettable = 0;
+            uint64 cost = 0;
+            uint32 locked = 0;
+            DescribeShortfall(player, LayoutShortfall(player, layout.id), gettable, cost, locked);
+            SendAddon(player, Acore::StringFormat("row\tlayouts\tlayout\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", layout.id, Clean(layout.name),
+                layout.pieces, layout.savedAt, Clean(layout.source), gettable, cost, locked));
+        }
         SendAddon(player, "end\tlayouts");
+        return true;
+    }
+
+    if (kind == "stand")
+    {
+        // A mannequin on the island: what it wears, its figure, and what in the bags it could.
+        uint32 placementId = Acore::StringTo<uint32>(argument).value_or(0);
+        std::optional<Placement> placement = placementId ? GetPlacement(player, placementId) : std::nullopt;
+        PieceDefinition const* piece = placement ? GetPiece(placement->itemEntry) : nullptr;
+        if (!piece || !piece->HasFlag(PIECE_FLAG_STAND) || !CanDecorate(player))
+        {
+            reason = "That isn't a mannequin on an island you can decorate.";
+            return false;
+        }
+        SendAddon(player, Acore::StringFormat("begin\tstand\t{}", placementId));
+        SendAddon(player, Acore::StringFormat("row\tstand\tfigure\t{}", Clean(LookName(placement->look))));
+        for (auto const& [slot, gear] : placement->gear)
+            SendAddon(player, Acore::StringFormat("row\tstand\tworn\t{}\t{}\t{}\t{}", uint32(slot), Clean(StandSlotName(slot)), gear.itemEntry,
+                Clean(StandItemName(gear.itemEntry))));
+        std::set<uint32> listed;
+        for (Item* item : GetWearableItems(player))
+        {
+            if (!listed.insert(item->GetEntry()).second || listed.size() > 60)
+                continue;
+            int8 slot = StandSlotFor(item->GetTemplate(), placement->gear);
+            SendAddon(player, Acore::StringFormat("row\tstand\twear\t{}\t{}\t{}", item->GetEntry(), Clean(item->GetTemplate()->Name1),
+                slot >= 0 ? Clean(StandSlotName(uint8(slot))) : std::string()));
+        }
+        SendAddon(player, Acore::StringFormat("end\tstand\t{}", placementId));
         return true;
     }
 
@@ -289,21 +345,8 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
         return true;
     }
 
-    reason = "Usage: .house data <collection|placed|layouts|guests|visits <list>|island|history|sets|guestbook>";
+    reason = "Usage: .house data <collection|placed|layouts|guests|visits <list>|island|history|sets|guestbook|stand <id>>";
     return false;
-}
-
-bool PlayerHousingMgr::TakeFromStorageCommand(Player* player, std::string const& what, uint32 count, std::string& reason)
-{
-    if (what == "all")
-        return TakeFromStorage(player, 0, true, reason);
-    uint32 itemEntry = Acore::StringTo<uint32>(what).value_or(0);
-    if (!itemEntry)
-    {
-        reason = "Usage: .house take <item entry|all> [count]";
-        return false;
-    }
-    return TakeFromStorage(player, itemEntry, false, reason, count);
 }
 
 void PlayerHousingMgr::MarkAllSeen(Player* player) const

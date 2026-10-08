@@ -1,23 +1,24 @@
--- The housing window's tabs: Collection, Storage, Placed, Layouts (and sets), Guests (and the
+-- The housing window's tabs: Collection, Placed, Layouts (and sets), Guests (and the
 -- guestbook), Visit and Island. Each asks the server for its list when shown (.house data
 -- <kind>, answered in addon messages) and acts through .house commands, so the window can't
--- do anything a player couldn't type. The House Key menu still has most of it too.
+-- do anything a player couldn't type.
 
 local API = PlayerHousingAPI
-local TABS = { "Collection", "Storage", "Placed", "Layouts", "Guests", "Visit", "Island" }
+local TABS = { "Collection", "Placed", "Layouts", "Guests", "Visit", "Island" }
 local ROW_HEIGHT = 22
 local GRID_COLUMNS, GRID_ROWS, SLOT = 9, 4, 40
 local VISIT_LISTS = { "Party", "Guild", "Friends", "Invited", "Public", "Most liked" }
 local PRIVACY = { "Private", "Friends", "Public" }   -- friends and guild, on the server
 local FAVORITES, RECENT = "favorites", "recent"      -- the category picker's own entries, after All
-local SORTS = { { "order", "Sort: collection" }, { "name", "Sort: name" }, { "cost", "Sort: cost" }, { "bags", "Sort: in bags" } }
+local SORTS = { { "order", "Sort: collection" }, { "name", "Sort: name" }, { "cost", "Sort: cost" }, { "owned", "Sort: owned" } }
 
 local frame
 local tabButtons, panels = {}, {}
 local current = "Collection"
 local pieceById, pieceOrder = {}, {}
-local collection = { unlocked = {}, fresh = {}, storage = {}, placed = {}, recent = {}, free = false, catalog = false, unlockAll = false }
-local collectionView = { category = 0, unlockedOnly = false, inBags = false, search = "", page = 1, sort = 1 }
+-- owned: how many of each the player has to place (the server's counts; nothing is a bag item).
+local collection = { unlocked = {}, fresh = {}, owned = {}, placed = {}, recent = {}, free = false, catalog = false, unlockAll = false }
+local collectionView = { category = 0, unlockedOnly = false, ownedOnly = false, search = "", page = 1, sort = 1 }
 local island = { weathers = {}, times = {}, tracks = {}, privacy = 0, weather = 0, time = 0, music = 0, musicBox = false, door = false, newNotes = 0 }
 local visitList = 1
 local UpdateIsland  -- the Island tab, below; the guestbook clears its "new" count
@@ -117,7 +118,7 @@ local function CheckBox(parent, name, label, x, y, onClick)
     check:SetWidth(20)
     check:SetHeight(20)
     check:SetPoint("TOPLEFT", x, y + 1)
-    Label(parent, label, x + 20, y - 3, "GameFontHighlightSmall")
+    check.label = Label(parent, label, x + 20, y - 3, "GameFontHighlightSmall")
     check:SetScript("OnClick", function(self) onClick(self:GetChecked() and true or false) end)
     return check
 end
@@ -255,8 +256,12 @@ end
 
 local layoutsPage, guestsPage = 1, 1  -- 1: layouts, guests; 2: sets, the guestbook
 
+local function Owned(id)
+    return collection.owned[id] or 0
+end
+
 local function Request(name)
-    if name == "Collection" or name == "Storage" then
+    if name == "Collection" then
         API.RequestData("collection")
     elseif name == "Placed" then
         if API.CanEdit() then
@@ -300,16 +305,16 @@ function PlayerHousing_SelectTab(name)
 end
 
 ---------------------------------------------------------------------------------------------
--- Collection: everything there is, unlocked or not. A click shows a piece in the preview
--- with its buttons and, on the island, a ghost of it follows you for any unlocked piece (one
--- from the bags or House Storage, else a new copy, paid for when it's set down).
+-- Collection: everything there is, unlocked or not, with how many of each you own. A click
+-- shows a piece in the preview with its buttons and, on the island, a ghost of it follows you
+-- for any unlocked piece (one you own, else a new copy, paid for when it's set down).
 
 local collectionSlots, categoryText, collectionPageText, collectionStatus, collectionPrev, collectionNext, sortButton, collectionCount =
     {}, nil, nil, nil, nil, nil, nil, nil
 
--- One to place without buying: in the bags, in House Storage, or free (FreeMode, unlocked).
+-- One to place without buying: one owned, or free (FreeMode, unlocked).
 local function HaveOne(id)
-    return GetItemCount(id) > 0 or (collection.storage[id] or 0) > 0 or (collection.free and collection.unlocked[id]) and true or false
+    return Owned(id) > 0 or (collection.free and collection.unlocked[id]) and true or false
 end
 
 -- Right-click stars a piece; the stars are kept per character.
@@ -334,7 +339,7 @@ local function CollectionPieces()
         if (not catalog or collection.catalog)
             and (category == 0 or category == info[3] or (category == FAVORITES and favorites[id]) or (category == RECENT and recentRank[id]))
             and (not collectionView.unlockedOnly or collection.unlocked[id])
-            and (not collectionView.inBags or GetItemCount(id) > 0)
+            and (not collectionView.ownedOnly or Owned(id) > 0)
             and (search == "" or info[2]:lower():find(search, 1, true)) then
             list[#list + 1] = info
         end
@@ -350,9 +355,9 @@ local function CollectionPieces()
             if left[5] ~= right[5] then return left[5] < right[5] end
             return pieceOrder[left[1]] < pieceOrder[right[1]]
         end)
-    elseif sort == "bags" then
+    elseif sort == "owned" then
         table.sort(list, function(left, right)
-            local leftHave, rightHave = GetItemCount(left[1]) > 0, GetItemCount(right[1]) > 0
+            local leftHave, rightHave = Owned(left[1]) > 0, Owned(right[1]) > 0
             if leftHave ~= rightHave then return leftHave end
             return pieceOrder[left[1]] < pieceOrder[right[1]]
         end)
@@ -392,15 +397,12 @@ local function UpdateCollection()
             button.icon:SetTexture("Interface\\Icons\\" .. info[6])
             button.icon:SetDesaturated(not unlocked)
             button.icon:SetAlpha(unlocked and 1 or 0.45)
-            local have = GetItemCount(id)
+            local have = Owned(id)
             button.count:SetText(have > 0 and have or "")
             button.new:SetText(collection.fresh[id] and "New" or "")
             if favorites[id] then button.star:Show() else button.star:Hide() end
-            -- Dragged onto an action bar: the one in the bags.
-            button.location = API.PieceLocation(id)
             button:Show()
         else
-            button.location = nil
             button:Hide()
         end
     end
@@ -420,8 +422,8 @@ local function UpdateCollection()
     collectionCount:SetText(("%d of %d unlocked"):format(unlocked, total))
     if #list == 0 and collectionView.category == FAVORITES then
         collectionStatus:SetText("No favorites yet: right-click a piece to star it.")
-    elseif #list == 0 and collectionView.inBags then
-        collectionStatus:SetText("None in your bags: click a piece, then Get 1.")
+    elseif #list == 0 and collectionView.ownedOnly then
+        collectionStatus:SetText("You own none of these: click a piece, then Buy 1.")
     elseif #list == 0 and collectionView.category == RECENT then
         collectionStatus:SetText("Nothing placed yet.")
     else
@@ -463,13 +465,12 @@ local function CollectionTooltip(button)
     else
         GameTooltip:AddLine("Locked" .. (info[7] ~= "" and (": " .. info[7]) or "."), 1, 0.5, 0.3, true)
     end
-    GameTooltip:AddLine(("In your bags: %d. In House Storage: %d. Placed: %d."):format(GetItemCount(id), collection.storage[id] or 0,
-        collection.placed[id] or 0), 1, 1, 1, true)
-    if API.CanEdit() and HaveOne(id) then
-        GameTooltip:AddLine("Click: it follows you; walk it where it goes, then G sets it down." ..
-            (button.location and " Drag: onto an action bar." or ""), 0.4, 1, 0.4, true)
+    GameTooltip:AddLine(("Owned: %d. Placed: %d."):format(Owned(id), collection.placed[id] or 0), 1, 1, 1, true)
+    if API.CanEdit() and (HaveOne(id) or collection.unlocked[id]) then
+        GameTooltip:AddLine("Click: it goes on your mouse; a click sets it down, a right-click puts it back." ..
+            (HaveOne(id) and "" or " A new copy is bought when it's set down."), 0.4, 1, 0.4, true)
     else
-        GameTooltip:AddLine("Click: show it next to the window, to place it or get copies.", 0.4, 1, 0.4, true)
+        GameTooltip:AddLine("Click: show it next to the window, to get copies.", 0.4, 1, 0.4, true)
     end
     GameTooltip:AddLine(Favorites()[id] and "Right-click: take the star off." or "Right-click: star it as a favorite.", 0.7, 0.7, 0.7)
     GameTooltip:Show()
@@ -487,7 +488,7 @@ local function CreateCollection()
         collectionView.sort = collectionView.sort % #SORTS + 1
         collectionView.page = 1
         UpdateCollection()
-    end, "Sort", "The Collection's own order, by name, by what a copy costs, or the ones in your bags first.")
+    end, "Sort", "The Collection's own order, by name, by what a copy costs, or the ones you own first.")
     sortButton:SetPoint("TOPLEFT", 164, 0)
 
     local search = InputBox(panel, "PlayerHousingCollectionSearch", API.WIDTH - 280, 266, 0)
@@ -503,8 +504,8 @@ local function CreateCollection()
         collectionView.page = 1
         UpdateCollection()
     end)
-    CheckBox(panel, "PlayerHousingInBags", "In my bags", 96, -22, function(on)
-        collectionView.inBags = on
+    CheckBox(panel, "PlayerHousingOwnedOnly", "Owned", 96, -22, function(on)
+        collectionView.ownedOnly = on
         collectionView.page = 1
         UpdateCollection()
     end)
@@ -518,7 +519,6 @@ local function CreateCollection()
         local column, row = (index - 1) % GRID_COLUMNS, math.floor((index - 1) / GRID_COLUMNS)
         button:SetPoint("TOPLEFT", 14 + column * SLOT, -46 - row * SLOT)
         button:RegisterForClicks("AnyUp")
-        button:RegisterForDrag("LeftButton")
         button.icon = button:CreateTexture(nil, "ARTWORK")
         button.icon:SetAllPoints()
         button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
@@ -560,13 +560,6 @@ local function CreateCollection()
                 end
             end
         end)
-        -- Onto an action bar, like dragging it out of the bag.
-        button:SetScript("OnDragStart", function(self)
-            if self.location and not InCombatLockdown() then
-                local bag, slot = self.location:match("^(%d+) (%d+)$")
-                PickupContainerItem(tonumber(bag), tonumber(slot))
-            end
-        end)
         button:Hide()
         collectionSlots[index] = button
     end
@@ -589,59 +582,15 @@ local function CreateCollection()
     panel:SetScript("OnShow", UpdateCollection)
     panel:EnableMouseWheel(true)
     panel:SetScript("OnMouseWheel", function(self, delta)
-        -- Over the grid with nothing selected: pages. With a piece selected it turns, as
-        -- anywhere over the window.
-        if API.state.selected == 0 or not API.CanEdit() then
-            collectionView.page = collectionView.page - delta
-            UpdateCollection()
-        else
-            local window = API.GetFrame()
-            local turn = window and window:GetScript("OnMouseWheel")
-            if turn then
-                turn(window, delta)
-            end
-        end
+        -- Over the grid: pages.
+        collectionView.page = collectionView.page - delta
+        UpdateCollection()
     end)
 end
 
 ---------------------------------------------------------------------------------------------
--- Storage: pieces that came back while the bags were full.
-
-local storageList, storageStatus
-
-local function UpdateStorage()
-    if not storageList then
-        return
-    end
-    local items, total = {}, 0
-    for id, count in pairs(collection.storage) do
-        items[#items + 1] = { id = id, count = count, name = PieceName(id) }
-        total = total + count
-    end
-    table.sort(items, function(left, right) return left.name < right.name end)
-    storageStatus:SetText(total == 0 and "House Storage is empty." or ("%d pieces in House Storage."):format(total))
-    storageList:SetItems(items, function(row, item)
-        row.icon:SetTexture(PieceIcon(item.id))
-        row.text:SetText(item.count > 1 and ("%s x%d"):format(item.name, item.count) or item.name)
-    end, "Pieces come here when your bags are full.")
-end
-
-local function CreateStorage()
-    local panel = MakePanel("Storage")
-    storageStatus = Label(panel, "", 14, -3, "GameFontHighlightSmall")
-    SmallButton(panel, "PlayerHousingTakeAll", "Take all", 80, function() Do("take all", "collection") end,
-        "Take all", "Everything in House Storage that fits in your bags."):SetPoint("TOPRIGHT", -12, 0)
-    storageList = MakeList(panel, -26, 9, {
-        { "Place", 50, function(item)
-            API.Pin({ id = item.id, name = item.name })
-            API.StartGhost(item.id)
-        end, "Place one", "One out of House Storage follows you: walk it where it goes, then G sets it down." },
-        { "Take", 50, function(item) Do("take " .. item.id, "collection") end, "Take them all", "Back to your bags." },
-    })
-end
-
----------------------------------------------------------------------------------------------
--- Placed: the pieces on the island, nearest first, to find, select and fetch.
+-- Placed: the pieces on the island, nearest first, as another way to find and move them.
+-- With the housing window open, buildings are clickable just like furnishings.
 
 local placedList, placedStatus, placedItems, placedSearch = nil, nil, {}, ""
 
@@ -674,12 +623,12 @@ local function CreatePlaced()
         "Refresh", "Nearest first, from where you stand now."):SetPoint("TOPRIGHT", -12, 0)
     placedStatus = Label(panel, "", 14, -24, "GameFontHighlightSmall")
     placedList = MakeList(panel, -42, 8, {
-        { "Go", 30, function(item) API.Command("goto " .. item.id) end, "Go to it", "Takes you next to it, and selects it." },
-        { "Select", 46, function(item) API.Command("select " .. item.id) end, "Select it" },
-        { "+", 20, function(item) API.Command("group add " .. item.id) end, "Add it to the selection",
-          "Selected with the others, it moves with them (like Ctrl-clicking it)." },
-        { "Here", 40, function(item) Do("here " .. item.id, "placed") end, "Bring it here", "Moves it to where you're standing." },
-        { "Pick up", 50, function(item) API.PickUpPlacement(item.id) end },
+        { "Move", 46, function(item)
+            API.Command("select " .. item.id)
+            API.Command("ghost move " .. item.id)
+        end, "Move it", "It goes on your mouse, like a right-click on it: a click sets it down." },
+        { "Go", 30, function(item) API.Command("goto " .. item.id) end, "Go to it", "Takes you next to it." },
+        { "Put away", 60, function(item) API.PickUpPlacement(item.id) end, "Put it away", "Back to your Collection. Undo puts it back." },
     })
     panel:SetScript("OnShow", function()
         if not API.CanEdit() then
@@ -705,7 +654,8 @@ end)
 ---------------------------------------------------------------------------------------------
 -- Layouts: whole islands, saved and set out again. Sets: a few pieces saved together.
 
-local layoutList, setList, layoutStatus, layoutName, layoutSave, showLayoutsPage
+local layoutList, setList, layoutStatus, layoutName, layoutSave, showLayoutsPage, copyableCheck
+local layoutMenuFrame = CreateFrame("Frame", "PlayerHousingLayoutMenu", UIParent, "UIDropDownMenuTemplate")
 
 StaticPopupDialogs["PLAYERHOUSING_LAYOUT_LOAD"] = {
     text = "Set out %s?\n\nThe pieces on your island now are put away first.",
@@ -730,6 +680,31 @@ StaticPopupDialogs["PLAYERHOUSING_LAYOUT_SEND"] = {
             API.Command(("layout send %s %s"):format(data, name))
         end
     end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
+StaticPopupDialogs["PLAYERHOUSING_LAYOUT_OVERWRITE"] = {
+    text = "Save your island as it is now over %s?",
+    button1 = SAVE or "Save", button2 = CANCEL,
+    OnAccept = function(self, data) Do("layout overwrite " .. data, "layouts") end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
+StaticPopupDialogs["PLAYERHOUSING_LAYOUT_RENAME"] = {
+    text = "A new name for %s:",
+    button1 = OKAY or "OK", button2 = CANCEL,
+    hasEditBox = 1,
+    OnAccept = function(self, data)
+        local box = self.editBox or _G[self:GetName() .. "EditBox"]
+        local name = strtrim(box:GetText() or "")
+        if name ~= "" then
+            Do(("layout rename %s %s"):format(data, name), "layouts")
+        end
+    end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
+StaticPopupDialogs["PLAYERHOUSING_LAYOUT_MISSING"] = {
+    text = "%s",
+    button1 = "Buy them", button2 = CANCEL,
+    OnAccept = function(self, data) Do("layout missing " .. data, "layouts") end,
     timeout = 0, whileDead = 1, hideOnEscape = 1,
 }
 StaticPopupDialogs["PLAYERHOUSING_SET_DELETE"] = {
@@ -762,20 +737,52 @@ local function CreateLayouts()
         if layoutsPage == 1 then
             return "Save the island", "Every piece where it stands, under the name on the left."
         end
-        return "Save the selection", "The selected pieces (Ctrl-click to select several) and what stands on them, as a set."
+        return "Save the selection", "The selected pieces (Ctrl-right-click to select several) and what stands on them, as a set."
     end)
     layoutSave:SetPoint("TOPLEFT", 206, -24)
     layoutStatus = Label(panel, "", 14, -48, "GameFontHighlightSmall")
+    -- Set out, and the rest in a small menu: save over it, rename, send, buy what's missing, delete.
+    local function LayoutMenu(item)
+        local menu = {
+            { text = item.name, isTitle = true, notCheckable = true },
+            { text = "Save the island over it", notCheckable = true, func = function() Popup("PLAYERHOUSING_LAYOUT_OVERWRITE", item.name, item.id) end },
+            { text = "Rename", notCheckable = true, func = function() Popup("PLAYERHOUSING_LAYOUT_RENAME", item.name, item.id) end },
+            { text = "Send to someone", notCheckable = true, func = function() Popup("PLAYERHOUSING_LAYOUT_SEND", item.name, item.id) end },
+            { text = "Delete", notCheckable = true, func = function() Popup("PLAYERHOUSING_LAYOUT_DELETE", item.name, item.id) end },
+        }
+        if item.missing > 0 then
+            table.insert(menu, 2, { text = ("Buy the %d pieces it needs (%s)"):format(item.missing, Money(item.cost)), notCheckable = true,
+                func = function()
+                    Popup("PLAYERHOUSING_LAYOUT_MISSING", ("Buy the %d pieces %s needs for %s? They go into your Collection."):format(
+                        item.missing, item.name, Money(item.cost)), item.id)
+                end })
+        end
+        EasyMenu(menu, layoutMenuFrame, "cursor", 0, 0, "MENU")
+    end
     layoutList = MakeList(panel, -66, 7, {
         { "Set out", 56, function(item) Popup("PLAYERHOUSING_LAYOUT_LOAD", item.name, item.id) end },
-        { "Send", 42, function(item) Popup("PLAYERHOUSING_LAYOUT_SEND", item.name, item.id) end },
-        { "Delete", 50, function(item) Popup("PLAYERHOUSING_LAYOUT_DELETE", item.name, item.id) end },
-    })
+        { "More", 44, LayoutMenu, "More", "Save over it, rename, send, buy what it needs, delete." },
+    }, function(item)
+        local text = ("%s: %d pieces, saved %s"):format(item.name, item.pieces, item.savedAt)
+        if item.source ~= "" then
+            text = text .. ", from " .. item.source
+        end
+        if item.missing > 0 then
+            text = text .. ("\nSetting it out needs %d more (%s); Buy them under More."):format(item.missing, Money(item.cost))
+        end
+        if item.locked > 0 then
+            text = text .. ("\n%d of its pieces are still locked."):format(item.locked)
+        end
+        return text
+    end)
+    copyableCheck = CheckBox(panel, "PlayerHousingLayoutCopyable", "Visitors may copy it", 236, -46, function(on)
+        Do("layout copyable " .. (on and "on" or "off"), "layouts")
+    end)
     local setsPage = CreateFrame("Frame", "PlayerHousingSetsPage", panel)
     setsPage:SetAllPoints()
     setList = MakeList(setsPage, -66, 7, {
         { "Place", 50, function(item) API.Command("set place " .. item.id) end, "Set it down",
-          "Move a Piece comes to your bags (G in edit mode): click where it goes. It faces you." },
+          "The whole set goes on your mouse, like one piece: a click sets it down, the wheel turns it. Pieces you don't own are bought." },
         { "Delete", 50, function(item) Popup("PLAYERHOUSING_SET_DELETE", item.name, item.id) end },
     })
 
@@ -786,6 +793,13 @@ local function CreateLayouts()
         setList:SetHidden(which ~= 2)
         layoutSave:SetText(which == 1 and "Save as new" or "Save selection")
         layoutStatus:SetText("")
+        if which == 1 then
+            copyableCheck:Show()
+            copyableCheck.label:Show()
+        else
+            copyableCheck:Hide()
+            copyableCheck.label:Hide()
+        end
         if API.IsKnown() and current == "Layouts" then
             Request("Layouts")
         end
@@ -797,20 +811,24 @@ API.OnData("layouts", function(list)
     if not layoutList then
         return
     end
-    local items, limit = {}, 0
+    local items, limit, copyable = {}, 0, false
     for _, row in ipairs(list.rows) do
         if row[1] == "limit" then
             limit = tonumber(row[2]) or 0
+            copyable = row[3] == "1"
         elseif row[1] == "layout" then
-            items[#items + 1] = { id = tonumber(row[2]), name = row[3], pieces = tonumber(row[4]) or 0, savedAt = row[5] or "", source = row[6] or "" }
+            items[#items + 1] = { id = tonumber(row[2]), name = row[3], pieces = tonumber(row[4]) or 0, savedAt = row[5] or "", source = row[6] or "",
+                                  missing = tonumber(row[7] or "") or 0, cost = tonumber(row[8] or "") or 0, locked = tonumber(row[9] or "") or 0 }
         end
     end
     if layoutsPage == 1 then
         layoutStatus:SetText(("%d of %d layouts saved."):format(#items, limit))
     end
+    copyableCheck:SetChecked(copyable)
     layoutList:SetItems(items, function(row, item)
         row.icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
-        row.text:SetText(("%s |cffa0a0a0(%d pieces, %s)|r"):format(item.name, item.pieces, item.savedAt))
+        local needs = item.missing > 0 and (" |cffffd000needs %d|r"):format(item.missing) or ""
+        row.text:SetText(("%s |cffa0a0a0(%d pieces, %s)|r%s"):format(item.name, item.pieces, item.savedAt, needs))
     end, "No saved layouts yet.")
 end)
 
@@ -827,7 +845,7 @@ API.OnData("sets", function(list)
         end
     end
     if layoutsPage == 2 then
-        layoutStatus:SetText(("%d of %d sets. Select pieces (Ctrl-click), name them, Save selection."):format(#items, limit))
+        layoutStatus:SetText(("%d of %d sets. Select pieces (Ctrl-right-click), name them, Save selection."):format(#items, limit))
     end
     setList:SetItems(items, function(row, item)
         row.icon:SetTexture("Interface\\Icons\\INV_Crate_02")
@@ -841,6 +859,12 @@ end)
 
 local guestList, noteList, guestName, guestControls, guestbookStatus, showGuestsPage
 
+StaticPopupDialogs["PLAYERHOUSING_PACKUP"] = {
+    text = "Pack up every piece on your island? They go back into your Collection, and Undo puts them all back.",
+    button1 = "Pack up", button2 = CANCEL,
+    OnAccept = function() API.Command("packup") end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
 StaticPopupDialogs["PLAYERHOUSING_NOTE_DELETE"] = {
     text = "Throw out %s's note?",
     button1 = DELETE or "Delete", button2 = CANCEL,
@@ -937,13 +961,13 @@ API.OnData("guestbook", function(list)
     noteList:SetItems(items, function(row, item)
         row.icon:SetTexture("Interface\\Icons\\INV_Misc_Note_02")
         row.text:SetText(("%s%s: |cffffffff%s|r"):format(item.fresh and "|cff40ff40new|r " or "", item.author, item.text))
-    end, "No notes yet: visitors sign it from their House Key, or this window's Visit tab.")
+    end, "No notes yet: visitors sign it in this window's Visit tab.")
 end)
 
 ---------------------------------------------------------------------------------------------
 -- Visit: islands you can go to, and (while visiting) the island's guestbook and likes.
 
-local visitButtons, visitResults, visitName, likeButton, signBox, signButton, signLabel = {}, nil, nil, nil, nil, nil, nil
+local visitButtons, visitResults, visitName, likeButton, copyButton, signBox, signButton, signLabel = {}, nil, nil, nil, nil, nil, nil, nil
 
 local function ShowVisitList(index)
     visitList = index
@@ -960,7 +984,7 @@ local function UpdateVisitControls()
         return
     end
     local visiting = API.state.islandOwner ~= "" and not API.state.own
-    for _, region in ipairs({ likeButton, signBox, signButton, signLabel }) do
+    for _, region in ipairs({ likeButton, copyButton, signBox, signButton, signLabel }) do
         if visiting then region:Show() else region:Hide() end
     end
 end
@@ -987,6 +1011,9 @@ local function CreateVisit()
     likeButton = SmallButton(panel, "PlayerHousingLike", "Like", 60, function() API.Command("like") end,
         "Like this island", "Once per account per island; click again to take it back.")
     likeButton:SetPoint("TOPRIGHT", -12, -44)
+    copyButton = SmallButton(panel, "PlayerHousingCopyLayout", "Copy", 50, function() API.Command("layout copy") end,
+        "Save a copy of this island's layout", "Into your Layouts, when its owner lets visitors copy it.")
+    copyButton:SetPoint("RIGHT", likeButton, "LEFT", -4, 0)
 
     signLabel = Label(panel, "Guestbook", 14, -71, "GameFontNormalSmall")
     signBox = InputBox(panel, "PlayerHousingSignNote", 214, 82, -68)
@@ -1135,6 +1162,14 @@ local function CreateIsland()
     SmallButton(panel, "PlayerHousingVisitorLog", "Visitor log", 80, function() API.Command("visitors") end,
         "Visitor log", "Who came lately, in your chat."):SetPoint("TOPRIGHT", -12, -162)
     Label(panel, "These are your island's; visitors see and hear them there.", 14, -194, "GameFontDisableSmall")
+
+    -- The rest of what the old House Key menu had.
+    SmallButton(panel, "PlayerHousingPackUp", "Pack up all", 90, function() StaticPopup_Show("PLAYERHOUSING_PACKUP") end,
+        "Pack up everything", "Every piece back into your Collection (mannequins' gear to your bags). Undo puts it all back."):SetPoint("TOPLEFT", 12, -214)
+    SmallButton(panel, "PlayerHousingUnstuck", "Unstuck", 70, function() API.Command("unstuck") end,
+        "Unstuck", "Back to the island's landing spot."):SetPoint("TOPLEFT", 106, -214)
+    SmallButton(panel, "PlayerHousingNewKey", "New House Key", 110, function() API.Command("key") end,
+        "A new House Key", "If yours is gone. Only one at a time."):SetPoint("TOPRIGHT", -12, -214)
 end
 
 API.OnData("island", function(list)
@@ -1169,13 +1204,13 @@ API.OnData("island", function(list)
 end)
 
 ---------------------------------------------------------------------------------------------
--- The collection list feeds the Collection and Storage tabs.
+-- The collection list feeds the Collection tab and the pinned piece.
 
 API.OnData("collection", function(list)
     collection.loaded = true
     wipe(collection.unlocked)
     wipe(collection.fresh)
-    wipe(collection.storage)
+    wipe(collection.owned)
     wipe(collection.placed)
     wipe(collection.recent)
     for _, row in ipairs(list.rows) do
@@ -1189,7 +1224,7 @@ API.OnData("collection", function(list)
         elseif label == "new" then
             Ranges(row[2], collection.fresh)
         elseif label == "storage" then
-            Counts(row[2], collection.storage)
+            Counts(row[2], collection.owned)
         elseif label == "placed" then
             Counts(row[2], collection.placed)
         elseif label == "recent" then
@@ -1199,7 +1234,6 @@ API.OnData("collection", function(list)
         end
     end
     UpdateCollection()
-    UpdateStorage()
     API.RefreshPin()
 end)
 
@@ -1219,18 +1253,22 @@ function API.DescribePiece(id)
         unlocked = unlocked,
         hint = info[7],
         cost = Money(info[5]),
-        storage = collection.storage[id] or 0,
+        owned = Owned(id),
         placed = collection.placed[id] or 0,
     }
 end
 
--- The Placed tab keeps up with pieces placed and picked up; the Collection with arriving on
--- an island (its clicks place pieces there) and the bags.
+-- The Placed tab keeps up with pieces placed and picked up, and the Collection with the counts
+-- they change; the Collection also with arriving on an island (its clicks place pieces there).
 local lastCounts, lastCanEdit
 API.OnState(function(state)
     local counts = state.furnishings .. "/" .. state.buildings
-    if current == "Placed" and panels.Placed and panels.Placed:IsShown() and lastCounts and counts ~= lastCounts and API.CanEdit() then
-        API.RequestData("placed")
+    if lastCounts and counts ~= lastCounts and API.CanEdit() then
+        if current == "Placed" and panels.Placed and panels.Placed:IsShown() then
+            API.RequestData("placed")
+        elseif current == "Collection" and panels.Collection and panels.Collection:IsShown() then
+            API.RequestData("collection")
+        end
     end
     lastCounts = counts
     if lastCanEdit ~= API.CanEdit() then
@@ -1239,25 +1277,23 @@ API.OnState(function(state)
     end
     UpdateVisitControls()
 end)
-API.OnBags(function() UpdateCollection() end)
 
 ---------------------------------------------------------------------------------------------
 
 API.OnWindow(function(window)
     frame = window
-    local width = (API.WIDTH - 24 - 3 * 4) / 4
+    local width = (API.WIDTH - 24 - 2 * 4) / 3
     for index, name in ipairs(TABS) do
         local button = CreateFrame("Button", "PlayerHousingTab" .. name, frame, "UIPanelButtonTemplate")
         button:SetWidth(width)
         button:SetHeight(20)
-        local column, row = (index - 1) % 4, math.floor((index - 1) / 4)
+        local column, row = (index - 1) % 3, math.floor((index - 1) / 3)
         button:SetPoint("TOPLEFT", 12 + column * (width + 4), -82 - row * 22)
         button:SetText(name)
         button:SetScript("OnClick", function() PlayerHousing_SelectTab(name) end)
         tabButtons[name] = button
     end
     CreateCollection()
-    CreateStorage()
     CreatePlaced()
     CreateLayouts()
     CreateGuests()

@@ -1,4 +1,3 @@
-#include "HousingMenus.h"
 #include "PlayerHousingMgr.h"
 
 #include "Chat.h"
@@ -32,8 +31,6 @@ using namespace Housing;
 
 namespace
 {
-    MenuSource FromPlayer(Player* player) { return MenuSource{ SOURCE_PLAYER, player->GetGUID() }; }
-
     void Reply(Player* player, std::string const& reason)
     {
         if (!reason.empty())
@@ -58,7 +55,8 @@ namespace
     }
 }
 
-// Krook, the housing steward: in the capital cities and on every island.
+// Krook, the housing steward: in the capital cities and on every island. He gives and takes
+// his welcome tour's quests; everything else is the housing window, which he opens.
 class npc_playerhousing_steward : public CreatureScript
 {
 public:
@@ -67,19 +65,15 @@ public:
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         EnsureStewardAppearance(creature);
-        HousingMenus::ShowHome(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() });
-        return true;
-    }
+        // Playerbots don't do housing.
+        if (player->GetSession()->IsBot())
+            return true;
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
-        return true;
-    }
-
-    bool OnGossipSelectCode(Player* player, Creature* creature, uint32 sender, uint32 action, char const* code) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, code);
+        ClearGossipMenuFor(player);
+        if (creature->IsQuestGiver())
+            player->PrepareQuestMenu(creature->GetGUID());
+        SendGossipMenuFor(player, TEXT_HOME, creature->GetGUID());
+        sPlayerHousingMgr->OpenWindow(player);
         return true;
     }
 
@@ -92,8 +86,38 @@ public:
     }
 };
 
-// A stand's figure. The owner gets the stand's menu (dress it, turn it, pick it up); guests
-// see what it's wearing.
+namespace
+{
+    // A click on a piece on an island the player decorates picks it up: it follows the mouse
+    // (or the player) until a click sets it down, the one way pieces move. With Ctrl held (the
+    // addon says so) it joins the selection instead, or leaves it; a click on a selected piece
+    // picks up the whole selection.
+    void PickUpFromClick(Player* player, uint32 placementId)
+    {
+        // Already holding one: that click was the addon's right-click putting it back.
+        if (sPlayerHousingMgr->IsCarrying(player))
+            return;
+
+        std::string reason;
+        if (sPlayerHousingMgr->IsDecorating(player) && sPlayerHousingMgr->IsGroupHold(player))
+        {
+            sPlayerHousingMgr->ToggleGroupMember(player, placementId, reason);
+            return;
+        }
+
+        std::vector<uint32> group = sPlayerHousingMgr->GetGroup(player);
+        bool wholeGroup = group.size() > 1 && std::find(group.begin(), group.end(), placementId) != group.end();
+        if (!wholeGroup)
+            sPlayerHousingMgr->SelectPlacement(player, placementId);
+        if (!sPlayerHousingMgr->StartGhostMove(player, wholeGroup ? 0 : placementId, reason) && !reason.empty())
+            Reply(player, reason);
+        sPlayerHousingMgr->SendAddonState(player);
+        sPlayerHousingMgr->OpenWindow(player);
+    }
+}
+
+// A stand's figure. The owner (and roommates) select it, to dress it in the window; guests
+// hear what it's wearing.
 class npc_playerhousing_mannequin : public CreatureScript
 {
 public:
@@ -101,26 +125,20 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        MenuSource source{ SOURCE_CREATURE, creature->GetGUID() };
         uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, creature->GetGUID());
         if (!placementId)
             return true;
 
         if (sPlayerHousingMgr->CanDecorate(player))
-            HousingMenus::ShowPiece(player, source, placementId);
+            PickUpFromClick(player, placementId);
         else
-            HousingMenus::ShowStandToGuest(player, source, placementId);
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+            Reply(player, sPlayerHousingMgr->DescribeStand(player, placementId));
+        CloseGossipMenuFor(player);
         return true;
     }
 };
 
-// A figurine: its owner (and roommates) get its piece menu; visitors hear what it is.
+// A figurine: its owner (and roommates) select it; visitors hear what it is.
 class npc_playerhousing_figurine : public CreatureScript
 {
 public:
@@ -128,28 +146,21 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        MenuSource source{ SOURCE_CREATURE, creature->GetGUID() };
         uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, creature->GetGUID());
         if (!placementId)
             return true;
 
         if (sPlayerHousingMgr->CanDecorate(player))
-            HousingMenus::ShowPiece(player, source, placementId);
+            PickUpFromClick(player, placementId);
         else
             Reply(player, Acore::StringFormat("{}: a trophy of {}'s adventures.", creature->GetName(),
                 sPlayerHousingMgr->NameOf(sPlayerHousingMgr->GetIslandOwner(player))));
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_CREATURE, creature->GetGUID() }, sender, action, nullptr);
+        CloseGossipMenuFor(player);
         return true;
     }
 };
 
-// Incoming packets, for two things. Items owed for placed pieces are settled first. And a
-// mannequin's armor reaches the client as mirror image data, which the client asks for when
+// A mannequin's armor reaches the client as mirror image data, which the client asks for when
 // the figure comes into view: the core only answers for real mirror images (spells), so the
 // module answers for mannequins.
 class mod_playerhousing_serverscript : public ServerScript
@@ -159,12 +170,6 @@ public:
 
     bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
     {
-        // An item used to place a piece is taken before anything else the player sends is
-        // handled: moving it to the bank or the mail in the same breath doesn't keep it.
-        if (sPlayerHousingMgr->HasPendingConsumes())
-            if (Player* player = session->GetPlayer(); player && player->IsInWorld())
-                sPlayerHousingMgr->ProcessPendingConsumes(player);
-
         if (packet.GetOpcode() != CMSG_GET_MIRRORIMAGE_DATA || packet.size() < sizeof(uint64))
             return true;
 
@@ -172,7 +177,7 @@ public:
     }
 };
 
-// The House Key: its spell is caught in spell_playerhousing_key, which opens the Home menu.
+// The House Key: its spell is caught in spell_playerhousing_key, which opens the housing window.
 class item_playerhousing_key : public ItemScript
 {
 public:
@@ -182,20 +187,11 @@ public:
     {
         return false;
     }
-
-    void OnGossipSelect(Player* player, Item* item, uint32 sender, uint32 action) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_ITEM, item->GetGUID() }, sender, action, nullptr);
-    }
-
-    void OnGossipSelectCode(Player* player, Item* item, uint32 sender, uint32 action, char const* code) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_ITEM, item->GetGUID() }, sender, action, code);
-    }
 };
 
-// Furnishings and buildings: using one brings up the targeting circle of the item's spell;
-// the chosen spot is caught in spell_playerhousing_place before anything is cast.
+// Furnishing items from before pieces were kept in the Collection: still named by the item
+// table (the Collection shows their icons), they no longer go in the bags. One still around is
+// caught in spell_playerhousing_place when used.
 class item_playerhousing_piece : public ItemScript
 {
 public:
@@ -207,9 +203,8 @@ public:
     }
 };
 
-// Places the piece where the targeting circle was clicked, then cancels the cast silently, so
-// the borrowed spell never does anything. Only casts from housing items are caught. The core
-// has already checked range and line of sight to the spot by the time this runs.
+// An old furnishing (or "Move a Piece") item used: it and any like it go into the Collection
+// instead, and nothing is cast.
 class spell_playerhousing_place : public SpellScript
 {
     PrepareSpellScript(spell_playerhousing_place);
@@ -222,30 +217,8 @@ class spell_playerhousing_place : public SpellScript
         if (!player || !item || !sPlayerHousingMgr->IsEnabled() || (!mover && !sPlayerHousingMgr->GetPiece(item->GetEntry())))
             return SPELL_CAST_OK;
 
-        std::string reason;
-        if (WorldLocation const* destination = GetExplTargetDest())
-        {
-            Position target;
-            target.Relocate(destination->GetPositionX(), destination->GetPositionY(), destination->GetPositionZ());
-            uint32 itemEntry = item->GetEntry();
-            if (mover)
-            {
-                sPlayerHousingMgr->HandleMoveCast(player, item, target, reason);
-                Reply(player, reason);
-                return SPELL_FAILED_DONT_REPORT;
-            }
-            bool placed = sPlayerHousingMgr->HandlePlacementCast(player, item, target, reason);
-            sPlayerHousingMgr->SendAddonState(player);
-            // The preview: the piece stands where it'll be, and its menu offers to keep it,
-            // adjust it or take it back.
-            if (placed && sPlayerHousingMgr->ShouldAdjustAfterPlacing(player, itemEntry))
-                if (uint32 placementId = sPlayerHousingMgr->GetSelectedPlacement(player))
-                    HousingMenus::ShowPiece(player, FromPlayer(player), placementId, true);
-        }
-        else
-            reason = "Click a spot with the targeting circle to place it.";
-
-        Reply(player, reason);
+        sPlayerHousingMgr->SweepHousingItems(player, false);
+        sPlayerHousingMgr->OpenWindow(player, "Collection");
         return SPELL_FAILED_DONT_REPORT;
     }
 
@@ -272,11 +245,7 @@ class spell_playerhousing_key : public SpellScript
             return SPELL_FAILED_DONT_REPORT;
         }
 
-        // With the client addon, its window; the menu is a button away there.
-        if (sPlayerHousingMgr->KeyOpensWindow(player))
-            sPlayerHousingMgr->SendAddon(player, "open");
-        else
-            HousingMenus::ShowHome(player, MenuSource{ SOURCE_ITEM, item->GetGUID() });
+        sPlayerHousingMgr->OpenWindow(player);
         return SPELL_FAILED_DONT_REPORT;
     }
 
@@ -286,9 +255,9 @@ class spell_playerhousing_key : public SpellScript
     }
 };
 
-// Every placed piece and snap marker. Clicking a plain piece opens its menu for its owner (and
-// roommates); pieces that work like the real thing (chairs seat, mailboxes open) do that,
-// unless the owner is decorating.
+// Every placed piece. Clicking a plain piece picks it up for its owner (and roommates), to set
+// down with the mouse; pieces that work like the real thing (chairs seat, mailboxes open) do
+// that, unless the housing window is open (decorating).
 class go_playerhousing_piece : public GameObjectScript
 {
 public:
@@ -296,42 +265,18 @@ public:
 
     bool OnGossipHello(Player* player, GameObject* go) override
     {
-        if (go->GetEntry() == HOOK_MARKER_GO)
-        {
-            if (sPlayerHousingMgr->IsDecorating(player))
-                if (uint32 surface = sPlayerHousingMgr->GetSurfaceForMarker(player, go->GetGUID()))
-                    HousingMenus::ShowHook(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, surface);
-            return true;
-        }
-
         uint32 placementId = sPlayerHousingMgr->GetPlacementForObject(player, go->GetGUID());
         if (!placementId)
             return false;
 
-        // Ctrl held (the addon says so) while decorating: the piece joins the group, or leaves it.
-        if (sPlayerHousingMgr->IsDecorating(player) && sPlayerHousingMgr->IsGroupHold(player))
+        // Decorating (the window is open): a click picks the piece up, or with Ctrl selects it.
+        if (sPlayerHousingMgr->IsDecorating(player) && sPlayerHousingMgr->CanDecorate(player))
         {
-            std::string reason;
-            sPlayerHousingMgr->ToggleGroupMember(player, placementId, reason);
+            PickUpFromClick(player, placementId);
             return true;
         }
 
-        // Edit mode: a click only picks the piece; the keys do the rest.
-        if (sPlayerHousingMgr->IsInEditMode(player))
-        {
-            sPlayerHousingMgr->SelectPlacement(player, placementId);
-            sPlayerHousingMgr->SendAddonState(player);
-            return true;
-        }
-
-        if (sPlayerHousingMgr->IsDecorating(player))
-        {
-            HousingMenus::ShowPiece(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
-            return true;
-        }
-
-        // A Bank Chest opens its owner's bank straight away (House Storage is in the House
-        // Key's menu and the window); for anyone else it's locked.
+        // A Bank Chest opens its owner's bank straight away; for anyone else it's locked.
         if (std::optional<Placement> placement = sPlayerHousingMgr->GetPlacement(player, placementId))
         {
             PieceDefinition const* piece = sPlayerHousingMgr->GetPiece(placement->itemEntry);
@@ -347,7 +292,7 @@ public:
             if (piece && piece->HasFlag(PIECE_FLAG_MUSIC))
             {
                 if (sPlayerHousingMgr->IsOnOwnIsland(player))
-                    HousingMenus::ShowMusicBox(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() });
+                    sPlayerHousingMgr->OpenWindow(player, "Island");
                 else
                 {
                     HouseRecord house;
@@ -359,31 +304,17 @@ public:
             }
         }
 
-        // A plain piece (nothing to sit on or open): its menu, decorating from now on. (The
-        // pieces that work like the real thing change only while decorating: House Key.)
+        // A plain piece (nothing to sit on or open): picked up, decorating from now on. (The
+        // pieces that work like the real thing are picked up only while the window is open.)
         if (sPlayerHousingMgr->CanDecorate(player) && go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
         {
             std::string ignored;
             sPlayerHousingMgr->SetDecorating(player, true, ignored);
-            sPlayerHousingMgr->SelectPlacement(player, placementId);
-            sPlayerHousingMgr->SendAddonState(player);
-            HousingMenus::ShowPiece(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, placementId);
+            PickUpFromClick(player, placementId);
             return true;
         }
 
         return false;
-    }
-
-    bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 action) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, sender, action, nullptr);
-        return true;
-    }
-
-    bool OnGossipSelectCode(Player* player, GameObject* go, uint32 sender, uint32 action, char const* code) override
-    {
-        HousingMenus::HandleSelect(player, MenuSource{ SOURCE_GAMEOBJECT, go->GetGUID() }, sender, action, code);
-        return true;
     }
 };
 
@@ -415,8 +346,8 @@ public:
 
     static void SendUsage(ChatHandler* handler, bool gm)
     {
-        handler->SendSysMessage("Housing commands (.house alone opens the Home menu):");
-        handler->SendSysMessage(".house home | leave | unstuck | key");
+        handler->SendSysMessage("Housing commands (.house alone opens the housing window, which has all of them):");
+        handler->SendSysMessage(".house home | leave | unstuck | key | visit <name>");
         handler->SendSysMessage(".house decorate [on|off] | edit [on|off] | undo | redo | packup");
         handler->SendSysMessage(".house shift <forward> <left> <up> <degrees> [id] | select next|previous");
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
@@ -425,10 +356,11 @@ public:
         handler->SendSysMessage(".house ghost <item> | ghost move [id] | ghost adjust <forward> <left> <up> <degrees> | ghost at <x> <y> <z>");
         handler->SendSysMessage(".house ghost place [another] | ghost cancel");
         handler->SendSysMessage(".house another [id] | grid <off|yards> | roommate <name> | unroommate <name> | like | visitors");
-        handler->SendSysMessage(".house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]");
-        handler->SendSysMessage(".house collection [search] | storage | visit [name] | invite <name|target|party> | uninvite <name>");
-        handler->SendSysMessage(".house get <item> [count] | take <item|all> | weather <name> | time <name> | music <sound id|off>");
-        handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear> | adjust <all|buildings|off>");
+        handler->SendSysMessage(".house layout <save <name> | load <name> | delete <name> | send <name> <player> | rename <name> <new name>");
+        handler->SendSysMessage(".house layout <overwrite <name> | missing <name> | copyable on|off | copy | list>");
+        handler->SendSysMessage(".house get <item> [count] | get all (test servers) | invite <name|target|party> | uninvite <name>");
+        handler->SendSysMessage(".house stand <dress <item> | undress <slot|all> | figure> [id] | weather <name> | time <name> | music <sound id|off>");
+        handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear>");
         handler->SendSysMessage(".house group [add|remove <id> | clear] | match <height|turn|line|space> | row <count> [yards] [right|left|forward|back]");
         handler->SendSysMessage(".house set [save <name> | place <name> | delete <name> | list] | undo [steps] | goto <id>");
         handler->SendSysMessage(".house sign <note> (while visiting) | guestbook [delete <id>] | door [here|reset]");
@@ -468,7 +400,7 @@ public:
         std::vector<std::string_view> tokens = Acore::Tokenize(args ? args : "", ' ', false);
         if (tokens.empty())
         {
-            HousingMenus::ShowHome(player, FromPlayer(player));
+            sPlayerHousingMgr->OpenWindow(player);
             return true;
         }
 
@@ -542,9 +474,17 @@ public:
         }
         else if (sub == "addon")
         {
-            // Quiet: the addon says it's there, whether the House Key opens its window, and
-            // whether PlayerHousing.dll is there (mouse).
-            mgr->SetAddonClient(player, !(tokens.size() > 2 && tokens[2] == "0"), tokens.size() > 3 && Lower(tokens[3]) == "mouse");
+            // Quiet: the addon says it's there, and whether PlayerHousing.dll is there (mouse)
+            // and moves the ghost itself (local). Older addons sent a House Key setting first.
+            bool mouse = false;
+            bool local = false;
+            for (size_t i = 1; i < tokens.size(); ++i)
+            {
+                std::string word = Lower(tokens[i]);
+                mouse = mouse || word == "mouse";
+                local = local || word == "local";
+            }
+            mgr->SetAddonClient(player, mouse, local);
             mgr->SendAddonState(player);
             return true;
         }
@@ -564,15 +504,37 @@ public:
         {
             uint32 item = number(1);
             uint32 count = std::clamp<uint32>(tokens.size() > 2 ? number(2) : 1, 1, 20);
-            if (!item)
-                reason = "Usage: .house get <item entry> [count]";
-            else if (count == 1)
-                mgr->GetCopy(player, item, reason);
+            if (tokens.size() > 1 && Lower(tokens[1]) == "all")
+                mgr->GetOneOfEverything(player, reason);
+            else if (!item)
+                reason = "Usage: .house get <item entry> [count] | get all";
             else
                 mgr->GetCopies(player, item, count, reason);
         }
-        else if (sub == "take")
-            mgr->TakeFromStorageCommand(player, tokens.size() > 1 ? Lower(tokens[1]) : "", number(2), reason);
+        else if (sub == "take" || sub == "storage")
+        {
+            // House Storage became the Collection's counts: nothing goes to the bags any more.
+            reason = "Pieces stay in your Collection now: place them from the housing window.";
+            mgr->SweepHousingItems(player, true);
+        }
+        else if (sub == "stand")
+        {
+            // A mannequin (the selected piece, or the id last): dress <item entry>, undress
+            // <slot|all>, figure.
+            std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
+            if (what == "dress")
+                mgr->PutOnStandByEntry(player, mgr->ResolvePlacementArgument(player, number(3)), number(2), reason);
+            else if (what == "undress")
+            {
+                bool all = tokens.size() > 2 && Lower(tokens[2]) == "all";
+                mgr->TakeOffStand(player, mgr->ResolvePlacementArgument(player, number(3)), all ? -1 : int32(number(2)), reason);
+            }
+            else if (what == "figure")
+                mgr->ChangeStandFigure(player, mgr->ResolvePlacementArgument(player, number(2)), reason);
+            else
+                reason = "Usage: .house stand <dress <item entry> | undress <slot|all> | figure> [id]";
+            mgr->SendAddonState(player);
+        }
         else if (sub == "weather" || sub == "time")
         {
             // By number, or by name: .house weather light rain
@@ -627,7 +589,7 @@ public:
         else if (sub == "rotate" || sub == "turn")
             mgr->Rotate(player, number(2), decimal(1, 45.0f), reason);
         else if (sub == "move")
-            mgr->StartMove(player, number(1), reason);
+            mgr->StartGhostMove(player, number(1), reason);
         else if (sub == "face")
             mgr->FaceMe(player, number(1), reason);
         else if (sub == "here")
@@ -706,6 +668,8 @@ public:
             std::string name;
             if (tokens.size() < 2 || !mgr->ResolvePlayerGuid(std::string(tokens[1]), target, name))
                 reason = Acore::StringFormat("Usage: .house {} <player>", sub);
+            else if ((target = mgr->HomeOfCharacter(target)) == 0)
+                reason = "No island.";  // never: a character always has an account
             else if (sub == "inspect")
                 mgr->GmInspect(player, target, reason);
             else if (sub == "hide" || sub == "unhide")
@@ -719,7 +683,7 @@ public:
             mgr->ToggleLike(player, reason);
         else if (sub == "visitors")
         {
-            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            ObjectGuid::LowType self = mgr->HomeOf(player);  // the account's island
             auto log = mgr->GetVisitorLog(self, 20);
             reason = Acore::StringFormat("{} visitors this week, {} likes.{}", mgr->CountVisitorsThisWeek(self), mgr->CountLikes(self),
                 log.empty() ? " Nobody has visited yet." : "");
@@ -740,7 +704,7 @@ public:
         else if (sub == "layout" || sub == "layouts")
         {
             std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
-            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            ObjectGuid::LowType self = mgr->HomeOf(player);  // the account's island
             auto find = [&](size_t index) -> uint32
             {
                 std::string name = tokens.size() > index ? std::string(tokens[index]) : "";
@@ -755,11 +719,41 @@ public:
             };
             if (what.empty())
             {
-                HousingMenus::ShowSavedLayouts(player, FromPlayer(player));
+                mgr->OpenWindow(player, "Layouts");
                 return true;
             }
             else if (what == "save")
                 mgr->SaveLayout(player, 0, restFrom(2), reason);
+            else if (what == "overwrite")
+            {
+                if (uint32 id = find(2))
+                    mgr->SaveLayout(player, id, "", reason);
+            }
+            else if (what == "rename")
+            {
+                // By number: the new name may have spaces, so the layout comes first, as a number.
+                std::optional<SavedLayout> layout = tokens.size() > 3 ? mgr->FindSavedLayout(self, std::string(tokens[2])) : std::nullopt;
+                if (!layout)
+                    reason = "Usage: .house layout rename <layout number> <new name>";
+                else
+                    mgr->RenameLayout(player, layout->id, restFrom(3), reason);
+            }
+            else if (what == "missing")
+            {
+                if (uint32 id = find(2))
+                    mgr->GetMissingForLayout(player, id, reason);
+            }
+            else if (what == "copyable")
+            {
+                std::string mode = tokens.size() > 2 ? Lower(tokens[2]) : "";
+                if (mode == "on" || mode == "off")
+                    mgr->SetLayoutCopyable(player, mode == "on", reason);
+                else
+                    reason = mgr->IsLayoutCopyable(self) ? "Visitors may save a copy of your island's layout. .house layout copyable off stops that."
+                                                         : "Visitors can't copy your island's layout. .house layout copyable on lets them.";
+            }
+            else if (what == "copy")
+                mgr->CopyIslandLayout(player, reason);
             else if (what == "load" || what == "switch" || what == "set")
             {
                 if (uint32 id = find(2))
@@ -786,7 +780,7 @@ public:
                     handler->PSendSysMessage("#{} {} ({} pieces, {})", layout.id, layout.name, layout.pieces, layout.savedAt);
             }
             else
-                reason = "Usage: .house layout [save <name> | load <name> | delete <name> | send <name> <player> | list]";
+                reason = "Usage: .house layout <save | load | delete | send | rename | overwrite | missing | copyable | copy | list>";
         }
         else if (sub == "another" || sub == "copy")
             mgr->PlaceAnother(player, number(1), reason);
@@ -906,14 +900,14 @@ public:
         else if (sub == "set" || sub == "sets")
         {
             std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "list";
-            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            ObjectGuid::LowType self = mgr->HomeOf(player);  // the account's island
             std::optional<SavedSet> set = tokens.size() > 2 ? mgr->FindSavedSet(self, restFrom(2)) : std::nullopt;
             if (what == "save")
                 mgr->SaveSet(player, restFrom(2), reason);
             else if ((what == "place" || what == "delete") && !set)
                 reason = tokens.size() > 2 ? "You have no set called " + restFrom(2) + "." : "Which set? .house set list shows them.";
             else if (what == "place")
-                mgr->StartSetPlacement(player, set->id, reason);
+                mgr->StartGhostSet(player, set->id, reason);
             else if (what == "delete")
                 mgr->DeleteSet(player, set->id, reason);
             else
@@ -931,7 +925,7 @@ public:
             mgr->SignGuestbook(player, restFrom(1), reason);
         else if (sub == "guestbook")
         {
-            ObjectGuid::LowType self = player->GetGUID().GetCounter();
+            ObjectGuid::LowType self = mgr->HomeOf(player);  // the account's island
             if (tokens.size() > 2 && Lower(tokens[1]) == "delete")
                 mgr->DeleteNote(player, number(2), reason);
             else
@@ -996,19 +990,18 @@ public:
         }
         else if (sub == "collection")
         {
-            if (tokens.size() > 1)
-                HousingMenus::ShowCollectionSearch(player, FromPlayer(player), restFrom(1));
-            else
-                HousingMenus::ShowCollection(player, FromPlayer(player));
+            mgr->OpenWindow(player, "Collection");
+            return true;
         }
-        else if (sub == "storage")
-            HousingMenus::ShowStorage(player, FromPlayer(player));
         else if (sub == "visit")
         {
             if (tokens.size() > 1)
                 mgr->VisitHouseByName(player, std::string(tokens[1]), reason);
             else
-                HousingMenus::ShowVisit(player, FromPlayer(player));
+            {
+                mgr->OpenWindow(player, "Visit");
+                return true;
+            }
         }
         else if (sub == "invite")
         {
@@ -1038,19 +1031,6 @@ public:
                 mgr->SetPrivacy(player, PRIVACY_PUBLIC, reason);
             else
                 mgr->CyclePrivacy(player, reason);
-        }
-        else if (sub == "adjust")
-        {
-            std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
-            if (mode == "all" || mode == "everything")
-                mgr->SetAdjustMode(player, ADJUST_ALL, reason);
-            else if (mode == "buildings")
-                mgr->SetAdjustMode(player, ADJUST_BUILDINGS, reason);
-            else if (mode == "off" || mode == "never")
-                mgr->SetAdjustMode(player, ADJUST_NEVER, reason);
-            else
-                reason = Acore::StringFormat("The adjust menu opens {}. Usage: .house adjust <all|buildings|off>",
-                    PlayerHousingMgr::AdjustModeName(mgr->GetAdjustMode(player->GetGUID().GetCounter())));
         }
         else if (sub == "greeting")
         {
@@ -1107,18 +1087,6 @@ public:
     void OnPlayerMapChanged(Player* player) override { sPlayerHousingMgr->OnPlayerMapChanged(player); }
     void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override { sPlayerHousingMgr->OnPlayerDelete(guid); }
     void OnPlayerDeleteFromDB(CharacterDatabaseTransaction /*trans*/, uint32 guid) override { sPlayerHousingMgr->OnPlayerDeleteFromDB(guid); }
-
-    void OnPlayerGossipSelect(Player* player, uint32 menuId, uint32 sender, uint32 action) override
-    {
-        if (menuId == PLAYER_MENU_ID)
-            HousingMenus::HandleSelect(player, FromPlayer(player), sender, action, nullptr);
-    }
-
-    void OnPlayerGossipSelectCode(Player* player, uint32 menuId, uint32 sender, uint32 action, char const* code) override
-    {
-        if (menuId == PLAYER_MENU_ID)
-            HousingMenus::HandleSelect(player, FromPlayer(player), sender, action, code);
-    }
 
     // Progress that unlocks pieces for the Collection.
     void OnPlayerAchievementComplete(Player* player, AchievementEntry const* achievement) override

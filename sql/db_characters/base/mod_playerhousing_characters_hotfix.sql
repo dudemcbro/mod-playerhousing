@@ -322,3 +322,15 @@ SET @ph_stmt = (
 PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
+
+-- Tables from before placements kept their own piece had catalog_id with no default, so
+-- every save of a newly placed piece failed (strict mode) and it was gone after a restart.
+ALTER TABLE `mod_playerhousing_placement` MODIFY `catalog_id` int unsigned NOT NULL DEFAULT 0;
+
+-- One island per account: the character everything is kept under (owner_guid elsewhere).
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_account` (
+  `account_id` int unsigned NOT NULL,
+  `home_guid` int unsigned NOT NULL,
+  PRIMARY KEY (`account_id`),
+  KEY `idx_mod_playerhousing_account_home` (`home_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

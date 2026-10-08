@@ -31,7 +31,7 @@ hour) and point the scripts at it: `IMAGE=localhost/acore-test-server tools/test
 It starts a throwaway container with this checkout mounted (`:Z` for SELinux hosts such as
 Fedora; on an NTFS or exFAT drive it turns labeling off for the container instead), clears GM
 Island's guild hall from the server data, builds the module, starts the servers with
-FreeMode on, runs `housing_smoke.py` inside and removes the container.
+FreeMode on, runs `collection_smoke.py` inside and removes the container.
 
 - `HOUSING_LAYOUT=guildhouse` keeps the guild hall instead.
 - `KEEP=1` leaves the container running with ports 3724 and 8085 published, so you can
@@ -76,7 +76,7 @@ git clone https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom.git ~
 git clone https://github.com/dudemcbro/mod-playerhousing.git ~/mod-playerhousing
 CORE_DIR=~/azerothcore-wotlk-playerbots-custom ~/mod-playerhousing/tools/test-server/setup.sh
 ~/mod-playerhousing/tools/test-server/start.sh
-python3 ~/mod-playerhousing/tools/test-server/testclient/housing_smoke.py
+python3 ~/mod-playerhousing/tools/test-server/testclient/collection_smoke.py
 ```
 
 The first run downloads about 3 GB of client data and compiles the core, which
@@ -127,6 +127,17 @@ vim ~/acore-test-server/etc/modules/mod_playerhousing.conf
 More accounts: `python3 tools/test-server/testclient/create_account.py NAME PASSWORD [--gm 3]`.
 
 ## The automated test
+
+`testclient/collection_smoke.py` is the current end-to-end suite. It checks the addon-only
+window, Collection counts instead of furnishing items, mouse/local ghosts, exact building
+previews, right-click movement of buildings and furnishings, tilt, mannequins, sets, layouts,
+visitors, logging back into an island, and one shared island per account.
+
+`testclient/housing_smoke.py` below is retained as a reference for the pre-2.1 menu-and-bag
+workflow; it is not run by the test scripts because those menus and furnishing items were
+intentionally removed.
+
+### Legacy pre-2.1 suite
 
 `testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
 the GM `Krookadmin`, created on first run), resets their housing, and plays it through,

@@ -13,7 +13,7 @@ using namespace Housing;
 
 // Moderation: players report islands; GMs read the reports, look for themselves, and can
 // clear a greeting, hide an island from strangers, or pack it up. Packing up never loses
-// anything: every piece goes to the House Storage of whoever placed it, and gear on
+// anything: every piece goes back to the Collection of whoever placed it, and gear on
 // mannequins is mailed back.
 
 namespace
@@ -137,7 +137,7 @@ bool PlayerHousingMgr::GmSetHidden(Player* gm, ObjectGuid::LowType ownerGuid, bo
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = (flags & ~{}) | {} WHERE owner_guid={}",
         uint32(HOUSE_FLAG_HIDDEN), hidden ? uint32(HOUSE_FLAG_HIDDEN) : 0, ownerGuid);
     LOG_INFO("module", "mod-playerhousing: {} {} the island of {}.", gm->GetName(), hidden ? "hid" : "unhid", NameOf(ownerGuid));
-    if (Player* owner = ObjectAccessor::FindPlayerByLowGUID(ownerGuid))
+    if (Player* owner = FindOwnerOnline(ownerGuid))
         Say(owner, hidden ? "A GM closed your island to everyone but your guest list, and took it off the visit lists."
                           : "A GM opened your island again: your privacy setting applies as before.");
     reason = Acore::StringFormat("{}'s island is {}.", NameOf(ownerGuid),
@@ -200,9 +200,9 @@ bool PlayerHousingMgr::GmPackUp(Player* gm, ObjectGuid::LowType ownerGuid, std::
     ForgetJournals(ownerGuid);
 
     LOG_INFO("module", "mod-playerhousing: {} packed up the island of {} ({} pieces).", gm->GetName(), NameOf(ownerGuid), placements.size());
-    if (Player* owner = ObjectAccessor::FindPlayerByLowGUID(ownerGuid))
-        Say(owner, "A GM packed up your island. Everything is in your House Storage (House Key, Storage); mannequin gear came by mail.");
-    reason = Acore::StringFormat("Packed up {}'s island: {} pieces went to the House Storage of whoever placed them.", NameOf(ownerGuid),
+    if (Player* owner = FindOwnerOnline(ownerGuid))
+        Say(owner, "A GM packed up your island. Every piece is back in your Collection; mannequin gear came by mail.");
+    reason = Acore::StringFormat("Packed up {}'s island: {} pieces went back to the Collection of whoever placed them.", NameOf(ownerGuid),
         placements.size());
     return true;
 }

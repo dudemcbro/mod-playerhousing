@@ -96,10 +96,18 @@ CREATE TABLE `mod_playerhousing_piece_rule` (
   PRIMARY KEY (`item_entry`, `rule_group`, `rule_index`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- The creature table's entry column is id1 in older cores and id in newer ones (2026_06_16):
+-- statements on it are built with whichever this database has.
+SET @CREATURE_ENTRY := IF(EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'creature' AND COLUMN_NAME = 'id1'), 'id1', 'id');
+
 -- Krook, the housing steward. No vendor window any more: everything comes from the
 -- Collection.
 DELETE FROM `npc_vendor` WHERE `entry` = @STEWARD;
-DELETE FROM `creature` WHERE `id1` = @STEWARD;
+SET @SQL := CONCAT('DELETE FROM `creature` WHERE `', @CREATURE_ENTRY, '` = ', @STEWARD);
+PREPARE housing_stmt FROM @SQL;
+EXECUTE housing_stmt;
+DEALLOCATE PREPARE housing_stmt;
 DELETE FROM `creature_template_model` WHERE `CreatureID` = @STEWARD;
 DELETE FROM `creature_template` WHERE `entry` = @STEWARD;
 
@@ -151,7 +159,11 @@ INSERT INTO `creature_template_movement` (`CreatureId`, `Ground`, `Swim`, `Fligh
 
 -- Krook in the capital cities, beside each innkeeper.
 SET @GUID := (SELECT COALESCE(MAX(`guid`), 0) FROM `creature`);
-INSERT INTO `creature` (`guid`, `id1`, `map`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `MovementType`, `Comment`) VALUES
+DROP TEMPORARY TABLE IF EXISTS `housing_krook`;
+CREATE TEMPORARY TABLE `housing_krook` (`guid` int unsigned, `entry` int unsigned, `map` smallint unsigned, `spawnMask` tinyint unsigned,
+  `phaseMask` int unsigned, `position_x` float, `position_y` float, `position_z` float, `orientation` float, `spawntimesecs` int unsigned,
+  `wander_distance` float, `MovementType` tinyint unsigned, `Comment` text);
+INSERT INTO `housing_krook` VALUES
 (@GUID + 1,  @STEWARD,   0, 1, 1, -8864.85,   672.40,   97.99, 5.201, 300, 0, 0, 'Krook: Stormwind'),
 (@GUID + 2,  @STEWARD,   0, 1, 1, -4838.30,  -859.25,  502.00, 4.869, 300, 0, 0, 'Krook: Ironforge'),
 (@GUID + 3,  @STEWARD,   1, 1, 1, 10124.80,  2225.58, 1328.81, 2.217, 300, 0, 0, 'Krook: Darnassus'),
@@ -162,24 +174,30 @@ INSERT INTO `creature` (`guid`, `id1`, `map`, `spawnMask`, `phaseMask`, `positio
 (@GUID + 8,  @STEWARD, 530, 1, 1,  9685.48, -7366.49,   12.01, 4.485, 300, 0, 0, 'Krook: Silvermoon'),
 (@GUID + 9,  @STEWARD, 530, 1, 1, -2185.12,  5402.64,   51.97, 1.239, 300, 0, 0, 'Krook: Shattrath'),
 (@GUID + 10, @STEWARD, 571, 1, 1,  5718.80,   683.71,  645.83, 6.231, 300, 0, 0, 'Krook: Dalaran');
+SET @SQL := CONCAT('INSERT INTO `creature` (`guid`, `', @CREATURE_ENTRY, '`, `map`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, ',
+    '`position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `MovementType`, `Comment`) SELECT * FROM `housing_krook`');
+PREPARE housing_stmt FROM @SQL;
+EXECUTE housing_stmt;
+DEALLOCATE PREPARE housing_stmt;
+DROP TEMPORARY TABLE `housing_krook`;
 
--- The House Key. Its spell does nothing by itself: using the key opens the Home menu.
+-- The House Key. Its spell does nothing by itself: using the key opens the housing window
+-- (the client addon's).
 DELETE FROM `item_template` WHERE `entry` = @HOUSE_KEY;
 INSERT INTO `item_template`
 (`entry`, `class`, `subclass`, `SoundOverrideSubclass`, `name`, `displayid`, `Quality`, `Flags`, `FlagsExtra`, `BuyCount`, `BuyPrice`, `SellPrice`, `InventoryType`, `AllowableClass`, `AllowableRace`, `ItemLevel`, `RequiredLevel`, `maxcount`, `stackable`, `bonding`, `spellid_1`, `spelltrigger_1`, `spellcharges_1`, `spellcooldown_1`, `spellcategorycooldown_1`, `description`, `ScriptName`, `VerifiedBuild`) VALUES
 (@HOUSE_KEY, 15, 0, -1, 'House Key', 22071, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 18282, 0, 0, 0, -1,
- 'Right-click: go home, visit an island, decorate, your Collection.', 'item_playerhousing_key', 0);
+ 'Right-click: the housing window. Go home, decorate, your Collection.', 'item_playerhousing_key', 0);
 
--- The key's spell is caught before it casts, like the targeting circles of the pieces (whose
--- spells, one per circle size, are listed in the content file).
+-- The key's spell is caught before it casts (as are the old furnishing items' spells, listed in
+-- the content file: one used is turned into a piece in the Collection).
 DELETE FROM `spell_script_names` WHERE `ScriptName` = 'spell_playerhousing_key';
 INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 (18282, 'spell_playerhousing_key');
 
--- The blue rune on tables and shelves while decorating: click it to put something on top.
+-- The blue rune that sat on tables while decorating (click it, choose what goes on top) went
+-- with the menus: pieces go on a table where the mouse points.
 DELETE FROM `gameobject_template` WHERE `entry` = @MARKER;
-INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
-(@MARKER, 10, 7658, 'Put something here', '', '', '', 0.35, 'go_playerhousing_piece', 0);
 
 -- Edit mode: the green rune under the selected piece (scaled to the piece when spawned).
 DELETE FROM `gameobject_template` WHERE `entry` = @RING;
@@ -237,20 +255,15 @@ INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
 (@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
+-- The tour starts only for someone holding a House Key (bags or bank). Playerbots never get
+-- one, and the core has no other check a bot's quest pickup goes through.
+DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 19 AND `SourceEntry` BETWEEN 900400 AND 900404;
+INSERT INTO `conditions` (`SourceTypeOrReferenceId`, `SourceGroup`, `SourceEntry`, `SourceId`, `ElseGroup`,
+ `ConditionTypeOrReference`, `ConditionTarget`, `ConditionValue1`, `ConditionValue2`, `ConditionValue3`,
+ `NegativeCondition`, `ErrorType`, `ErrorTextId`, `ScriptName`, `Comment`) VALUES
+(19, 0, 900400, 0, 0, 2, 0, @HOUSE_KEY, 1, 1, 0, 0, 0, '', 'Home Sweet Island: needs a House Key, keeps playerbots out');
 
--- Texts heading the menus.
+-- Krook's greeting above his quests (the menus' other texts went with the menus).
 DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;
 INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
-(900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone.', '', 1),
-(900301, 'Everything you can own. Click an unlocked piece to get copies; locked ones tell you how to earn them.', '', 1),
-(900302, 'What should happen to this piece?', '', 1),
-(900303, 'Whose island would you like to visit?', '', 1),
-(900304, 'Who can visit, and what they see when they arrive.', '', 1),
-(900305, 'Pieces that came back while your bags were full wait here.', '', 1),
-(900306, 'How housing works:$B$B1. Right-click a furnishing in your bags, then click where it should go. It turns to face you.$B$B2. Click any piece to turn it, nudge it, move it or pick it up (chairs and stations: House Key, Start decorating, first). Blue runes on tables take small pieces.$B$B3. Made a mistake? House Key, Undo. Picked-up pieces go back to your bags (or House Storage when your bags are full). Nothing is ever lost.$B$B4. Your Collection grows as you explore, run dungeons and raids, earn reputation and level professions. Faction buildings need Exalted with their faction.$B$B5. Island settings: who can visit, your guest list and a greeting for visitors.$B$B6. A Mannequin (starter set) shows off armor and weapons: click it to dress it from your bags.', '', 1),
-(900307, 'What should go on top?', '', 1),
-(900308, 'Guests can always visit, whatever your privacy setting.', '', 1),
-(900309, 'Pieces near you, closest first.', '', 1),
-(900310, 'A mannequin, showing off its owner''s gear.', '', 1),
-(900311, 'A sturdy chest. Your bank is in here, and so is House Storage.', '', 1),
-(900312, 'Weather, time of day and music: everyone on your island sees and hears them.', '', 1);
+(900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone. The housing window has it all: your Collection, your island, and islands to visit.', '', 1);

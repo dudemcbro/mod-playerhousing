@@ -1,8 +1,9 @@
 // A stand-in for Wow.exe 3.3.5a (12340) to test PlayerHousing.dll without the game: it puts
 // small fakes of the functions the DLL uses at the same addresses (the Lua calls, the camera,
-// world to screen, TraceLine, the frame update) and the same globals, loads the DLL, and
-// checks what it does: the hook passes each frame on, the functions reach Lua (again after a
-// /reload), and the cursor's ray lands where it should on a flat ground.
+// world to screen, TraceLine, the frame update, the object manager) and the same globals, loads
+// the DLL, and checks what it does: the hook passes each frame on, the functions reach Lua
+// (again after a /reload), the cursor's ray lands where it should on a flat ground, a unit is
+// put where it's told, and nothing is traced or moved during a loading screen.
 //
 //     fake_game.exe              the test; prints PASS or what failed, exit code 0 when passed
 //     fake_game.exe --launched   started by PlayerHousingLauncher.exe: says whether the DLL is
@@ -225,6 +226,17 @@ namespace
         return 1;
     }
 
+    // One unit the object manager knows: the ghost of a piece.
+    constexpr uint64_t GHOST_GUID = 0xF13DBC9B0000012AULL;
+    alignas(16) uint8_t g_unit[0x800];
+    int g_objectLookups = 0;
+
+    uint8_t* __cdecl FakeObjectPtr(uint64_t guid, uint32_t typeMask)
+    {
+        ++g_objectLookups;
+        return guid == GHOST_GUID && (typeMask & 0x0008) ? g_unit : nullptr;
+    }
+
     // Where the cursor's ray meets the ground, worked out plainly from the same camera.
     Vec3 Expected(float fx, float fy)
     {
@@ -273,12 +285,14 @@ namespace
         Jump(0x0084E400, reinterpret_cast<void const*>(&FakePushCClosure));
         Jump(0x0084E600, reinterpret_cast<void const*>(&FakeRawGet));
         Jump(0x0084E900, reinterpret_cast<void const*>(&FakeSetField));
+        Jump(0x004D4DB0, reinterpret_cast<void const*>(&FakeObjectPtr));
         FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(0x00495000), 0x00D42000 - 0x00495000);
 
         // Lua's C function range: just this program's code, as in the game.
         *reinterpret_cast<uint32_t*>(0x00D415B8) = 0x00401000;
         *reinterpret_cast<uint32_t*>(0x00D415BC) = 0x00480000;
         *reinterpret_cast<char*>(0x00BD0792) = 1;  // in the world
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 0;  // no loading screen
         *reinterpret_cast<void**>(0x00B7436C) = g_worldFrame;
         *reinterpret_cast<HWND*>(0x00D41620) = nullptr;
 
@@ -385,8 +399,8 @@ namespace
             Problem("the frame update's result didn't come back through the hook");
         if (g_frames != 1)
             Problem("the frame update didn't run once");
-        if (g_globals.count("PlayerHousingDLL") != 1 || g_globals["PlayerHousingDLL"].number != 1.0)
-            Problem("PlayerHousingDLL isn't 1 after a frame");
+        if (g_globals.count("PlayerHousingDLL") != 1 || g_globals["PlayerHousingDLL"].number != 3.0)
+            Problem("PlayerHousingDLL isn't 3 after a frame");
         if (!g_stack.empty())
             Problem("the frame left things on the Lua stack");
         frame(0, 0, 0, 0);
@@ -403,6 +417,28 @@ namespace
         CheckHit(0.02f, 0.6f);
         if (g_lastFlags != 0x100111)
             Problem("TraceLine didn't get the line of sight flags");
+
+        // The ray: from the camera, length 1, through what the cursor hits there.
+        for (auto const& at : std::vector<std::pair<double, double>>{ { 0.5, 0.5 }, { 0.2, 0.3 }, { 0.85, 0.1 } })
+        {
+            std::vector<Value> ray = Call("PlayerHousing_CursorRay", { at.first, at.second });
+            std::vector<Value> hit = Call("PlayerHousing_CursorWorld", { at.first, at.second });
+            if (ray.size() != 6 || hit.size() < 3)
+            {
+                Problem("CursorRay gave " + std::to_string(ray.size()) + " values");
+                continue;
+            }
+            double ox = ray[0].number, oy = ray[1].number, oz = ray[2].number;
+            double dx = ray[3].number, dy = ray[4].number, dz = ray[5].number;
+            double length = std::sqrt(dx * dx + dy * dy + dz * dz);
+            double hx = hit[0].number - ox, hy = hit[1].number - oy, hz = hit[2].number - oz;
+            double t = hx * dx + hy * dy + hz * dz;
+            double off = std::sqrt(std::pow(hx - t * dx, 2) + std::pow(hy - t * dy, 2) + std::pow(hz - t * dz, 2));
+            if (std::fabs(length - 1.0) > 1e-3 || t <= 0.0 || off > 0.05)
+                Problem("the ray misses the hit: length " + std::to_string(length) + ", off by " + std::to_string(off));
+        }
+        if (!Call("PlayerHousing_CursorRay", { 1.5, 0.5 }).empty())
+            Problem("a ray for a cursor off the view");
 
         // Flags and reach from Lua.
         Call("PlayerHousing_CursorWorld", { 0.5, 0.5, double(0x100000), 150.0 });
@@ -423,6 +459,45 @@ namespace
         if (!Call("PlayerHousing_CursorWorld", { 0.5, 0.5 }).empty() || g_traces != before)
             Problem("out of the world, it still traced");
         *reinterpret_cast<char*>(0x00BD0792) = 1;
+        // A loading screen: nothing, and no tracing.
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 1;
+        before = g_traces;
+        if (!Call("PlayerHousing_CursorWorld", { 0.5, 0.5 }).empty() || g_traces != before)
+            Problem("during a loading screen, it still traced");
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 0;
+
+        // A unit put where it's told: its position and facing, where the game keeps them.
+        double high = double(uint32_t(GHOST_GUID >> 32));
+        double low = double(uint32_t(GHOST_GUID & 0xFFFFFFFF));
+        std::vector<Value> placed = Call("PlayerHousing_PlaceUnit", { high, low, 16230.5, 16301.25, 12.75, 7.0 });
+        float where[4];
+        std::memcpy(where, g_unit + 0x798, 12);
+        std::memcpy(where + 3, g_unit + 0x7A8, 4);
+        if (placed.size() != 1 || placed[0].number != 1.0)
+            Problem("PlaceUnit didn't say it placed the unit");
+        if (std::fabs(where[0] - 16230.5f) > 0.001f || std::fabs(where[1] - 16301.25f) > 0.001f || std::fabs(where[2] - 12.75f) > 0.001f)
+            Problem("PlaceUnit put the unit somewhere else");
+        if (std::fabs(where[3] - (7.0f - 6.2831853f)) > 0.001f)
+            Problem("PlaceUnit didn't keep the facing within a turn");
+        // Someone it doesn't know, nonsense, or a loading screen: nothing, and nothing moves.
+        std::memset(g_unit, 0, sizeof(g_unit));
+        if (!Call("PlayerHousing_PlaceUnit", { high, low + 1.0, 1.0, 2.0, 3.0, 0.0 }).empty())
+            Problem("PlaceUnit placed a unit that isn't there");
+        if (!Call("PlayerHousing_PlaceUnit", { high, low, 1e9, 2.0, 3.0, 0.0 }).empty())
+            Problem("PlaceUnit took a spot off any map");
+        if (!Call("PlayerHousing_PlaceUnit", { high, low, 1.0, 2.0 }).empty())
+            Problem("PlaceUnit took too few arguments");
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 1;
+        int lookups = g_objectLookups;
+        if (!Call("PlayerHousing_PlaceUnit", { high, low, 1.0, 2.0, 3.0, 0.0 }).empty() || g_objectLookups != lookups)
+            Problem("PlaceUnit looked for a unit during a loading screen");
+        *reinterpret_cast<uint32_t*>(0x00B6AA38) = 0;
+        for (uint8_t b : g_unit)
+            if (b != 0)
+            {
+                Problem("a refused PlaceUnit still wrote to the unit");
+                break;
+            }
 
         // A /reload: a new Lua without the functions; the next frame adds them again.
         g_globals.clear();

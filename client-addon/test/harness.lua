@@ -1,6 +1,6 @@
 -- Runs the addon outside the game against a few stubbed WoW 3.3.5 API calls and checks what
--- it does with state messages, bag contents, clicks and the mouse wheel. The files go in the
--- order of PlayerHousing.toc:
+-- it does with state messages, the server's lists, clicks and the mouse wheel. The files go in
+-- the order of PlayerHousing.toc:
 --
 --   lua5.1 client-addon/test/harness.lua $(sed -n 's|^\([A-Za-z]*\.lua\)$|client-addon/PlayerHousing/\1|p' client-addon/PlayerHousing/PlayerHousing.toc)
 --
@@ -48,6 +48,7 @@ function Widget:CreateTexture(name)
   return t
 end
 function Widget:SetWidth(w) self.width = w end
+function Widget:GetWidth() return self.width or 0 end
 function Widget:GetPoint() return "CENTER", nil, "CENTER", 10, 20 end
 function Widget:Enable() self.enabled = true end
 function Widget:SetModel(path) self.modelPath = path end
@@ -108,6 +109,8 @@ function GetItemCount(id) return itemCounts[id] or 0 end
 function GetItemInfo(id) return nil end
 function GetItemIcon(id) return nil end
 function GetCoinTextureString(copper) return copper .. "c" end
+lastMenu = nil
+function EasyMenu(menu) lastMenu = menu end
 DELETE = "Delete"
 local now = 0
 function GetTime() return now end
@@ -123,6 +126,8 @@ function WorldFrame:GetEffectiveScale() return 1 end
 local mouseFocus, mouseButtons, addonSent = nil, {}, {}
 function GetMouseFocus() return mouseFocus end
 function IsMouselooking() return false end
+local facing = 0
+function GetPlayerFacing() return facing end
 function IsMouseButtonDown(button) return mouseButtons[button] or false end
 function SendAddonMessage(prefix, message, channel, target)
   addonSent[#addonSent + 1] = { prefix, message, channel, target }
@@ -180,13 +185,23 @@ PlayerHousingFrame.shown = false
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t12\tBroken Cart\t5\t200\t1\t10\tplaced Barrel\tKrookowner\t\t1", "WHISPER", "Krookowner")
 assert(PlayerHousingFrame:IsShown(), "window opened on arrival")
 assert(PlayerHousingDB.known == true)
-assert(PlayerHousingCollectionPanel:IsShown() and not PlayerHousingTabBags, "the Collection is the first tab; no Bags tab")
+assert(PlayerHousingCollectionPanel:IsShown() and not PlayerHousingTabBags and not PlayerHousingTabStorage, "the Collection is the first tab; no Bags or Storage tab")
+assert(sent[#sent] == ".house data collection", "the Collection asks for its list: " .. tostring(sent[#sent]))
 local chairSlot, barrelPieceSlot, cartSlot = PlayerHousingCollectionSlot1, PlayerHousingCollectionSlot11, PlayerHousingCollectionSlot28
 assert(chairSlot.info[1] == 901105 and barrelPieceSlot.info[1] == 902101 and cartSlot.info[1] == 902200, "the Collection's order")
-assert(chairSlot.location == "0 1" and chairSlot.count.text == 5, "the chairs in the bags, for dragging onto an action bar")
-assert(barrelPieceSlot.location == "1 4" and cartSlot.location == "0 2", "the barrel and the cart too")
-assert(PlayerHousingCollectionSlot2.location == nil and not chairSlot.protected, "none of the table; plain buttons, fine in combat")
-assert(PlayerHousingSelected:IsShown(), "selected panel shown")
+assert(chairSlot.count.text == "", "no counts before the server's list (pieces never come from the bags)")
+-- The server's counts: what the player owns to place. The bags don't count (the House Key's there).
+local function list(kind, rows, arg)
+  fire("CHAT_MSG_ADDON", "HOUSING", "begin\t" .. kind .. (arg and ("\t" .. arg) or ""), "WHISPER", "Krookowner")
+  for _, row in ipairs(rows) do
+    fire("CHAT_MSG_ADDON", "HOUSING", "row\t" .. kind .. "\t" .. row, "WHISPER", "Krookowner")
+  end
+  fire("CHAT_MSG_ADDON", "HOUSING", "end\t" .. kind .. (arg and ("\t" .. arg) or ""), "WHISPER", "Krookowner")
+end
+list("collection", { "settings\t0\t0\t200\t10\t0", "unlocked\t901105-901106,902101,902200", "storage\t901105:5,902101:1,902200:1", "placed\t901105:1" })
+assert(chairSlot.count.text == 5 and barrelPieceSlot.count.text == 1 and cartSlot.count.text == 1, "the counts: " .. tostring(chairSlot.count.text))
+assert(PlayerHousingCollectionSlot2.count.text == "" and not chairSlot.protected, "none of the table; plain buttons, fine in combat")
+assert(not PlayerHousingSelected:IsShown(), "nothing held: no held panel (a piece being selected is no panel of its own)")
 local function SEL(text)
   for _, f in ipairs(frames) do if f.parent == PlayerHousingSelected and f.text == text then return f end end
   error("no selected-panel button " .. text)
@@ -254,14 +269,15 @@ cartSlot.scripts.OnLeave(cartSlot)
 chairSlot.scripts.OnEnter(chairSlot)
 assert(not PlayerHousingPreviewPlan:IsShown() and PlayerHousingPreviewModel:IsShown(), "model shown, no floor plan")
 chairSlot.scripts.OnLeave(chairSlot)
-assert(PlayerHousingFrame.height == 568, PlayerHousingFrame.height)
+assert(PlayerHousingFrame.height == 400, PlayerHousingFrame.height)
 
--- In my bags: only what's there to place.
-PlayerHousingInBags.checked = true
-PlayerHousingInBags.scripts.OnClick(PlayerHousingInBags)
-assert(PlayerHousingCollectionSlot1.info[1] == 901105 and not PlayerHousingCollectionSlot2:IsShown(), "only the chair is counted in the bags")
-PlayerHousingInBags.checked = false
-PlayerHousingInBags.scripts.OnClick(PlayerHousingInBags)
+-- Owned: only what there's one of to place.
+PlayerHousingOwnedOnly.checked = true
+PlayerHousingOwnedOnly.scripts.OnClick(PlayerHousingOwnedOnly)
+assert(PlayerHousingCollectionSlot1.info[1] == 901105 and PlayerHousingCollectionSlot2.info[1] == 902101 and PlayerHousingCollectionSlot3.info[1] == 902200
+  and not PlayerHousingCollectionSlot4:IsShown(), "only the owned ones")
+PlayerHousingOwnedOnly.checked = false
+PlayerHousingOwnedOnly.scripts.OnClick(PlayerHousingOwnedOnly)
 -- Sorting: by name puts the Barrel before the chair.
 PlayerHousingCollectionSort.scripts.OnClick()
 assert(PlayerHousingCollectionSort.text == "Sort: name" and PlayerHousingCollectionSlot1.info[2] < "Westfall", PlayerHousingCollectionSlot1.info[2])
@@ -270,149 +286,97 @@ PlayerHousingCollectionSort.scripts.OnClick()
 PlayerHousingCollectionSort.scripts.OnClick()
 assert(PlayerHousingCollectionSort.text == "Sort: collection" and PlayerHousingCollectionSlot1.info[1] == 901105)
 
--- Toolbar buttons send .house commands.
+-- Toolbar buttons send .house commands: Go home (Leave here), Undo, Redo, Help. No edit mode.
 local function last() return sent[#sent] end
 PlayerHousingButton1.scripts.OnClick(); assert(last() == ".house leave", last())
-PlayerHousingButton2.scripts.OnClick(); assert(last() == ".house edit")
-PlayerHousingButton3.scripts.OnClick(); assert(last() == ".house undo")
-PlayerHousingButton5.scripts.OnClick(); assert(last() == ".house", last())
-assert(PlayerHousingButton2.text == "Edit", "edit button while decorating from the menus")
-assert(PlayerHousingButton4.enabled == false, "nothing to redo")
-
+PlayerHousingButton2.scripts.OnClick(); assert(last() == ".house undo")
+local printedBefore = #printed
+PlayerHousingButton4.scripts.OnClick(); assert(#printed > printedBefore and last() == ".house undo", "Help prints how it works, sends nothing")
+assert(PlayerHousingButton3.enabled == false, "nothing to redo")
+assert(PlayerHousingButton2.text == "Undo" and PlayerHousingButton4.text == "Help", "no Edit button")
 -- Undo tooltip reads the label.
-PlayerHousingButton3.scripts.OnEnter(PlayerHousingButton3)
+PlayerHousingButton2.scripts.OnEnter(PlayerHousingButton2)
+assert(not PlayerHousingFrame.scripts.OnMouseWheel, "the wheel over the window doesn't turn pieces")
 
--- Turning: wheel notches add up into one command.
+-- Holding a piece (fields 21 to 23; 26 to 30: size, tilt, count and its front): the held panel
+-- says what it is, and its keys come on: the wheel turns it, Shift+wheel raises it, Escape
+-- puts it back. Nothing else is bound.
 local OnUpdate = driver.scripts.OnUpdate
-OnUpdate(driver, 1)
-local before = #sent
-PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
-PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
-PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, -1)
-OnUpdate(driver, 0.02)
-assert(#sent == before + 1 and last() == ".house shift 0.00 0.00 0.00 15", "first turn goes at once: " .. last())
-PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
-PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
-OnUpdate(driver, 0.1)
-assert(#sent == before + 1, "throttled")
-OnUpdate(driver, 0.3)
-assert(last() == ".house shift 0.00 0.00 0.00 30", last())
-SEL("Turn right").scripts.OnClick()  -- Turn right
-OnUpdate(driver, 0.5)
-assert(last() == ".house shift 0.00 0.00 0.00 -15", last())
-IsControlKeyDown = function() return true end
-PlayerHousingFrame.scripts.OnMouseWheel(PlayerHousingFrame, 1)
-OnUpdate(driver, 0.5)
-assert(last() == ".house shift 0.00 0.00 0.10 0", last())
-SEL("Turn left").scripts.OnClick()  -- Ctrl: Turn left 90
-OnUpdate(driver, 0.5)
-assert(last() == ".house shift 0.00 0.00 0.00 90", last())
-IsControlKeyDown = function() return false end
-IsShiftKeyDown = function() return true end
-SEL("Turn right").scripts.OnClick()  -- Shift: Turn right 5
-OnUpdate(driver, 0.5)
-assert(last() == ".house shift 0.00 0.00 0.00 -5", last())
-SEL("Bigger").scripts.OnClick(); assert(last() == ".house size normal", last())
-SEL("Tilt L").scripts.OnClick(); assert(last() == ".house tilt straight", last())
-IsShiftKeyDown = function() return false end
-SEL("Bigger").scripts.OnClick(); assert(last() == ".house size bigger", last())
-SEL("Smaller").scripts.OnClick(); assert(last() == ".house size smaller", last())
-SEL("Tilt fwd").scripts.OnClick(); assert(last() == ".house tilt forward", last())
-SEL("Tilt R").scripts.OnClick(); assert(last() == ".house tilt right", last())
--- Nudges add up into one quiet move, like the keys.
-SEL("Fwd").scripts.OnClick(); SEL("Fwd").scripts.OnClick(); SEL("Up").scripts.OnClick()
-now = now + 1; OnUpdate(driver, 1)
-assert(last() == ".house shift 0.50 0.00 0.10 0", last())
-
--- Buildings pick up straight away too (Undo puts them back): no question first.
-local popupCount = #popups
-SEL("Pick up").scripts.OnClick(); assert(last() == ".house pickup 12", last())
-SEL("Pick up all").scripts.OnClick(); assert(last() == ".house pickup 12 inside", last())
-assert(#popups == popupCount, "no popup")
-
--- A furnishing picks up straight away.
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicked up Broken Cart\tKrookowner\tplaced Barrel\t0", "WHISPER", "Krookowner")
-assert(PlayerHousingButton4.enabled == true, "redo available")
-SEL("Pick up").scripts.OnClick(); assert(last() == ".house pickup 13")
-
--- Moving: the piece follows you as a ghost, set down with G (below).
-SEL("Move").scripts.OnClick(); assert(last() == ".house ghost move", last())
-assert(not PlayerHousingSpotButton:IsShown(), "no spot button: no circle")
-
--- Setting down a saved set uses the targeting circle: the server hands over a Move a Piece
--- item and says which; a button uses it. The item never shows in the grid.
-bags[0][6] = {901193, 1}
-fire("BAG_UPDATE")
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tpicked up Broken Cart\tKrookowner\t\t0\t901193", "WHISPER", "Krookowner")
-assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "0 6", "spot button uses the mover")
-assert(PlayerHousingSpotButton.attrs.type == "item")
--- Set down: the item is used up and the server says so.
-bags[0][6] = nil
-fire("BAG_UPDATE")
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
-assert(not PlayerHousingSpotButton:IsShown(), "spot button gone after the move")
--- The item can arrive after the state: the next bag scan brings the button.
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t901190", "WHISPER", "Krookowner")
-assert(not PlayerHousingSpotButton:IsShown())
-bags[1][9] = {901190, 1}
-fire("BAG_UPDATE")
-driver.scripts.OnUpdate(driver, 1)
-assert(PlayerHousingSpotButton:IsShown() and PlayerHousingSpotButton.attrs.item == "1 9", "spot button after the bag update")
-bags[1][9] = nil
-fire("BAG_UPDATE")
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
-
--- Another like this: the server sends a ghost of a new one after you.
-SEL("Another").scripts.OnClick(); assert(last() == ".house another", last())
-
--- A ghost following you (fields 21 to 23): the same keys as edit mode drive it, even outside
--- edit mode, and the banner says what they do.
-local GHOST = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t902101\tnew\t1"
-fire("CHAT_MSG_ADDON", "HOUSING", GHOST, "WHISPER", "Krookowner")
-assert(overrides.G == "PlayerHousingEditFollow" and overrides["SHIFT-G"] == "PlayerHousingEditFollow" and overrides.ESCAPE == "PlayerHousingEditDone",
-  "ghost keys bound outside edit mode")
-assert(PlayerHousingEditHud:IsShown() and PlayerHousingEditHudTitle.text == "Placing" and PlayerHousingEditHudName.text == "Barrel",
-  tostring(PlayerHousingEditHudTitle.text) .. " " .. tostring(PlayerHousingEditHudName.text))
-assert(PlayerHousingEditHudSetDown:IsShown() and PlayerHousingEditHudAnother:IsShown() and PlayerHousingEditHudCancel:IsShown()
-  and not PlayerHousingEditHudRow:IsShown() and not PlayerHousingEditHudUndo:IsShown(), "the ghost's buttons, not edit mode's")
--- Steps add up and go out together, a few times a second, like edit mode's.
 local function step() now = now + 1; OnUpdate(driver, 1) end
-PlayerHousingEditForward.scripts.OnClick(PlayerHousingEditForward, "LeftButton", true)
-PlayerHousingEditForward.scripts.OnClick(PlayerHousingEditForward, "LeftButton", false)
-step()
-assert(last() == ".house ghost adjust 0.25 0.00 0.00 0", last())
+local GHOST = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t902101\tnew\t1\t\t0\t100\t0\t0\t1"
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST, "WHISPER", "Krookowner")
+assert(PlayerHousingSelected:IsShown() and PlayerHousingFrame.height == 550, "held panel: " .. tostring(PlayerHousingFrame.height))
+assert(PlayerHousingHeldText.text:find("Placing:") and PlayerHousingHeldText.text:find("Barrel"), PlayerHousingHeldText.text)
+assert(PlayerHousingHeldShape.text == "Size 100%   Front points away from you", PlayerHousingHeldShape.text)
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t90", "WHISPER", "Krookowner")
+assert(PlayerHousingHeldShape.text:find("Front points to your left"), PlayerHousingHeldShape.text)
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST, "WHISPER", "Krookowner")
+assert(not overrides.MOUSEWHEELUP and not overrides.MOUSEWHEELDOWN, "the plain wheel zooms the camera as ever")
+assert(overrides["SHIFT-MOUSEWHEELUP"] == "PlayerHousingEditWheelUp" and overrides["CTRL-MOUSEWHEELDOWN"] == "PlayerHousingEditRaiseWheelDown"
+  and overrides.ESCAPE == "PlayerHousingEditCancel", "held keys bound")
+assert(not overrides.TAB and not overrides.DELETE and not overrides.R and not overrides["CTRL-Z"], "no edit-mode keys")
+-- No DLL: it follows you, so the arrows and G drive it too.
+assert(overrides.G == "PlayerHousingEditSetDown" and overrides.UP == "PlayerHousingEditForward", "follow keys without the mouse")
+-- Binding names keep the game's modifier order (ALT-CTRL-SHIFT-), or they never fire.
+for key in pairs(overrides) do
+  assert(not key:find("CTRL%-ALT") and not key:find("SHIFT%-ALT") and not key:find("SHIFT%-CTRL"), "modifier order: " .. key)
+end
+-- No buttons change it: the panel says which wheel does what.
+for _, f in ipairs(frames) do
+  assert(not (f.parent == PlayerHousingSelected and f:IsShown() and f.template == "UIPanelButtonTemplate"), "a button on the held panel: " .. tostring(f.text))
+end
+assert(PlayerHousingHeldKeys.text:find("Alt%+wheel|r  tilt forward") and PlayerHousingHeldKeys.text:find("Ctrl%+Alt%+wheel|r  size")
+  and PlayerHousingHeldKeys.text:find("|cffffd100Wheel|r  zoom")
+  and PlayerHousingHeldHelp.text:find("Middle%-click|r  stand it straight"), PlayerHousingHeldKeys.text)
+assert(overrides["ALT-MOUSEWHEELUP"] == "PlayerHousingEditTiltForward" and overrides["ALT-SHIFT-MOUSEWHEELDOWN"] == "PlayerHousingEditTiltLeft"
+  and overrides["ALT-CTRL-MOUSEWHEELUP"] == "PlayerHousingEditBigger" and overrides["CTRL-SHIFT-MOUSEWHEELDOWN"] == "PlayerHousingEditFineRight"
+  and overrides.BUTTON3 == "PlayerHousingEditStraight" and overrides["SHIFT-BUTTON3"] == "PlayerHousingEditGrid"
+  and overrides["CTRL-BUTTON3"] == "PlayerHousingEditNormalSize", "the wheel's combinations bound")
+-- The wheel and steps add up into one command, a few times a second.
+PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
+PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
 PlayerHousingEditLeft.scripts.OnClick(PlayerHousingEditLeft, "LeftButton", true)
 PlayerHousingEditLeft.scripts.OnClick(PlayerHousingEditLeft, "LeftButton", false)
-PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
-PlayerHousingEditWheelUp.scripts.OnClick(PlayerHousingEditWheelUp, "LeftButton", true)
 step()
 assert(last() == ".house ghost adjust 0.00 0.25 0.00 30", "two wheel notches and a step, in one: " .. last())
 PlayerHousingEditRaiseWheelDown.scripts.OnClick(PlayerHousingEditRaiseWheelDown, "LeftButton", true)
 step()
 assert(last() == ".house ghost adjust 0.00 0.00 -0.10 0", last())
-PlayerHousingEditPickUp.scripts.OnClick(PlayerHousingEditPickUp, "LeftButton", true)
-step()
-assert(last() == ".house ghost adjust 0.00 0.00 -0.10 0", "Delete waits while a piece follows you: " .. last())
-PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
+PlayerHousingEditSetDown.scripts.OnClick(PlayerHousingEditSetDown, "LeftButton", true)
 assert(last() == ".house ghost place", last())
 IsShiftKeyDown = function() return true end
-PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
+PlayerHousingEditSetDown.scripts.OnClick(PlayerHousingEditSetDown, "LeftButton", true)
 assert(last() == ".house ghost place another", last())
 IsShiftKeyDown = function() return false end
-PlayerHousingEditDone.scripts.OnClick(PlayerHousingEditDone, "LeftButton", true)
+PlayerHousingEditCancel.scripts.OnClick(PlayerHousingEditCancel, "LeftButton", true)
 assert(last() == ".house ghost cancel", last())
-PlayerHousingEditHudSetDown.scripts.OnClick(PlayerHousingEditHudSetDown)
-assert(last() == ".house ghost place", last())
--- Moving pieces: no "and another".
-fire("CHAT_MSG_ADDON", "HOUSING", GHOST:gsub("\tnew\t", "\tmove\t"), "WHISPER", "Krookowner")
-assert(PlayerHousingEditHudTitle.text == "Moving" and not PlayerHousingEditHudAnother:IsShown(), "moving: no another")
-IsShiftKeyDown = function() return true end
-PlayerHousingEditFollow.scripts.OnClick(PlayerHousingEditFollow, "LeftButton", true)
-assert(last() == ".house ghost place", "Shift+G sets a moved piece down: " .. last())
-IsShiftKeyDown = function() return false end
--- Set down: the keys and the banner go.
+-- Size, tilt and fine turns are the wheel with modifiers; the middle button straightens, sets
+-- the normal size, or steps the grid.
+local function press(name) _G[name].scripts.OnClick(_G[name], "LeftButton", true) end
+press("PlayerHousingEditTiltForward"); assert(last() == ".house tilt forward 15", last())
+press("PlayerHousingEditTiltBack"); assert(last() == ".house tilt back 15", last())
+press("PlayerHousingEditTiltRight"); assert(last() == ".house tilt right 15", last())
+press("PlayerHousingEditTiltLeft"); assert(last() == ".house tilt left 15", last())
+press("PlayerHousingEditBigger"); assert(last() == ".house size bigger", last())
+press("PlayerHousingEditSmaller"); assert(last() == ".house size smaller", last())
+press("PlayerHousingEditStraight"); assert(last() == ".house tilt straight", last())
+press("PlayerHousingEditNormalSize"); assert(last() == ".house size normal", last())
+press("PlayerHousingEditGrid"); assert(last() == ".house grid 0.25", last())
+press("PlayerHousingEditFineLeft"); press("PlayerHousingEditFineLeft"); step()
+assert(last() == ".house ghost adjust 0.00 0.00 0.00 2", "fine turns: " .. last())
+-- The server says how it is sized and tilted; tilted furniture is shown as its real object.
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST:gsub("\t100\t0\t0\t1$", "\t120\t180\t0\t1"), "WHISPER", "Krookowner")
+assert(PlayerHousingHeldShape.text:find("Size 120%%") and PlayerHousingHeldShape.text:find("180"), PlayerHousingHeldShape.text)
+-- Moving a mannequin: Dress (its clothes aren't placing), for one piece only.
+local MOVING = "state\t1\t1\t13\tMannequin\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t902101\tmove\t1\t\t1\t100\t0\t0\t1"
+fire("CHAT_MSG_ADDON", "HOUSING", MOVING, "WHISPER", "Krookowner")
+assert(PlayerHousingHeldText.text:find("Moving:"), PlayerHousingHeldText.text)
+assert(SEL("Dress..."):IsShown(), "a mannequin: Dress")
+fire("CHAT_MSG_ADDON", "HOUSING", MOVING:gsub("\t1$", "\t3"), "WHISPER", "Krookowner")
+assert(PlayerHousingHeldText.text:find("and 2 more") and not SEL("Dress..."):IsShown(), "several: no dress")
+-- Set down: the keys and the panel go.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t0\t\t1", "WHISPER", "Krookowner")
-assert(next(overrides) == nil and not PlayerHousingEditHud:IsShown(), "keys and banner gone after the ghost")
+assert(next(overrides) == nil and not PlayerHousingSelected:IsShown(), "keys and panel gone after the ghost")
 
 -- With PlayerHousing.dll: the piece follows the mouse over the world (points go quietly over
 -- AzerothCore's addon command channel), and a click on the world sets it down.
@@ -427,16 +391,23 @@ for _, command in ipairs(sent) do
   assert(not command:find("mouse"), "no answer from the channel yet: no mouse: " .. command)
 end
 fire("CHAT_MSG_ADDON", "AzerothCore", "a0000", "WHISPER", "Krookowner")
-assert(sent[#sent - 1] == ".house addon 1 1 mouse" and last() == ".house state", "the channel answers: the server hears about the mouse: "
+assert(sent[#sent - 1] == ".house addon 2 mouse" and last() == ".house state", "the channel answers: the server hears about the mouse: "
   .. tostring(sent[#sent - 1]) .. " " .. last())
 assert(addonSent[#addonSent][2]:match("^i%d%d%d%dhouse state$"), "and every command goes over the channel from now on, not as chat")
 wipe(addonSent)
 fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t", "WHISPER", "Krookowner")
-assert(PlayerHousingEditHudHelp.text:find("follows your mouse"), PlayerHousingEditHudHelp.text)
+assert(PlayerHousingHeldHelp.text:find("Left%-click|r  set it down") and PlayerHousingHeldHelp.text:find("Shift%+right%-click|r  put it away"), PlayerHousingHeldHelp.text)
+assert(not overrides.G and not overrides.UP, "with the mouse: no arrows or G")
 local mouse = PlayerHousingMouse
 local function tick(seconds) now = now + seconds; mouse.scripts.OnUpdate(mouse, seconds) end
 local function lastAddon() return addonSent[#addonSent] end
+-- Nothing is traced before the world is there (a loading screen).
 mouseFocus = WorldFrame
+cursorX, cursorY = 250, 600
+asked = nil
+tick(0.2)
+assert(asked == nil and #addonSent == 0, "no tracing before entering the world")
+mouse.scripts.OnEvent(mouse, "PLAYER_ENTERING_WORLD")
 cursorX, cursorY = 250, 600
 tick(0.1)
 assert(#addonSent == 1 and lastAddon()[1] == "AzerothCore" and lastAddon()[3] == "WHISPER" and lastAddon()[4] == "Krookowner"
@@ -461,7 +432,34 @@ mouseFocus = WorldFrame
 mouseButtons.RightButton = true
 tick(0.2)
 assert(#addonSent == 2, "right button held: the camera turns, the piece waits")
+facing = 0.5
+tick(0.1)
 mouseButtons.RightButton = nil
+tick(0.01)
+assert(last() ~= ".house ghost cancel", "a right-drag that turned the player isn't a click")
+-- A right-click on the world: never mind.
+mouseButtons.RightButton = true
+tick(0.1)
+mouseButtons.RightButton = nil
+tick(0.01)
+assert(last() == ".house ghost cancel", "right-click puts it back: " .. last())
+-- Shift+right-click: a moved piece goes away to the Collection.
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST:gsub("\tnew\t", "\tmove\t"), "WHISPER", "Krookowner")
+IsShiftKeyDown = function() return true end
+mouseButtons.RightButton = true
+tick(0.1)
+mouseButtons.RightButton = nil
+tick(0.01)
+IsShiftKeyDown = function() return false end
+assert(sent[#sent - 1] == ".house ghost cancel" and last() == ".house pickup 13", "put away: " .. sent[#sent - 1] .. " " .. last())
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST, "WHISPER", "Krookowner")
+-- A long right press (looking around) isn't one.
+mouseButtons.RightButton = true
+tick(0.1); tick(0.5)
+mouseButtons.RightButton = nil
+local cancels = #sent
+tick(0.01)
+assert(#sent == cancels, "a long right press isn't a click")
 -- A click on the world: sent there, and set down.
 local before = #sent
 mouseButtons.LeftButton = true
@@ -469,7 +467,6 @@ tick(0.1)
 mouseButtons.LeftButton = nil
 tick(0.1)
 assert(#sent == before + 1 and last() == ".house ghost place at 16215.00 16255.25 12.00 0.00 0.00 1.00", "the click carries its point: " .. last())
-assert(PlayerHousingEditHudLast.text:find("Click"), tostring(PlayerHousingEditHudLast.text))
 IsShiftKeyDown = function() return true end
 mouseButtons.LeftButton = true
 tick(0.1)
@@ -507,9 +504,9 @@ tick(0.1)
 mouseButtons.LeftButton = nil
 tick(0.1)
 assert(#sent == before, "a click on the window isn't one on the world")
--- The server says why it stopped following (off the island): the banner shows it.
-fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\tThat spot is off your island.", "WHISPER", "Krookowner")
-assert(PlayerHousingEditHudLast.text:find("off your island"), tostring(PlayerHousingEditHudLast.text))
+-- The server says why it stopped following (off the island): the held panel shows it.
+fire("CHAT_MSG_ADDON", "HOUSING", (GHOST:gsub("\tnew\t1\t\t", "\tnew\t1\tThat spot is off your island.\t")), "WHISPER", "Krookowner")
+assert(PlayerHousingHeldShape.text:find("off your island"), tostring(PlayerHousingHeldShape.text))
 -- Moving: Shift-click just sets it down.
 fire("CHAT_MSG_ADDON", "HOUSING", GHOST:gsub("\tnew\t", "\tmove\t") .. "\t", "WHISPER", "Krookowner")
 mouseFocus = WorldFrame
@@ -526,138 +523,129 @@ local sentBefore = #addonSent
 pointed[1] = 16240
 tick(0.5)
 assert(#addonSent == sentBefore, "no ghost, no points")
+
+-- Version 2 of the DLL moves the ghost on the screen itself. /housing localghost turns that
+-- off and on; the server hears either way.
+local placedUnits = {}
+PlayerHousing_PlaceUnit = function(hi, lo, x, y, z, o) placedUnits[#placedUnits + 1] = { hi, lo, x, y, z, o }; return 1 end
+SlashCmdList.PLAYERHOUSING("localghost")
+assert(last() == ".house addon 2 mouse" and PlayerHousingDB.localGhosts == false, "turned off: " .. last())
+SlashCmdList.PLAYERHOUSING("localghost")
+assert(last() == ".house addon 2 mouse local" and PlayerHousingDB.localGhosts == true, "and on: " .. last())
+-- The server says which creatures make up the ghost and where its rules put it.
+fire("CHAT_MSG_ADDON", "HOUSING", "gpiece\t1\t2\tF130DBC9\tB000012A\t0.000\t0.000\t0.000\t0.0000", "WHISPER", "Krookowner")
+fire("CHAT_MSG_ADDON", "HOUSING", "gpiece\t2\t2\tF130DBC9\tB000012B\t1.000\t0.000\t0.500\t1.5708", "WHISPER", "Krookowner")
+fire("CHAT_MSG_ADDON", "HOUSING", "gpose\t16240.000\t16300.000\t12.000\t0.5000\t0.250\t0.5000\t0.0000\t0.100\t0", "WHISPER", "Krookowner")
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t", "WHISPER", "Krookowner")
+-- The mouse moving: under it, every frame, by the server's rules (lift and the fix it made,
+-- the turn on the floor), each piece where it sits from the lead.
+mouseFocus = WorldFrame
+pointed = { 16210.5, 16255.25, 12, 0, 0, 1 }
+wipe(placedUnits)
+tick(0.016)
+pointed[1] = 16211.5
+tick(0.016)
+local function unitAt(index) return placedUnits[#placedUnits - 2 + index] end
+local lead, second = unitAt(1), unitAt(2)
+assert(lead and lead[1] == 0xF130DBC9 and lead[2] == 0xB000012A, "the lead's guid halves")
+assert(near(lead[3], 16211.5) and near(lead[4], 16255.25) and math.abs(lead[5] - 12.35) < 1e-4 and near(lead[6], 0.5),
+  ("the lead under the mouse, lifted: %s %s %s %s"):format(lead[3], lead[4], lead[5], lead[6]))
+assert(second[2] == 0xB000012B and math.abs(second[3] - (16211.5 + math.cos(0.5))) < 1e-4 and math.abs(second[4] - (16255.25 + math.sin(0.5))) < 1e-4
+  and math.abs(second[5] - 12.85) < 1e-4 and math.abs(second[6] - (0.5 + 1.5708)) < 1e-4, "the second piece turned with the lead")
+-- On the grid (field 18: 1 yard).
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t1\t0\t1\t902101\tnew\t1\t",
+  "WHISPER", "Krookowner")
+pointed[1] = 16212.4
+tick(0.016)
+assert(near(unitAt(1)[3], 16212) and near(unitAt(1)[4], 16255), "snapped to the 1 yard grid: " .. unitAt(1)[3] .. " " .. unitAt(1)[4])
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST .. "\t", "WHISPER", "Krookowner")
+-- On a wall: facing out from it, plus the turn the player gave it there; no grid.
+pointed = { 16213.3, 16255.25, 13, 1, 0, 0 }
+tick(0.016)
+assert(near(unitAt(1)[6], 0) and near(unitAt(1)[3], 16213.3), "facing out from the wall: " .. unitAt(1)[6])
+-- Resting: exactly where the server has it.
+pointed = { 16213.3, 16255.25, 12, 0, 0, 1 }
+tick(0.016)
+tick(0.5)
+assert(near(unitAt(1)[3], 16240) and near(unitAt(1)[4], 16300) and near(unitAt(1)[5], 12) and near(unitAt(1)[6], 0.5), "resting: the server's spot")
+-- The mouse on the held piece itself (a tilted one is the real object): not that point, which
+-- would pull it toward the camera, but where the mouse's ray meets the floor it stands on
+-- (the pose's height less its lift and the server's fix: 12 - 0.25 - 0.1).
+local floorZ = 11.65
+local ox, oy, oz = 16240, 16290, 20
+local tx, ty = 16241, 16301
+local dx, dy, dz = tx - ox, ty - oy, floorZ - oz
+local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+PlayerHousing_CursorRay = function() return ox, oy, oz, dx / len, dy / len, dz / len end
+pointed = { 16240.2, 16299.6, 12.6, 0, -1, 0 }   -- on the barrel's near side
+local sentBefore = #addonSent
+tick(0.2)
+local sentPoint = addonSent[#addonSent] and addonSent[#addonSent][2] or ""
+local gx, gy, gz = sentPoint:match("ghost at (%S+) (%S+) (%S+)")
+assert(#addonSent > sentBefore and math.abs(tonumber(gx) - tx) < 0.02 and math.abs(tonumber(gy) - ty) < 0.02 and math.abs(tonumber(gz) - floorZ) < 0.02,
+  "a point on the held piece goes to the floor under the mouse: " .. sentPoint)
+-- Without the ray (an older DLL): such a point isn't used at all.
+PlayerHousing_CursorRay = nil
+pointed = { 16240.1, 16299.9, 12.7, 0, -1, 0 }
+sentBefore = #addonSent
+tick(0.2)
+assert(#addonSent == sentBefore, "no ray: a point on the held piece is left out")
+-- A loading screen: nothing traced or moved, and the ghost is forgotten until the server says again.
+mouse.scripts.OnEvent(mouse, "PLAYER_LEAVING_WORLD")
+local placedBefore = #placedUnits
+asked = nil
+tick(0.2)
+assert(#placedUnits == placedBefore and asked == nil, "nothing during a loading screen")
+mouse.scripts.OnEvent(mouse, "PLAYER_ENTERING_WORLD")
+tick(0.2)
+assert(#placedUnits == placedBefore, "forgotten: the server's next word brings it back")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t0\t\t1\t", "WHISPER", "Krookowner")
+PlayerHousing_PlaceUnit = nil
 PlayerHousing_CursorWorld = nil
 mouseFocus = nil
 
--- Edit mode: the server says so, and the keys come on.
+-- Without the DLL a held piece follows you: a held arrow repeats after a moment, and stops on
+-- release; a key left down (the release never came) gives up after a few seconds.
 local function click(name, down) _G[name].scripts.OnClick(_G[name], "LeftButton", down) end
 local function flush() now = now + 1; OnUpdate(driver, 1) end
-local EDIT = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t1\t0"
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
-assert(overrides.UP == "PlayerHousingEditForward" and overrides["SHIFT-TAB"] == "PlayerHousingEditNext", "keys bound")
-assert(overrides.G == "PlayerHousingEditFollow" and overrides.ESCAPE == "PlayerHousingEditDone")
-assert(PlayerHousingEditHud:IsShown() and PlayerHousingEditHudName.text == "Barrel", "edit mode banner")
-assert(PlayerHousingButton2.text == "Done", "edit button shows Done in edit mode")
+fire("CHAT_MSG_ADDON", "HOUSING", GHOST, "WHISPER", "Krookowner")
+assert(overrides.UP == "PlayerHousingEditForward", "follow keys without the mouse")
 flush()
-local count = #sent
-click("PlayerHousingEditForward", true); click("PlayerHousingEditForward", false)
-click("PlayerHousingEditLeft", true); click("PlayerHousingEditLeft", false)
-flush()
-assert(#sent == count + 1 and last() == ".house shift 0.25 0.25 0.00 0", "presses add up: " .. last())
--- Holding a key repeats it after a moment, and stops on release.
-click("PlayerHousingEditRaise", true)
+click("PlayerHousingEditForward", true)
 now = now + 0.2; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 0.2)
 now = now + 0.2; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 0.2)
 now = now + 0.1; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 0.1)
-click("PlayerHousingEditRaise", false)
+click("PlayerHousingEditForward", false)
 now = now + 1; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 1)
 OnUpdate(driver, 1)
-assert(last() == ".house shift 0.00 0.00 0.30 0", "held: " .. last())
--- A key left down (the release never came) gives up after a few seconds.
+assert(last() == ".house ghost adjust 0.75 0.00 0.00 0", "held: " .. last())
 click("PlayerHousingEditBack", true)
 for _ = 1, 200 do now = now + 0.1; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 0.1) end
 OnUpdate(driver, 1)
-local steps = -tonumber(last():match("shift (%S+)")) / 0.25
+local steps = -tonumber(last():match("adjust (%S+)")) / 0.25
 assert(steps > 30 and steps < 70, "stuck key stops: " .. steps)
 now = now + 1; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 1); OnUpdate(driver, 1)
-count = #sent; flush(); assert(#sent == count, "nothing more after it gave up")
--- Shift is finer; the grid sets the step.
-IsShiftKeyDown = function() return true end
-click("PlayerHousingEditRight", true); click("PlayerHousingEditRight", false)
-click("PlayerHousingEditWheelUp", true)
-flush(); assert(last() == ".house shift 0.00 -0.05 0.00 5", last())
-click("PlayerHousingEditNext", true); assert(last() == ".house select previous", last())
-IsShiftKeyDown = function() return false end
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t0$", "\t0.5"), "WHISPER", "Krookowner")
-assert(PlayerHousingEditHudGrid.text == "Grid: 0.5 yd", "grid shown: " .. tostring(PlayerHousingEditHudGrid.text))
-click("PlayerHousingEditForward", true); click("PlayerHousingEditForward", false)
-flush(); assert(last() == ".house shift 0.50 0.00 0.00 0", last())
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
--- The wheel: turn, Ctrl raises, Alt zooms.
-click("PlayerHousingEditWheelDown", true); flush(); assert(last() == ".house shift 0.00 0.00 0.00 -15", last())
-IsControlKeyDown = function() return true end
-click("PlayerHousingEditWheelUp", true); flush(); assert(last() == ".house shift 0.00 0.00 0.10 0", last())
-IsControlKeyDown = function() return false end
-IsAltKeyDown = function() return true end
-count = #sent
-click("PlayerHousingEditWheelUp", true); flush(); assert(#sent == count and zoomed == 1, "alt+wheel zooms")
-IsAltKeyDown = function() return false end
--- Each wheel binding does its own thing, whether or not Ctrl reads as held, and the banner
--- says what happened.
-assert(overrides["CTRL-MOUSEWHEELUP"] == "PlayerHousingEditRaiseWheelUp" and overrides["ALT-MOUSEWHEELDOWN"] == "PlayerHousingEditZoomWheelDown")
-assert(overrides["SHIFT-MOUSEWHEELUP"] == "PlayerHousingEditWheelUp" and overrides.R == "PlayerHousingEditWheelMode")
-click("PlayerHousingEditRaiseWheelUp", true); flush(); assert(last() == ".house shift 0.00 0.00 0.10 0", last())
-assert(PlayerHousingEditHudLast.text:find("Ctrl%+Wheel up") and PlayerHousingEditHudLast.text:find("raised 0.1 yd"), PlayerHousingEditHudLast.text)
-click("PlayerHousingEditWheelDown", true); flush()
-assert(PlayerHousingEditHudLast.text:find("turned right 15 degrees"), PlayerHousingEditHudLast.text)
-IsControlKeyDown = function() return true end
-click("PlayerHousingEditWheelDown", true); flush(); assert(last() == ".house shift 0.00 0.00 -0.10 0", last())
-assert(PlayerHousingEditHudLast.text:find("Ctrl held"), PlayerHousingEditHudLast.text)
-IsControlKeyDown = function() return false end
-click("PlayerHousingEditForward", true); click("PlayerHousingEditForward", false); flush()
-assert(PlayerHousingEditHudLast.text:find("Up arrow") and PlayerHousingEditHudLast.text:find("moved forward 0.25 yd"), PlayerHousingEditHudLast.text)
--- R: the plain wheel raises instead, and back.
-click("PlayerHousingEditWheelMode", true)
-assert(PlayerHousingEditHudWheel.text == "Wheel: raise" and PlayerHousingEditHudHelp.text:find("R: wheel turns"))
-click("PlayerHousingEditWheelDown", true); flush(); assert(last() == ".house shift 0.00 0.00 -0.10 0", last())
-PlayerHousingEditHudWheel.scripts.OnClick()
-assert(PlayerHousingEditHudWheel.text == "Wheel: turn")
-click("PlayerHousingEditWheelUp", true); flush(); assert(last() == ".house shift 0.00 0.00 0.00 15", last())
--- The line goes after a few seconds.
-now = now + 7; PlayerHousingEditKeys.scripts.OnUpdate(PlayerHousingEditKeys, 7)
-assert(PlayerHousingEditHudLast.text == "", "feedback fades")
--- The banner's buttons.
-assert(PlayerHousingEditHudUndo.enabled == true and PlayerHousingEditHudRedo.enabled == false, "undo, no redo")
-PlayerHousingEditHudGrid.scripts.OnClick(); assert(last() == ".house grid 0.25", last())
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t0$", "\t0.5"), "WHISPER", "Krookowner")
-PlayerHousingEditHudGrid.scripts.OnClick(); assert(last() == ".house grid 1", last())
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t0$", "\t2"), "WHISPER", "Krookowner")
-PlayerHousingEditHudGrid.scripts.OnClick(); assert(last() == ".house grid off", last())
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
-PlayerHousingEditHudUndo.scripts.OnClick(); assert(last() == ".house undo", last())
-PlayerHousingEditHudDone.scripts.OnClick(); assert(last() == ".house edit off", last())
--- The other keys.
-click("PlayerHousingEditNext", true); assert(last() == ".house select next", last())
-click("PlayerHousingEditPickUp", true); assert(last() == ".house pickup 13", last())
-click("PlayerHousingEditUndo", true); assert(last() == ".house undo", last())
-click("PlayerHousingEditRedo", true); assert(last() == ".house redo", last())
--- G picks the selected piece up: it follows you until G again sets it down.
-click("PlayerHousingEditFollow", true)
-assert(last() == ".house ghost move", last())
-assert(PlayerHousingEditHudLast.text:find("G again"), PlayerHousingEditHudLast.text)
--- Nothing selected: G says so.
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t0\t\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t1\t0", "WHISPER", "Krookowner")
-count = #sent
-click("PlayerHousingEditFollow", true)
-assert(#sent == count and PlayerHousingEditHudLast.text:find("select a piece first"), PlayerHousingEditHudLast.text)
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT, "WHISPER", "Krookowner")
-flush()
--- Escape cancels the targeting circle first, then leaves edit mode.
-targeting = true
-count = #sent
-click("PlayerHousingEditDone", true); assert(stoppedTargeting == 1 and #sent == count, "escape cancels the circle")
-click("PlayerHousingEditDone", true); assert(last() == ".house edit off", last())
--- Nothing selected: the wheel zooms.
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t0\t\t5\t200\t1\t10\t\tKrookowner\t\t0\t0\t0\t0\t1\t0", "WHISPER", "Krookowner")
-assert(PlayerHousingEditHudName.text:find("Tab"), "nothing selected yet")
-click("PlayerHousingEditWheelDown", true); assert(zoomed == 0, "wheel zooms with nothing selected")
--- Edit mode ending in combat keeps the keys until combat is over.
+local count = #sent; flush(); assert(#sent == count, "nothing more after it gave up")
+-- The grid sets the step.
+fire("CHAT_MSG_ADDON", "HOUSING", (GHOST:gsub("^(state" .. ("\t[^\t]*"):rep(16) .. ")\t0", "%1\t0.5")), "WHISPER", "Krookowner")
+assert(PlayerHousingHeldShape.text:find("Grid 0.5 yd"), "grid shown: " .. PlayerHousingHeldShape.text)
+click("PlayerHousingEditLeft", true); click("PlayerHousingEditLeft", false)
+flush(); assert(last() == ".house ghost adjust 0.00 0.50 0.00 0", last())
+-- Set down in combat: the keys stay until combat is over.
 combat = true
-fire("CHAT_MSG_ADDON", "HOUSING", EDIT:gsub("\t1\t0$", "\t0\t0"), "WHISPER", "Krookowner")
-assert(overrides.UP and not PlayerHousingEditHud:IsShown(), "keys stay in combat, banner goes")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+assert(overrides.UP, "keys stay in combat")
 combat = false
 PlayerHousingEditKeys.scripts.OnEvent(PlayerHousingEditKeys, "PLAYER_REGEN_ENABLED")
 assert(next(overrides) == nil, "keys cleared after combat")
-fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 
 -- A roommate on someone else's island gets the decorating controls too.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t1\t21\tTiny Table\t7\t200\t1\t10\tnudged Tiny Table\tKrookfriend\t\t0\t0\t0\t1", "WHISPER", "Krookowner")
-assert(PlayerHousingSelected:IsShown(), "a roommate sees the selected piece")
-assert(PlayerHousingButton3.enabled == true and PlayerHousingButton2.enabled == true, "a roommate can undo and decorate")
+assert(PlayerHousingButton2.enabled == true, "a roommate can undo")
 assert(PlayerHousingFrame and PlayerHousingButton1.text == "Leave")
 -- A plain visitor doesn't.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t0\t0\t\t0\t200\t0\t10\t\tKrookfriend\t\t0\t0\t0\t0", "WHISPER", "Krookowner")
-assert(not PlayerHousingSelected:IsShown() and PlayerHousingButton2.enabled == false, "a visitor can't decorate")
+assert(not PlayerHousingSelected:IsShown() and PlayerHousingButton2.enabled == false, "a visitor can't undo")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 
 -- Combat: the grid waits, the window can't toggle.
@@ -686,7 +674,7 @@ assert(PlayerHousingFrame:IsShown())
 
 -- The window's tabs. The addon told the server it's here, once.
 local registrations = 0
-for _, command in ipairs(sent) do if command == ".house addon 1 1" then registrations = registrations + 1 end end
+for _, command in ipairs(sent) do if command == ".house addon 2" then registrations = registrations + 1 end end
 assert(registrations == 1, "registered once: " .. registrations)
 local function msg(text) fire("CHAT_MSG_ADDON", "HOUSING", text, "WHISPER", "Krookowner") end
 local function rows(kind, list, arg)
@@ -708,7 +696,7 @@ rows("collection", { "settings\t0\t0\t200\t10\t0", "unlocked\t901104-901106", "n
                      "placed\t901105:1", "recent\t901106,901105" })
 local first = PlayerHousingCollectionSlot1
 assert(first.info[1] == 901105 and first:IsShown() and not first.icon.desaturated, "the chair: unlocked")
-assert(first.count.text == 5, "five in the bags: " .. tostring(first.count.text))
+assert(first.count.text == 2, "two owned: " .. tostring(first.count.text))
 assert(PlayerHousingCollectionSlot2.new.text == "New", "the table is new")
 local lockedSlot
 for index = 1, 36 do
@@ -718,31 +706,27 @@ end
 assert(lockedSlot and lockedSlot.icon.desaturated, "locked pieces are grey")
 assert(PlayerHousingCollectionCount.text:find("^3 of "), PlayerHousingCollectionCount.text)
 -- A click pins the piece next to the window, with its details and buttons, and a ghost of it
--- follows you on the island (the server takes one from the bags or storage, or a new copy).
+-- follows you on the island (the server takes one you own, or a new copy).
 first:Click("LeftButton")
 assert(last() == ".house ghost 901105", last())
 assert(PlayerHousingPreview:IsShown() and PlayerHousingPreview.height == 360, "pinned: " .. tostring(PlayerHousingPreview.height))
 assert(PlayerHousingDetailsText.text:find("Unlocked"), PlayerHousingDetailsText.text)
-assert(PlayerHousingDetailsCounts.text == "Bags: 5   Storage: 2   Placed: 1", PlayerHousingDetailsCounts.text)
-assert(PlayerHousingDetailsPlace:IsShown() and PlayerHousingDetailsPlace.enabled and not PlayerHousingDetailsPlace.protected, "Place: a plain button")
-assert(PlayerHousingDetailsTake.enabled and PlayerHousingDetailsGetOne.enabled)
+assert(PlayerHousingDetailsCounts.text == "Owned: 2   Placed: 1", PlayerHousingDetailsCounts.text)
+assert(not PlayerHousingDetailsPlace, "no Place button: the click on the icon is the one way to place")
+assert(not PlayerHousingDetailsTake and PlayerHousingDetailsGetOne.enabled and PlayerHousingDetailsGetOne.text == "Buy 1", "buy, no taking out")
 PlayerHousingDetailsGetOne.scripts.OnClick()
 assert(sent[#sent - 1] == ".house get 901105 1" and last() == ".house data collection", sent[#sent - 1])
 PlayerHousingDetailsGetFive.scripts.OnClick()
 assert(sent[#sent - 1] == ".house get 901105 5", sent[#sent - 1])
-PlayerHousingDetailsTake.scripts.OnClick()
-assert(sent[#sent - 1] == ".house take 901105", sent[#sent - 1])
-PlayerHousingDetailsPlace:Click()
-assert(last() == ".house ghost 901105", "Place sends a ghost too: " .. last())
 -- Hovering another piece shows it for a moment; moving off brings the pinned one back.
 lockedSlot.scripts.OnEnter(lockedSlot)
-assert(PlayerHousingPreviewName.text == lockedSlot.info[2] and not PlayerHousingDetailsPlace:IsShown(), "hovered piece, no buttons")
+assert(PlayerHousingPreviewName.text == lockedSlot.info[2] and not PlayerHousingDetailsGetOne:IsShown(), "hovered piece, no buttons")
 assert(PlayerHousingPreviewHint.text ~= "", "says how to show it instead")
 lockedSlot.scripts.OnLeave(lockedSlot)
-assert(PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == first.info[2] and PlayerHousingDetailsPlace:IsShown(),
+assert(PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == first.info[2] and PlayerHousingDetailsGetOne:IsShown(),
   "back to the pinned piece: " .. tostring(PlayerHousingPreviewName.text))
 -- None to hand: a click starts a ghost all the same (the server buys a copy only when it's set
--- down), and so does Place. In combat too: nothing secure.
+-- down). In combat too: nothing secure.
 local barrelSlot
 for index = 1, 36 do
   local slot = _G["PlayerHousingCollectionSlot" .. index]
@@ -751,9 +735,7 @@ end
 combat = true
 count = #sent
 barrelSlot:Click("LeftButton")
-assert(#sent == count + 1 and last() == ".house ghost 901106" and PlayerHousingDetailsPlace:IsShown(), "a ghost at once: " .. last())
-PlayerHousingDetailsPlace:Click()
-assert(last() == ".house ghost 901106", last())
+assert(#sent == count + 1 and last() == ".house ghost 901106", "a ghost at once: " .. last())
 first:Click("LeftButton")
 assert(last() == ".house ghost 901105", "in combat too: " .. last())
 combat = false
@@ -761,17 +743,16 @@ combat = false
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t0\t0\t\t0\t200\t0\t10\t\t\t\t0", "WHISPER", "Krookowner")
 count = #sent
 first:Click("LeftButton")
-assert(#sent == count and not PlayerHousingDetailsPlace.enabled, "off the island: nothing sent, Place off")
+assert(#sent == count, "off the island: nothing sent")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 -- A locked piece says how to unlock it, and can't be had yet.
 count = #sent
 lockedSlot:Click("LeftButton")
 assert(#sent == count, "locked: nothing sent")
 assert(PlayerHousingDetailsText.text:find("Locked") and not PlayerHousingDetailsGetOne.enabled, PlayerHousingDetailsText.text)
-assert(not PlayerHousingDetailsPlace.enabled, "locked, none in the bags: nothing to place")
 -- Close unpins.
 PlayerHousingPreviewClose.scripts.OnClick()
-assert(not PlayerHousingPreview:IsShown() and not PlayerHousingDetailsPlace:IsShown(), "closed")
+assert(not PlayerHousingPreview:IsShown(), "closed")
 first.scripts.OnEnter(first)
 assert(PlayerHousingPreview:IsShown() and PlayerHousingPreview.height == 268, "preview while hovering")
 first.scripts.OnLeave(first)
@@ -819,34 +800,19 @@ assert(PlayerHousingCollectionSlot1.info[1] == 901105 and not PlayerHousingColle
 PlayerHousingCollectionSearch.text = ""
 PlayerHousingCollectionSearch.scripts.OnTextChanged(PlayerHousingCollectionSearch)
 
--- Storage: leaving the Collection marks the new pieces seen.
-PlayerHousingTabStorage.scripts.OnClick()
-assert(sent[#sent - 1] == ".house seen" and last() == ".house data collection", sent[#sent - 1])
-assert(PlayerHousingStoragePanelRow1:IsShown() and PlayerHousingStoragePanelRow1Text.text == "Broken Cart", PlayerHousingStoragePanelRow1Text.text)
-assert(PlayerHousingStoragePanelRow2Text.text == "Westfall Chair x2", PlayerHousingStoragePanelRow2Text.text)
-PlayerHousingStoragePanelRow2Button2.scripts.OnClick()
-assert(sent[#sent - 1] == ".house take 901105", sent[#sent - 1])
--- Place: a ghost of one follows you (the server takes it out of storage when it's set down).
-PlayerHousingStoragePanelRow2Button1.scripts.OnClick()
-assert(last() == ".house ghost 901105" and PlayerHousingPreview:IsShown() and PlayerHousingPreviewName.text == "Westfall Chair", last())
-PlayerHousingPreviewClose.scripts.OnClick()
-PlayerHousingTakeAll.scripts.OnClick()
-assert(sent[#sent - 1] == ".house take all", sent[#sent - 1])
-rows("collection", { "settings\t0\t0\t200\t10\t0" })
-assert(not PlayerHousingStoragePanelRow1:IsShown() and PlayerHousingStoragePanelEmpty.text ~= "", "empty storage")
-
--- Placed: nearest first; buildings ask before being picked up.
+-- Placed: nearest first; Move puts it on the mouse (the way to move a building), Put away
+-- straight away. Leaving the Collection marks the new pieces seen.
 PlayerHousingTabPlaced.scripts.OnClick()
-assert(last() == ".house data placed", last())
+assert(sent[#sent - 1] == ".house seen" and last() == ".house data placed", sent[#sent - 1] .. " " .. last())
 rows("placed", { "3\t901105\t2.5", "7\t902200\t9.1" })
 assert(PlayerHousingPlacedPanelRow1Text.text:find("Westfall Chair") and PlayerHousingPlacedPanelRow2Text.text:find("Broken Cart"))
-PlayerHousingPlacedPanelRow1Button1.scripts.OnClick(); assert(last() == ".house goto 3", last())
-PlayerHousingPlacedPanelRow1Button2.scripts.OnClick(); assert(last() == ".house select 3", last())
-PlayerHousingPlacedPanelRow1Button3.scripts.OnClick(); assert(last() == ".house group add 3", last())
-PlayerHousingPlacedPanelRow1Button4.scripts.OnClick(); assert(sent[#sent - 1] == ".house here 3", sent[#sent - 1])
-PlayerHousingPlacedPanelRow1Button5.scripts.OnClick(); assert(last() == ".house pickup 3", last())
+PlayerHousingPlacedPanelRow1Button1.scripts.OnClick()
+assert(sent[#sent - 1] == ".house select 3" and last() == ".house ghost move 3", sent[#sent - 1] .. " " .. last())
+PlayerHousingPlacedPanelRow1Button2.scripts.OnClick(); assert(last() == ".house goto 3", last())
+PlayerHousingPlacedPanelRow1Button3.scripts.OnClick(); assert(last() == ".house pickup 3", last())
+assert(not PlayerHousingPlacedPanelRow1Button4, "no Select, + or Here: one way to move")
 local placedPopups = #popups
-PlayerHousingPlacedPanelRow2Button5.scripts.OnClick()
+PlayerHousingPlacedPanelRow2Button3.scripts.OnClick()
 assert(#popups == placedPopups and last():match("^%.house pickup %d+$"), "the building too, straight away: " .. last())
 -- Find a piece by name.
 PlayerHousingPlacedSearch.text = "cart"
@@ -858,16 +824,39 @@ PlayerHousingPlacedSearch.scripts.OnTextChanged(PlayerHousingPlacedSearch)
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t4\t200\t1\t10\tpicked up Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 assert(last() == ".house data placed", "placed list follows the counts: " .. last())
 
--- Layouts.
+-- Layouts: each says what setting it out would still need; the rest is under More.
 PlayerHousingTabLayouts.scripts.OnClick()
 assert(last() == ".house data layouts", last())
-rows("layouts", { "limit\t5", "layout\t3\tSummer house\t12\t2026-09-28\t" })
-assert(PlayerHousingLayoutsPanelRow1Text.text:find("Summer house") and PlayerHousingLayoutsPanelRow1Text.text:find("12 pieces"))
+rows("layouts", { "limit\t5\t1", "layout\t3\tSummer house\t12\t2026-09-28\t\t2\t300\t1" })
+assert(PlayerHousingLayoutsPanelRow1Text.text:find("Summer house") and PlayerHousingLayoutsPanelRow1Text.text:find("12 pieces")
+  and PlayerHousingLayoutsPanelRow1Text.text:find("needs 2"), PlayerHousingLayoutsPanelRow1Text.text)
+assert(PlayerHousingLayoutCopyable.checked == true, "visitors may copy it, as the server says")
+PlayerHousingLayoutCopyable.checked = false
+PlayerHousingLayoutCopyable.scripts.OnClick(PlayerHousingLayoutCopyable)
+assert(sent[#sent - 1] == ".house layout copyable off", sent[#sent - 1])
 PlayerHousingLayoutsPanelRow1Button1.scripts.OnClick()
 StaticPopupDialogs.PLAYERHOUSING_LAYOUT_LOAD.OnAccept({}, 3)
 assert(sent[#sent - 1] == ".house layout load 3", sent[#sent - 1])
+PlayerHousingLayoutsPanelRow1Button2.scripts.OnClick()
+local function menuItem(prefix)
+  for _, item in ipairs(lastMenu or {}) do if item.text and item.text:find(prefix, 1, true) == 1 then return item end end
+  error("no menu item " .. prefix)
+end
+assert(menuItem("Buy the 2 pieces it needs (300c)"), "buying what's missing, with its price")
+menuItem("Buy the 2"):func()
+assert(popups[#popups][1] == "PLAYERHOUSING_LAYOUT_MISSING" and popups[#popups][2]:find("300c"), tostring(popups[#popups][2]))
+StaticPopupDialogs.PLAYERHOUSING_LAYOUT_MISSING.OnAccept({}, 3)
+assert(sent[#sent - 1] == ".house layout missing 3", sent[#sent - 1])
+menuItem("Save the island over it"):func()
+StaticPopupDialogs.PLAYERHOUSING_LAYOUT_OVERWRITE.OnAccept({}, 3)
+assert(sent[#sent - 1] == ".house layout overwrite 3", sent[#sent - 1])
+menuItem("Rename"):func()
+StaticPopupDialogs.PLAYERHOUSING_LAYOUT_RENAME.OnAccept({ editBox = { GetText = function() return " Autumn house " end } }, 3)
+assert(sent[#sent - 1] == ".house layout rename 3 Autumn house", sent[#sent - 1])
+menuItem("Send to someone"):func()
 StaticPopupDialogs.PLAYERHOUSING_LAYOUT_SEND.OnAccept({ editBox = { GetText = function() return " Krookfriend " end } }, 3)
 assert(last() == ".house layout send 3 Krookfriend", last())
+menuItem("Delete"):func()
 StaticPopupDialogs.PLAYERHOUSING_LAYOUT_DELETE.OnAccept({}, 3)
 assert(sent[#sent - 1] == ".house layout delete 3", sent[#sent - 1])
 PlayerHousingLayoutName.text = "Winter house"
@@ -922,6 +911,13 @@ rows("island", { "settings\t2\t0\t0\t0\t1\t7\t3\t1\t2" })
 assert(PlayerHousingIslandPanel:GetName() and PlayerHousingGuestbookButton.text == "Guestbook (2 new)", tostring(PlayerHousingGuestbookButton.text))
 PlayerHousingDoorHere.scripts.OnClick(); assert(sent[#sent - 1] == ".house door here", sent[#sent - 1])
 PlayerHousingDoorReset.scripts.OnClick(); assert(sent[#sent - 1] == ".house door reset", sent[#sent - 1])
+-- Pack up (asked first), unstuck and a new key: the old House Key menu's other things.
+PlayerHousingPackUp.scripts.OnClick()
+assert(popups[#popups][1] == "PLAYERHOUSING_PACKUP", "pack up asks first")
+StaticPopupDialogs.PLAYERHOUSING_PACKUP.OnAccept()
+assert(last() == ".house packup", last())
+PlayerHousingUnstuck.scripts.OnClick(); assert(last() == ".house unstuck", last())
+PlayerHousingNewKey.scripts.OnClick(); assert(last() == ".house key", last())
 PlayerHousingGuestbookButton.scripts.OnClick()
 assert(PlayerHousingGuestsPanel:IsShown() and last() == ".house data guestbook", "the guestbook from the Island tab: " .. last())
 
@@ -954,10 +950,11 @@ assert(sent[#sent - 1] == ".house set save Reading nook", sent[#sent - 1])
 PlayerHousingLayoutsPage1.scripts.OnClick()
 assert(last() == ".house data layouts" and PlayerHousingLayoutSave.text == "Save as new", last())
 
--- Visiting: sign the island's guestbook from the Visit tab.
+-- Visiting: sign the island's guestbook from the Visit tab, or save a copy of its layout.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t0\t0\t0\t\t0\t200\t0\t10\t\tKrookfriend\t\t0\t0\t0\t0", "WHISPER", "Krookowner")
 PlayerHousingTabVisit.scripts.OnClick()
-assert(PlayerHousingSign:IsShown() and PlayerHousingLike:IsShown(), "signing while visiting")
+assert(PlayerHousingSign:IsShown() and PlayerHousingLike:IsShown() and PlayerHousingCopyLayout:IsShown(), "signing while visiting")
+PlayerHousingCopyLayout.scripts.OnClick(); assert(last() == ".house layout copy", last())
 PlayerHousingSignNote.text = "Lovely!"
 PlayerHousingSign.scripts.OnClick(); assert(last() == ".house sign Lovely!", last())
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
@@ -980,7 +977,7 @@ assert(PlayerHousingCollectionPageText.text:find("^Page 2"), "caught up after co
 PlayerHousingCollectionPrev.scripts.OnClick()
 
 -- The undo history: right-click Undo, then undo back to any change.
-PlayerHousingButton3.scripts.OnClick(PlayerHousingButton3, "RightButton")
+PlayerHousingButton2.scripts.OnClick(PlayerHousingButton2, "RightButton")
 assert(PlayerHousingHistory:IsShown() and last() == ".house data history", last())
 rows("history", { "undo\tmoved Barrel", "undo\tplaced Westfall Chair", "undo\tturned Tiny Table 45° left", "redo\tpicked up Lantern" })
 assert(PlayerHousingHistoryRow1Text.text == "1. moved Barrel" and PlayerHousingHistoryRow3:IsShown() and not PlayerHousingHistoryRow4:IsShown(),
@@ -989,36 +986,18 @@ PlayerHousingHistoryRow2.scripts.OnEnter(PlayerHousingHistoryRow2)
 assert(PlayerHousingHistoryRow1.highlighted and PlayerHousingHistoryRow2.highlighted and not PlayerHousingHistoryRow3.highlighted, "what goes")
 PlayerHousingHistoryRow2.scripts.OnClick(PlayerHousingHistoryRow2)
 assert(last() == ".house undo 2" and not PlayerHousingHistory:IsShown(), last())
-PlayerHousingButton3.scripts.OnClick(PlayerHousingButton3, "LeftButton")
+PlayerHousingButton2.scripts.OnClick(PlayerHousingButton2, "LeftButton")
 assert(last() == ".house undo", last())
 
--- A row of copies.
-SEL("Row...").scripts.OnClick()
-assert(PlayerHousingRowDialog:IsShown() and PlayerHousingRowCount.text == "3")
-PlayerHousingRowCount.text = "5"
-PlayerHousingRowSpacing.text = "1.5"
-local directionButton
-for _, f in ipairs(frames) do if f.parent == PlayerHousingRowDialog and f.text == "right" then directionButton = f end end
-directionButton.scripts.OnClick(directionButton)
-assert(directionButton.text == "left")
-for _, f in ipairs(frames) do if f.parent == PlayerHousingRowDialog and f.text == "Place row" then f.scripts.OnClick(f) end end
-assert(last() == ".house row 5 1.50 left" and not PlayerHousingRowDialog:IsShown(), last())
-
--- Several pieces selected: the group row, the banner and picking them all up.
-local GROUP = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t1\t0\t0\t3"
+-- Several pieces selected (Ctrl-right-click), none held: what can be done with them together.
+local GROUP = "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t3"
 fire("CHAT_MSG_ADDON", "HOUSING", GROUP, "WHISPER", "Krookowner")
-assert(SEL("Height").enabled and SEL("Space").enabled and PlayerHousingEditHudName.text == "Barrel and 2 more", PlayerHousingEditHudName.text)
-SEL("Height").scripts.OnClick(); assert(last() == ".house match height", last())
-PlayerHousingEditHudLine.scripts.OnClick(PlayerHousingEditHudLine); assert(last() == ".house match line", last())
-PlayerHousingEditHudSpace.scripts.OnClick(PlayerHousingEditHudSpace); assert(last() == ".house match space", last())
-SEL("Save set").scripts.OnClick()
+assert(PlayerHousingSelected:IsShown() and PlayerHousingHeldText.text:find("3 pieces"), tostring(PlayerHousingHeldText.text))
+assert(PlayerHousingHeldHelp.text:find("Right%-click|r one of them"), PlayerHousingHeldHelp.text)
+SEL("Save as a set").scripts.OnClick()
 assert(popups[#popups][1] == "PLAYERHOUSING_SAVE_SET")
 StaticPopupDialogs.PLAYERHOUSING_SAVE_SET.OnAccept({ editBox = { GetText = function() return " Dining " end } })
 assert(last() == ".house set save Dining", last())
-SEL("Pick up").scripts.OnClick()
-assert(last() == ".house pickup", "several: straight away too: " .. last())
-fire("CHAT_MSG_ADDON", "HOUSING", GROUP:gsub("\t3$", "\t2"), "WHISPER", "Krookowner")
-assert(SEL("Height").enabled and not SEL("Space").enabled, "spacing out takes three")
 -- Ctrl held while decorating: the server hears it, once each way.
 count = #sent
 IsControlKeyDown = function() return true end
@@ -1057,14 +1036,12 @@ assert(UIParent:IsShown() and last() == ".house phototour next", last())
 msg("photo\tdone")
 assert(printed[#printed]:find("1 pictures"), printed[#printed])
 
--- The minimap button: click for the window, right-click for edit mode, drag round the edge.
+-- The minimap button: click for the window, drag round the edge.
 assert(PlayerHousingMinimapButton:IsShown(), "minimap button")
 local shownBefore = PlayerHousingFrame:IsShown()
 PlayerHousingMinimapButton.scripts.OnClick(PlayerHousingMinimapButton, "LeftButton")
 assert(PlayerHousingFrame:IsShown() ~= shownBefore, "toggles the window")
 PlayerHousingMinimapButton.scripts.OnClick(PlayerHousingMinimapButton, "LeftButton")
-PlayerHousingMinimapButton.scripts.OnClick(PlayerHousingMinimapButton, "RightButton")
-assert(last() == ".house edit", last())
 cursorX, cursorY = 100, 180
 PlayerHousingMinimapButton.scripts.OnDragStart(PlayerHousingMinimapButton)
 PlayerHousingMinimapButton.scripts.OnUpdate(PlayerHousingMinimapButton, 0.1)
@@ -1075,13 +1052,46 @@ assert(not PlayerHousingMinimapButton:IsShown() and PlayerHousingDB.minimapHidde
 SlashCmdList.PLAYERHOUSING("minimap")
 assert(PlayerHousingMinimapButton:IsShown(), "back")
 
--- /housing key: the House Key opens the menu instead.
-SlashCmdList.PLAYERHOUSING("key")
-assert(last() == ".house addon 1 0" and PlayerHousingDB.keyWindow == false, last())
+-- /housing help: how it works, in the chat.
+local printedCount = #printed
+SlashCmdList.PLAYERHOUSING("help")
+assert(#printed > printedCount and printed[#printed]:find("%.house help"), printed[#printed])
 
--- Empty bags.
-bags = {}
-fire("BAG_UPDATE")
+-- A mannequin picked up: Dress... shows what it wears and what in the bags it could.
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t21\tMannequin\t5\t200\t1\t10\tplaced Mannequin\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t902300\tmove\t1\t\t1\t100\t0\t0\t1",
+  "WHISPER", "Krookowner")
+PlayerHousingFrame:Show()
+SEL("Dress...").scripts.OnClick()
+assert(PlayerHousingDress:IsShown() and last() == ".house data stand 21", "the dress list asks for the stand: " .. last())
+rows("stand", { "figure\tHuman man", "worn\t15\tmain hand\t25\tWorn Shortsword", "worn\t6\tlegs\t39\tRecruit's Pants",
+  "wear\t2092\tWorn Dagger\toff hand" }, 21)
+assert(PlayerHousingDressFigure.text == "Figure: Human man", tostring(PlayerHousingDressFigure.text))
+assert(PlayerHousingDressRow1Text.text:find("Worn Shortsword") and PlayerHousingDressRow1.button.text == "Take off", PlayerHousingDressRow1Text.text)
+assert(PlayerHousingDressRow3Text.text:find("Worn Dagger") and PlayerHousingDressRow3.button.text == "Put on", PlayerHousingDressRow3Text.text)
+PlayerHousingDressRow1.button.scripts.OnClick(PlayerHousingDressRow1.button)
+assert(sent[#sent - 1] == ".house stand undress 15 21" and last() == ".house data stand 21", sent[#sent - 1])
+PlayerHousingDressRow3.button.scripts.OnClick(PlayerHousingDressRow3.button)
+assert(sent[#sent - 1] == ".house stand dress 2092 21", sent[#sent - 1])
+-- A list for another stand is ignored; selecting something else closes it.
+rows("stand", { "figure\tDwarf woman" }, 99)
+assert(PlayerHousingDressFigure.text == "Figure: Human man", "another stand's list ignored")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+assert(not PlayerHousingDress:IsShown(), "closed when the mannequin isn't selected")
+-- The window open on your island is decorating (chairs and chests pick up); closed, they work
+-- again, once nothing is held. Asked once each way.
+PlayerHousingFrame:Hide()
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t0\t0\t\t5\t200\t1\t10\t\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+count = #sent
+PlayerHousingFrame:Show()
+local asked = 0
+for index = count + 1, #sent do if sent[index] == ".house decorate on" then asked = asked + 1 end end
+assert(asked == 1, "window open: decorating: " .. last())
+count = #sent
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t0\t0\t\t5\t200\t1\t10\t\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+assert(#sent == count or last() ~= ".house decorate on", "asked once")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t0\t\t5\t200\t1\t10\t\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+PlayerHousingFrame:Hide()
+assert(last() == ".house decorate off", "window closed: not decorating: " .. last())
 OnUpdate(driver, 1)
 print("sent:", table.concat(sent, " | "))
 print("ALL ADDON CHECKS PASSED")

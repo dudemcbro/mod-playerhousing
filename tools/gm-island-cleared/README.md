@@ -41,7 +41,7 @@ SERVER_DIR=/path/to/server tools/gm-island-cleared/server_data.sh --restore
 and set `PlayerHousing.Layout = "guildhouse"`.
 
 When a server switches to the cleared layout, anything players had placed inside the old
-hall goes to their House Storage, and they get a message on their next visit.
+hall goes back to their Collection, and they get a message on their next visit.
 
 ## Client patch
 
@@ -92,14 +92,15 @@ copies of the two files. The server has the same rows in its world database. On 
 whose players keep an older patch, `PlayerHousing.Ghosts = 0` carries pieces as they are
 instead.
 
-A building can't be a creature's model (it's a world model), so its ghost is a see-through
-block its size instead: `make_ghost_blocks.py` writes a small model for each building from
-the `ghostblock` lines of `client_items.tsv` (a box from its outline and height, in its own
-units, with the building's origin), their skins, and one shared texture (pale blue, with a
-brighter edge so each side shows its outline). They go in the patch under
-`World\PlayerHousing\`, and the building's ghost display uses them. The models were checked
-by reading them back with [pywowlib](https://github.com/wowdev/pywowlib) (WotLK's version
-264) and the texture with Pillow.
+A building whose model is an M2 uses the same exact see-through model as a furnishing. A
+world-model (`.wmo`) building can't be a creature's model, so while held it is shown as its
+real, collisionless game object instead. It is solid rather than translucent, but its real
+doors, porches and outline make its front and footprint visible. Older patches used generic
+blue blocks for these buildings; the server no longer asks the client to display those.
+
+The old block generator remains in the repository for patch compatibility and tests. Like
+Blizzard's own doodads its generated models have no sequence lookup table, avoiding a hang
+in patches from before 2026-10-07 when a block was asked to use a non-Stand animation.
 
 `adt_sink_wmo.py` and the MPQ packing were checked against a synthetic tile (only the
 hall's placement changes, the file keeps its size, and the entry is found by the client's

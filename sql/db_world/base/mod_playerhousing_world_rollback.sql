@@ -1,5 +1,11 @@
 -- Removes everything mod-playerhousing added to the world database.
-DELETE FROM `creature` WHERE `id1` IN (900200, 900201, 900202, 900203);
+-- The creature table's entry column is id1 in older cores and id in newer ones.
+SET @CREATURE_ENTRY := IF(EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'creature' AND COLUMN_NAME = 'id1'), 'id1', 'id');
+SET @SQL := CONCAT('DELETE FROM `creature` WHERE `', @CREATURE_ENTRY, '` IN (900200, 900201, 900202, 900203)');
+PREPARE housing_stmt FROM @SQL;
+EXECUTE housing_stmt;
+DEALLOCATE PREPARE housing_stmt;
 DELETE FROM `creature_template_movement` WHERE `CreatureId` = 900203;
 DELETE FROM `creature_template_model` WHERE `CreatureID` IN (900200, 900201, 900202, 900203);
 DELETE FROM `creature_template` WHERE `entry` IN (900200, 900201, 900202, 900203);
@@ -25,3 +31,4 @@ DELETE FROM `quest_request_items` WHERE `ID` BETWEEN 900400 AND 900404;
 DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900404;
 DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900404;
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 19 AND `SourceEntry` BETWEEN 900400 AND 900404;

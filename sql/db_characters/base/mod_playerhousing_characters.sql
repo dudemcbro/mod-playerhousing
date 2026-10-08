@@ -214,3 +214,11 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_meta` (
   `meta_value` int NOT NULL DEFAULT 0,
   PRIMARY KEY (`meta_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One island per account: the character everything is kept under (owner_guid elsewhere).
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_account` (
+  `account_id` int unsigned NOT NULL,
+  `home_guid` int unsigned NOT NULL,
+  PRIMARY KEY (`account_id`),
+  KEY `idx_mod_playerhousing_account_home` (`home_guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

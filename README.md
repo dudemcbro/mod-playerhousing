@@ -1,9 +1,10 @@
 # mod-playerhousing
 
 Player housing for AzerothCore (WotLK 3.3.5a), modeled on Lord of the Rings Online and Final
-Fantasy XIV without the neighborhoods. Every character gets a private copy of GM Island to
-build on. Furnishings and buildings are ordinary items: right-click one, click where it
-should go, done. Every change can be undone, and anything picked up goes back to your bags.
+Fantasy XIV without the neighborhoods. Every account gets one private copy of GM Island,
+shared by all its characters. Click a furnishing or building in the Collection, click where
+it should go, done. Every change can be undone, and anything picked up returns to the shared
+Collection without taking bag space.
 What you can own grows as you play: exploring, dungeons, raids, reputation, professions and
 holidays all add pieces to your Collection, and buildings climb from a broken cart and a
 shredded tent at level 1 to faction halls at Exalted.
@@ -52,9 +53,9 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 4. The island: the default layout, `cleared`, is GM Island with its guild hall removed.
    It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
    the server data (collision and pathing without the hall, one script) and a client patch
-   every player installs once. The same patch gives the housing items their bag icons
-   (without it they show as question marks) and adds the ghosts' see-through models and the
-   buildings' see-through blocks (a patch from before those needs building again). To keep
+   every player installs once. The same patch gives the housing pieces their icons and adds
+   the ghosts' see-through models. M2 buildings use their exact translucent model; world-model
+   buildings use their real solid model while held. To keep
    the hall instead, set `PlayerHousing.Layout = "guildhouse"`; players then build the
    patch with `--icons-only`.
 5. Restart the worldserver.
@@ -75,7 +76,7 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 | `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |
 | `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
 | `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
-| `PlayerHousing.Tilt.Max` | 45 | How far pieces tilt each way, in degrees; 0 turns tilting off |
+| `PlayerHousing.Tilt.Max` | 180 | How far pieces tilt each way, in degrees; 180 is all the way round (upside down and on), 0 turns tilting off |
 | `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
 | `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
 | `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
@@ -90,13 +91,13 @@ Every setting can also come from an environment variable, for example
 
 ### Getting started
 
-- On your first login you get a **House Key** and a chair, a table and a lantern.
-- Right-click the House Key (or type `.house`) for the Home menu. **Go home** takes you to
+- On your first login you get a **House Key**; a chair, table and lantern wait in the shared Collection.
+- Right-click the House Key (or type `.house`) for the housing window. **Go home** takes you to
   your island. A fallen cart and a shredded tent are waiting, and Krook the steward says
   hello.
 - Lost the key? Krook stands beside the innkeeper in every capital (Stormwind, Ironforge,
   Darnassus, the Exodar, Orgrimmar, Thunder Bluff, the Undercity, Silvermoon, Shattrath
-  and Dalaran), or use the Home menu, "I lost my House Key".
+  and Dalaran), or type `.house key`.
 
 ### Krook's welcome tour
 
@@ -114,22 +115,18 @@ above Krook's menu, so skipping them costs nothing.
 
 ### Placing things
 
-With the client addon (below), click a piece in the Collection (or Place next to it): a
-see-through ghost of it appears (a building shows as a see-through block its size). With
+With the client addon (below), click a piece in the Collection: a see-through ghost of its
+actual model appears. M2 buildings work the same way; world-model buildings use their real,
+solid and collisionless model while held. With
 [PlayerHousing.dll](client-dll/README.md) the ghost follows your mouse over the world: on the
 floor, on a table top, or on a wall facing out, and a click sets it down there (Shift-click:
 then another of the same). Without the DLL the game can't say where the mouse points, so the
 ghost follows you instead, a couple of yards ahead: walk it where it goes, and the arrow keys
 push it farther or nearer and to the sides. Either way the mouse wheel turns it, Ctrl+wheel
 (or Page Up and Page Down) raises and lowers it, G sets it down (Shift+G: then another), and
-Escape puts it back. Nothing is used until it's set down: it comes from your bags, House
-Storage, or a new copy from the Collection.
-
-Without the addon:
-
-1. Right-click a furnishing or building in your bags. The targeting circle is the size of
-   the piece (from 1 yard for a candle to 20 for a manor), so you can see the room it takes.
-2. Click where it should go. It lands on that exact spot, facing you.
+Escape puts it back. Nothing is used until it is set down: it uses a copy already in the
+Collection, or buys a new unlocked copy at that point. The held panel names which way the
+front points relative to you.
 
 Placing says nothing in chat (the piece is there to see) unless the island is nearly full.
 Change your mind with Undo. If you'd like a piece's menu to open by itself after placing
@@ -143,20 +140,17 @@ Swim too far out and you're brought back to the beach.
 
 ### Changing things
 
-- **Click a piece** to open its menu: turn it, face it toward you, move it, nudge it, raise
-  or lower it, or pick it up. That starts decorating by itself. Pieces that work like the
-  real thing (chairs, mailboxes, crafting stations) do their job when clicked instead, until
-  you **Start decorating** (Home menu, or `.house decorate`); **Change a piece near me** on
-  the Home menu reaches them any time.
+- With the housing window open, **right-click any furnishing or building** to put it on the
+  mouse. Ctrl-right-click selects several; right-click one selected piece to move them all.
+  The Placed tab is another way to find and move something.
 - **Move**: the piece follows you (or your mouse) as a ghost, starting where it stands, and
   a click or G sets it down in its new spot (the same keys as placing). Whatever stands on
   it (a lantern on a table, all the furniture in a building) goes along, and one undo puts
   it all back. `.house move` does it with a targeting circle instead.
-- **More turns, tilt and size...** turns by 90, 15 or 5 degrees, tilts it 5 degrees at a
-  time (forward, back, or to its left or right), and makes it bigger or smaller a tenth
-  at a time. What stands on it keeps its place on the bigger or smaller top. The server
-  sets how far sizes and tilts go (half to double size and 45 degrees by default), and
-  mannequins always stand upright.
+- While it is held, Shift+wheel turns it, Ctrl+wheel raises or lowers it, Alt+wheel tilts it,
+  Alt+Shift+wheel rolls it, and Ctrl+Alt+wheel resizes it. Tilt is previewed using the real
+  object when a translucent creature model cannot lean. The server defaults to half-to-double
+  size and a full 180-degree tilt; mannequins and figurines remain upright.
 - **Place another like this**: a ghost of one more of the same piece follows you, with the
   first one's turn, size and tilt (from your bags, House Storage, or a new copy from the
   Collection): handy for rows of fence posts or matching chairs.
@@ -170,9 +164,7 @@ Swim too far out and you're brought back to the beach.
 - **Undo** and **Redo** are at the top of the Home menu, with the change they'd undo
   spelled out ("Undo: placed Westfall Chair"). Undo remembers your last 30 changes while
   you're on the island.
-- Picked-up pieces go back to your bags, without a word in chat. When your bags are full
-  they wait in **House Storage** (Home menu), and "Take everything" empties it; chat says
-  so then.
+- Shift-right-click a held, previously placed piece to put it back in the Collection.
 - A building's menu has both: pick up the building only, or the building and everything
   inside. Nothing asks "are you sure": Undo puts it back.
 - **Pack up everything** (while decorating) returns every piece at once, and can be undone

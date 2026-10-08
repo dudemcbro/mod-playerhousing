@@ -12,7 +12,9 @@ Prints each file written, relative to OUT_DIR (with forward slashes), for the pa
 
 The models are WotLK's (version 264): one static bone, one Stand animation, 24 corners (each
 side on its own, for its outline), both faces of each side drawn, blended, unlit, and not
-hiding what's behind them.
+hiding what's behind them. Where it can, everything is laid out the way Blizzard's own doodads
+and their textures are (the client takes those as creature models), down to the texture's
+format: DXT5, as the game's own models' textures with alpha are.
 """
 
 import math
@@ -32,26 +34,38 @@ M2_VERSION = 264
 HEADER_SIZE = 0x130
 
 
-def blp(size=TEXTURE_SIZE):
-    """A palettized BLP2 with 8-bit alpha and every mip level down to 1x1."""
-    # The alpha is in the palette as well as in its own plane: readers differ on which they use.
-    palette = [0] * 256
-    palette[0] = FILL[0] | FILL[1] << 8 | FILL[2] << 16 | FILL_ALPHA << 24
-    palette[1] = EDGE_COLOR[0] | EDGE_COLOR[1] << 8 | EDGE_COLOR[2] << 16 | EDGE_ALPHA << 24
+def rgb565(color):
+    blue, green, red = color
+    return (red >> 3) << 11 | (green >> 2) << 5 | blue >> 3
 
+
+def blp(size=TEXTURE_SIZE):
+    """A BLP2 in DXT5 (8-bit alpha), every mip level down to 1x1, as the game's own textures
+    with alpha are: each 4x4 block has the two colors and two alphas as its ends, and every
+    texel takes one or the other."""
+    edge_color, fill_color = rgb565(EDGE_COLOR), rgb565(FILL)
     levels = []
     level_size = size
     while True:
         # The edge stays about the same share of the texture at every level.
         edge = max(1, round(EDGE * level_size / size)) if level_size > 2 else 0
-        indices = bytearray()
-        alpha = bytearray()
-        for y in range(level_size):
-            for x in range(level_size):
-                on_edge = x < edge or y < edge or x >= level_size - edge or y >= level_size - edge
-                indices.append(1 if on_edge else 0)
-                alpha.append(EDGE_ALPHA if on_edge else FILL_ALPHA)
-        levels.append(bytes(indices) + bytes(alpha))
+        blocks = max(1, level_size // 4)
+        level = bytearray()
+        for block_y in range(blocks):
+            for block_x in range(blocks):
+                alpha_bits = 0
+                color_bits = 0
+                for index in range(16):
+                    x, y = block_x * 4 + index % 4, block_y * 4 + index // 4
+                    inside = x < level_size and y < level_size
+                    on_edge = inside and (x < edge or y < edge or x >= level_size - edge or y >= level_size - edge)
+                    # Alpha: index 0 is the first end (the edge's), 1 the second (the fill's).
+                    # Color: in DXT5 always four colors, 0 the first end, 1 the second.
+                    alpha_bits |= (0 if on_edge else 1) << (3 * index)
+                    color_bits |= (0 if on_edge else 1) << (2 * index)
+                level += struct.pack("<BB", EDGE_ALPHA, FILL_ALPHA) + alpha_bits.to_bytes(6, "little")
+                level += struct.pack("<HHI", edge_color, fill_color, color_bits)
+        levels.append(bytes(level))
         if level_size == 1:
             break
         level_size //= 2
@@ -64,8 +78,9 @@ def blp(size=TEXTURE_SIZE):
         data += level
     offsets += [0] * (16 - len(offsets))
     sizes += [0] * (16 - len(sizes))
-    header = b"BLP2" + struct.pack("<I4B2I", 1, 1, 8, 8, 1, size, size)
-    header += struct.pack("<16I", *offsets) + struct.pack("<16I", *sizes) + struct.pack("<256I", *palette)
+    # Version 1, DXT (2), 8-bit alpha, DXT5 (7), with mips; no palette (its space is left empty).
+    header = b"BLP2" + struct.pack("<I4B2I", 1, 2, 8, 7, 1, size, size)
+    header += struct.pack("<16I", *offsets) + struct.pack("<16I", *sizes) + bytes(256 * 4)
     assert len(header) == header_size
     return header + data
 
@@ -130,19 +145,23 @@ def m2(name, box):
     sequence = struct.pack("<HHIfIhHIII", 0, 0, 3000, 0.0, 0x20, 0x7FFF, 0, 0, 0, 150) + bounds + struct.pack("<hH", -1, 0)
     assert len(sequence) == 64
     sequences = w.array(sequence, 1)
-    sequence_lookup = w.array(struct.pack("<h", 0), 1)
+    # No sequence lookup table, as Blizzard's own doodads have none: the client then searches
+    # the sequences in order. A table is a hash the client probes until it finds the animation
+    # or an empty (-1) slot, so a full one (the Stand alone) never ends for any other
+    # animation, and a creature asks for others (walking, flying): the game hangs.
+    sequence_lookup = (0, 0)
 
-    # One bone, not a key bone, never moving.
+    # One bone, not a key bone, never moving; the key bone table says so, as the doodads' do.
     bone = struct.pack("<iIhHI", -1, 0, -1, 0, 0) + empty_track() * 3 + struct.pack("<3f", 0.0, 0.0, 0.0)
     assert len(bone) == 88
     bones = w.array(bone, 1)
-    key_bone_lookup = (0, 0)
+    key_bone_lookup = w.array(struct.pack("<h", -1), 1)
     vertex_array = w.array(bytes(vertices), vertex_count)
 
     texture_name = TEXTURE.encode("ascii") + b"\0"
     texture_name_offset = w.add(texture_name)
-    # Type 0 (a file), wrapping both ways.
-    textures = w.array(struct.pack("<II2I", 0, 3, len(texture_name), texture_name_offset), 1)
+    # Type 0 (a file), no flags, as the doodads' textures.
+    textures = w.array(struct.pack("<II2I", 0, 0, len(texture_name), texture_name_offset), 1)
 
     # See-through as drawn: one key, fully weighted (the display's own alpha does the rest).
     weight_times = w.add(struct.pack("<I", 0))
@@ -151,7 +170,8 @@ def m2(name, box):
     weight_value_arrays = w.add(struct.pack("<2I", 1, weight_values))
     texture_weights = w.array(struct.pack("<Hh2I2I", 0, -1, 1, weight_time_arrays, 1, weight_value_arrays), 1)
 
-    replaceable_lookup = w.array(struct.pack("<h", -1), 1)
+    # Texture type 0 (a file) is texture 0, as in the doodads.
+    replaceable_lookup = w.array(struct.pack("<h", 0), 1)
     # Unlit (1), both sides (4), not writing depth (0x10); alpha blended (2).
     materials = w.array(struct.pack("<HH", 0x01 | 0x04 | 0x10, 2), 1)
     bone_lookup = w.array(struct.pack("<H", 0), 1)

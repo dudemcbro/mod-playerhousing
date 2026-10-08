@@ -1,4 +1,4 @@
--- A button on the minimap's edge: click for the housing window, right-click for edit mode.
+-- A button on the minimap's edge: a click opens or closes the housing window.
 -- Drag it around the edge; /housing minimap hides or shows it. Where it sits is saved.
 
 local API = PlayerHousingAPI
@@ -22,9 +22,6 @@ local function ShowTooltip(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText("Player Housing")
     GameTooltip:AddLine("Click: the housing window.", 1, 1, 1)
-    if API.CanEdit() then
-        GameTooltip:AddLine(API.state.editMode and "Right-click: leave edit mode." or "Right-click: edit mode.", 1, 1, 1)
-    end
     GameTooltip:AddLine("Drag to move. /housing minimap hides it.", 0.7, 0.7, 0.7)
     GameTooltip:Show()
 end
@@ -47,19 +44,9 @@ local function Create()
     border:SetPoint("TOPLEFT")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
-    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:RegisterForClicks("LeftButtonUp")
     button:RegisterForDrag("LeftButton")
-    button:SetScript("OnClick", function(self, mouseButton)
-        if mouseButton == "RightButton" then
-            if API.CanEdit() then
-                API.Command("edit")
-            else
-                API.Print("edit mode is for your island, or one where you're a roommate.")
-            end
-        else
-            PlayerHousing_Toggle()
-        end
-    end)
+    button:SetScript("OnClick", function() PlayerHousing_Toggle() end)
     button:SetScript("OnDragStart", function(self)
         self:SetScript("OnUpdate", FollowCursor)
     end)

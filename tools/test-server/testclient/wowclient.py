@@ -360,6 +360,7 @@ class WorldClient:
         self.objects_lock = threading.Lock()
         self.system_messages = []
         self.addon_messages = []
+        self.monster_moves = {}        # guid -> how many moves the server sent for it
         self.stand_state = 0
         self.mailbox_opened = 0
         self.bank_banker = None        # the banker of the last SMSG_SHOW_BANK
@@ -577,6 +578,7 @@ class WorldClient:
         once, which is where it will be."""
         r = Reader(data)
         guid = r.packed_guid()
+        self.monster_moves[guid] = self.monster_moves.get(guid, 0) + 1
         r.u8()
         r.take(12)  # where it starts
         r.u32()     # spline id

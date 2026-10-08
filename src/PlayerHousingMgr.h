@@ -7,6 +7,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <ctime>
 #include <deque>
 #include <functional>
@@ -30,10 +31,38 @@ struct ItemTemplate;
 
 namespace Housing
 {
+    // Tilts a game object. Older cores call this SetLocalRotationAngles, newer ones
+    // SetWorldRotationAngles; whichever the core has is used.
+    template <typename Object>
+    auto SetRotationAngles(Object* object, float z, float y, float x, int) -> decltype(object->SetLocalRotationAngles(z, y, x), void())
+    {
+        object->SetLocalRotationAngles(z, y, x);
+    }
+
+    template <typename Object>
+    auto SetRotationAngles(Object* object, float z, float y, float x, long) -> decltype(object->SetWorldRotationAngles(z, y, x), void())
+    {
+        object->SetWorldRotationAngles(z, y, x);
+    }
+
+    // The core takes a rotation with no z and w part for "no rotation data" and stands the
+    // object up again (GameObject::SetLocalRotation). Turned right over (180 degrees about a
+    // level line: upside down), a rotation has exactly that, so it's tipped 0.06 degrees off.
+    template <typename Object>
+    void SetRotationAngles(Object* object, float z, float y, float x)
+    {
+        float cz = std::cos(z / 2), sz = std::sin(z / 2), cy = std::cos(y / 2), sy = std::sin(y / 2);
+        float cx = std::cos(x / 2), sx = std::sin(x / 2);
+        float qz = sz * cy * cx - cz * sy * sx;
+        float qw = cz * cy * cx + sz * sy * sx;
+        if (std::fabs(qz) < 0.0001f && std::fabs(qw) < 0.0001f)
+            y += 0.001f;
+        SetRotationAngles(object, z, y, x, 0);
+    }
+
     // Items, objects and texts owned by the module (see sql/db_world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
-    constexpr uint32 HOOK_MARKER_GO = 903990;
     constexpr uint32 SELECTION_RING_GO = 903991;  // decorating: under the selected pieces
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
@@ -49,25 +78,12 @@ namespace Housing
     constexpr uint32 QUEST_TOUR_CHANGE = 900402;
     constexpr uint32 QUEST_TOUR_UNDO = 900403;
     constexpr uint32 QUEST_TOUR_OPEN = 900404;
-    // "Move a Piece" items, one per targeting circle size (tools/content/build_content.py):
-    // handed out to move a piece with the circle, gone once used.
+    // The old "Move a Piece" items (targeting circles), retired: any still around are taken
+    // away (see SweepHousingItems).
     constexpr uint32 MOVER_ITEM_FIRST = 901190;
     constexpr uint32 MOVER_ITEM_LAST = 901199;
-    constexpr uint32 PLAYER_MENU_ID = 900300;  // gossip menu id for menus opened by .house
 
-    constexpr uint32 TEXT_HOME = 900300;
-    constexpr uint32 TEXT_COLLECTION = 900301;
-    constexpr uint32 TEXT_PIECE = 900302;
-    constexpr uint32 TEXT_VISIT = 900303;
-    constexpr uint32 TEXT_SETTINGS = 900304;
-    constexpr uint32 TEXT_STORAGE = 900305;
-    constexpr uint32 TEXT_HELP = 900306;
-    constexpr uint32 TEXT_HOOK = 900307;
-    constexpr uint32 TEXT_GUESTS = 900308;
-    constexpr uint32 TEXT_NEARBY = 900309;
-    constexpr uint32 TEXT_STAND = 900310;
-    constexpr uint32 TEXT_CHEST = 900311;
-    constexpr uint32 TEXT_MUSIC = 900312;
+    constexpr uint32 TEXT_HOME = 900300;  // Krook's greeting above his quests
 
     enum PieceKind : uint8
     {
@@ -78,7 +94,7 @@ namespace Housing
     enum PieceFlags : uint32
     {
         PIECE_FLAG_SURFACE = 0x01,        // other pieces can be put on top
-        PIECE_FLAG_SMALL = 0x02,          // fits on a surface
+        PIECE_FLAG_SMALL = 0x02,          // small enough for a table top
         PIECE_FLAG_PER_CHARACTER = 0x04,  // unlock belongs to the character, not the account
         PIECE_FLAG_GIFT = 0x08,           // given on first login
         PIECE_FLAG_WRECKAGE = 0x10,       // standing on the island at the first visit
@@ -131,47 +147,25 @@ namespace Housing
         HOUSE_FLAG_HIDDEN = 0x08           // a GM closed it to all but its guests
     };
 
+    // Flags 0x08, 0x10, 0x20 and 0x40 belonged to the retired menus (when a piece's menu
+    // opened by itself, the menu Collection's filter); they're left alone in old rows.
     enum CharacterFlags : uint32
     {
         CHAR_FLAG_KEY_GIVEN = 0x01,
         CHAR_FLAG_VETERAN_DONE = 0x02,
         CHAR_FLAG_GREETED = 0x04,
-        CHAR_FLAG_ADJUST_ALL = 0x08,     // adjust menu after placing anything
-        CHAR_FLAG_ADJUST_NEVER = 0x10,   // never (as with no flag: the default)
-        CHAR_FLAG_UNLOCKED_ONLY = 0x20,  // the Collection lists only unlocked pieces
-        CHAR_FLAG_ADJUST_BUILDINGS = 0x40  // adjust menu after placing buildings
+        CHAR_FLAG_HOME_AT_LOGOUT = 0x80,  // last seen on their own island: logging in puts them back
+        CHAR_FLAG_GIFTS_GIVEN = 0x100     // on the account's home character: its first pieces came
     };
 
-    // When the piece menu opens by itself right after placing.
-    enum AdjustMode : uint8
-    {
-        ADJUST_BUILDINGS = 0,
-        ADJUST_ALL = 1,
-        ADJUST_NEVER = 2
-    };
-
+    // 0x04 was the first trip to House Storage, when pieces still went to the bags.
     enum Tip : uint32
     {
         TIP_FIRST_PLACE = 0x01,
         TIP_FIRST_UNLOCK = 0x02,
-        TIP_FIRST_STORAGE = 0x04,
         TIP_LIMIT = 0x08,
         TIP_DECORATE = 0x10,
         TIP_GHOST = 0x20
-    };
-
-    enum MenuSourceType : uint8
-    {
-        SOURCE_PLAYER = 0,
-        SOURCE_ITEM,
-        SOURCE_CREATURE,
-        SOURCE_GAMEOBJECT
-    };
-
-    struct MenuSource
-    {
-        MenuSourceType type{SOURCE_PLAYER};
-        ObjectGuid guid;
     };
 
     // Rules in the same group must all be met; any complete group unlocks the piece (so a
@@ -291,7 +285,7 @@ namespace Housing
         bool fresh{false};   // the owner hasn't read it yet
     };
 
-    // A few pieces saved together, to set down anywhere with the targeting circle.
+    // A few pieces saved together, to set down anywhere (they follow the player like a piece).
     struct SavedSet
     {
         uint32 id{0};
@@ -372,8 +366,6 @@ public:
 
     // ---- pieces and editing (HousingPieces.cpp)
     Housing::PieceDefinition const* GetPiece(uint32 itemEntry) const;
-    std::vector<Housing::PieceDefinition const*> GetPiecesInCategory(uint8 category) const;
-    bool HandlePlacementCast(Player* player, Item* castItem, Position const& target, std::string& reason);
     bool SetDecorating(Player* player, bool on, std::string& reason);
     bool PickUp(Player* player, uint32 placementId, bool withInside, std::string& reason);
     bool Rotate(Player* player, uint32 placementId, float degrees, std::string& reason);
@@ -398,11 +390,6 @@ public:
     float GetMinSize() const { return _sizeMin; }
     float GetMaxSize() const { return _sizeMax; }
     float GetMaxTilt() const { return _tiltMax; }
-    bool PlaceOnHook(Player* player, uint32 surfacePlacementId, uint32 itemEntry, std::string& reason);
-    bool StartMove(Player* player, uint32 placementId, std::string& reason);
-    bool HandleMoveCast(Player* player, Item* castItem, Position const& target, std::string& reason);
-    void CancelMove(Player* player);
-    uint32 GetPendingMover(Player const* player) const;
     static bool IsMoverItem(uint32 itemEntry) { return itemEntry >= Housing::MOVER_ITEM_FIRST && itemEntry <= Housing::MOVER_ITEM_LAST; }
     bool PackUpEverything(Player* player, std::string& reason);
     // A Bank Chest: the owner's bank, through a banker standing unseen at the chest.
@@ -416,20 +403,20 @@ public:
     uint32 ResolvePlacementArgument(Player* player, uint32 placementId) const;
     std::optional<Housing::Placement> GetPlacement(Player const* player, uint32 placementId) const;
     uint32 GetPlacementForObject(Player const* player, ObjectGuid const& guid) const;
-    uint32 GetSurfaceForMarker(Player const* player, ObjectGuid const& guid) const;
     std::vector<std::pair<Housing::Placement, float>> GetNearbyPlacements(Player const* player, float range) const;
     std::vector<Housing::Placement> GetPiecesInside(ObjectGuid::LowType ownerGuid, uint32 buildingPlacementId) const;
     void CountPlaced(ObjectGuid::LowType ownerGuid, uint32& furnishings, uint32& buildings) const;
     uint32 GetMaxFurnishings() const { return _maxFurnishings; }
     uint32 GetMaxBuildings() const { return _maxBuildings; }
+    // The pieces a character owns that aren't placed, by item entry: their Collection's counts
+    // (kept in mod_playerhousing_storage, once called House Storage).
     std::map<uint32, uint32> GetStorage(ObjectGuid::LowType ownerGuid) const;
-    // limit: at most that many (0: all of them).
-    bool TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason, uint32 limit = 0);
+    // Furnishing items from before pieces were kept as counts (in the bags, the bank, back from
+    // the mail) go into the Collection's counts; old "Move a Piece" items go. True if any did.
+    bool SweepHousingItems(Player* player, bool bankToo);
     std::string CountsText(ObjectGuid::LowType ownerGuid) const;
     void SelectPlacement(Player const* player, uint32 placementId);
     ObjectGuid GetObjectForPlacement(Player const* player, uint32 placementId) const;
-    void ProcessPendingConsumes(Player* player);
-    bool HasPendingConsumes() const { return _pendingConsumeCount.load(std::memory_order_relaxed) != 0; }
 
     // ---- groups, rows, sets and helpers (HousingGroups.cpp)
     // Several pieces selected at once: the selected piece first, then the others, which
@@ -452,8 +439,6 @@ public:
     uint32 GetMaxSavedSets() const { return MAX_SAVED_SETS; }
     bool SaveSet(Player* player, std::string const& name, std::string& reason);
     bool DeleteSet(Player* player, uint32 setId, std::string& reason);
-    // Hands over Move a Piece: the circle sets the set down.
-    bool StartSetPlacement(Player* player, uint32 setId, std::string& reason);
     // Undo several steps at once, newest first.
     bool UndoSteps(Player* player, uint32 steps, std::string& reason);
     std::vector<std::string> JournalLabels(Player const* player, bool redo, uint32 limit) const;
@@ -464,16 +449,22 @@ public:
     bool PhotoTour(Player* gm, std::string const& what, std::string& reason);
 
     // ---- ghosts (HousingGhosts.cpp): a piece that follows its player until it's set down.
-    // Furniture shows as a see-through copy of itself (a creature with its model, from the
-    // client patch), a building as a see-through block its size; any piece without a ghost
-    // model is carried as it is.
-    // A new piece from the bags or House Storage (or a new copy from the Collection); with
-    // copyOf, it takes after that placed piece (turn, size, tilt).
+    // Furniture and M2 buildings show as exact see-through copies (creatures with their model,
+    // from the client patch). A world-model building, or any piece without a creature ghost,
+    // is carried as its real collisionless object.
+    // A new piece, one the player owns (or a new copy from the Collection, paid for when it's
+    // set down); with copyOf, it takes after that placed piece (turn, size, tilt).
     bool StartGhostNew(Player* player, uint32 itemEntry, uint32 copyOf, std::string& reason);
     // Pieces already placed (0: the selection, with the rest of its group).
     bool StartGhostMove(Player* player, uint32 placementId, std::string& reason);
+    // A saved set, all its pieces following together, set down as one.
+    bool StartGhostSet(Player* player, uint32 setId, std::string& reason);
     // Farther (forward), to the left, up, and turned (degrees), from where the player faces.
     bool AdjustGhost(Player* player, float forward, float left, float up, float degrees, std::string& reason);
+    // Size and tilt of what follows the player, set with it when it's set down (Resize and
+    // Tilt come here while something follows).
+    bool ResizeGhost(Player* player, float percent, bool relative, std::string& reason);
+    bool TiltGhost(Player* player, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason);
     // Shown at a point in the world from now on: where the mouse points (the addon with
     // PlayerHousing.dll sends it a few times a second). facing: which way the surface there
     // faces (x, y, z), or null; on a wall, the piece faces out from it.
@@ -485,22 +476,33 @@ public:
     void CancelGhost(Player* player);
     uint32 GetGhostItem(Player const* player) const;  // 0: not carrying anything
     bool IsGhostMove(Player const* player) const;
+    // One island per account: the character it's kept under (HousingAccounts.cpp). Every
+    // character of the account is at home on it.
+    ObjectGuid::LowType HomeOf(Player const* player) const;
+    ObjectGuid::LowType HomeOfCharacter(ObjectGuid::LowType guid) const;
+    // The island's owner in the game now, on any of the account's characters.
+    Player* FindOwnerOnline(ObjectGuid::LowType home) const;
+    // Something follows the player (placing or moving), until it's set down.
+    bool IsCarrying(Player const* player) const;
     void UpdateGhost(Player* player);
     bool GhostsEnabled() const { return _ghosts; }
 
-    // ---- the client addon's housing window (HousingAddon.cpp)
+    // ---- the client addon's housing window (HousingAddon.cpp): the only way into housing
+    // besides typing .house commands.
     void SendAddon(Player* player, std::string const& text) const;
-    // A list for one of the window's tabs: collection, placed, layouts, guests, visits, island.
+    // A list for one of the window's tabs: collection, placed, layouts, guests, visits, island,
+    // history, sets, guestbook, stand <placement>.
     bool SendAddonData(Player* player, std::string const& kind, std::string const& argument, std::string& reason);
-    // The addon says it's there; with keyOpensWindow the House Key opens its window instead of the
-    // menu; with mouse, PlayerHousing.dll is there too (ghosts follow the mouse).
-    void SetAddonClient(Player* player, bool keyOpensWindow, bool mouse);
-    bool KeyOpensWindow(Player const* player) const;
+    // The addon says it's there; with mouse, PlayerHousing.dll is there too (ghosts follow the
+    // mouse); with local, the DLL moves the ghost on the player's screen itself, so the server
+    // only keeps up with where it is instead of moving it there.
+    void SetAddonClient(Player* player, bool mouse, bool local);
     bool HasMouse(Player const* player) const;
+    bool HasLocalGhosts(Player const* player) const;
     // The addon is there: its window and banner show what just happened, so chat needn't.
     bool HasAddon(Player const* player) const;
-    // count: at most that many (0: all of that piece).
-    bool TakeFromStorageCommand(Player* player, std::string const& what, uint32 count, std::string& reason);
+    // Opens the window (on a tab, or as it was), or says how to get the addon without it.
+    void OpenWindow(Player* player, std::string const& tab = "") const;
     void MarkAllSeen(Player* player) const;
 
     // ---- moderation (HousingModeration.cpp)
@@ -550,6 +552,10 @@ public:
     static std::string LookName(uint32 look);
     std::vector<Item*> GetWearableItems(Player* player) const;
     bool PutOnStand(Player* player, uint32 placementId, uint32 itemGuid, std::string& reason);
+    // The first wearable one of that item in the bags (the addon only knows items by entry).
+    bool PutOnStandByEntry(Player* player, uint32 placementId, uint32 itemEntry, std::string& reason);
+    // What a stand wears, for a visitor.
+    std::string DescribeStand(Player const* player, uint32 placementId) const;
     bool TakeOffStand(Player* player, uint32 placementId, int32 slot, std::string& reason);
     bool ChangeStandFigure(Player* player, uint32 placementId, std::string& reason);
     bool SendMannequinLook(WorldSession* session, ObjectGuid const& guid) const;
@@ -559,15 +565,11 @@ public:
     std::set<uint32> LoadUnlocks(Player const* player) const;
     std::string DescribeProgress(Player const* player, Housing::PieceDefinition const& piece) const;
     void CollectionCounts(Player const* player, int32 category, uint32& unlocked, uint32& total, std::set<uint32> const* known = nullptr) const;
-    bool GetCopy(Player* player, uint32 itemEntry, std::string& reason);
+    // Copies of an unlocked piece, bought into the Collection (free in FreeMode).
     bool GetCopies(Player* player, uint32 itemEntry, uint32 count, std::string& reason);
     // Unlocked since the player last saw them listed.
     std::set<uint32> LoadNewUnlocks(Player const* player) const;
     void MarkSeen(Player const* player, std::vector<uint32> const& itemEntries) const;
-    std::vector<Housing::PieceDefinition const*> SearchPieces(std::string const& text) const;
-    bool IsCollectionUnlockedOnly(ObjectGuid::LowType guid) const;
-    void SetCollectionUnlockedOnly(Player* player, bool unlockedOnly) const;
-    uint32 CountPlacedOf(ObjectGuid::LowType ownerGuid, uint32 itemEntry) const;
     bool GetOneOfEverything(Player* player, std::string& reason);
     void EvaluateUnlocks(Player* player, uint8 ruleType, uint32 param, bool announce, uint32 value = 0);
     uint32 CreditPastProgress(Player* player);
@@ -619,10 +621,6 @@ public:
     // A tour quest's step done, if the player is on that quest.
     static void QuestEvent(Player* player, uint32 questId);
     void SendAddonState(Player* player) const;
-    uint8 GetAdjustMode(ObjectGuid::LowType guid) const;
-    void SetAdjustMode(Player* player, uint8 mode, std::string& reason) const;
-    bool ShouldAdjustAfterPlacing(Player const* player, uint32 itemEntry) const;
-    static char const* AdjustModeName(uint8 mode);
     bool ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const;
     std::string NameOf(ObjectGuid::LowType guid) const;
     static std::string FormatMoney(uint64 copper);
@@ -656,6 +654,14 @@ public:
     static char const* CategoryName(uint8 category);
 
 private:
+    ObjectGuid::LowType HomeOfAccount(uint32 account, ObjectGuid::LowType fallback) const;
+    // Everything kept under one character moves to another: storage, layouts, sets, guests,
+    // likes, notes; with packUp the island's pieces are put away, else the island moves too.
+    void MoveHousing(ObjectGuid::LowType from, ObjectGuid::LowType to, bool packUp);
+    void MergeAccountHomes();
+    bool RehomeAccountOf(ObjectGuid::LowType deleted);
+    mutable std::unordered_map<uint32, ObjectGuid::LowType> _homeByAccount;  // account -> home character
+
     struct SpawnedPiece
     {
         ObjectGuid guid;
@@ -688,7 +694,6 @@ private:
         std::unordered_set<ObjectGuid> occupants;
         std::map<uint32, Housing::Placement> placements;
         std::unordered_map<uint32, SpawnedPiece> spawned;
-        std::unordered_map<uint32, ObjectGuid> markers;  // surface placement id -> hook marker
         std::unordered_map<ObjectGuid::LowType, std::map<uint32, SelectionRing>> rings;  // per player: placement -> ring
         ObjectGuid photoGuid;  // the photo tour's building
         ObjectGuid stewardGuid;
@@ -701,15 +706,14 @@ private:
         std::deque<Housing::JournalEntry> redo;
     };
 
-    // What the last batch of changes did with items, for the message that follows.
+    // What the last batch of changes did with pieces and gear, for the message that follows.
     struct ApplyReport
     {
-        uint32 toBags{0};
-        uint32 toStorage{0};
+        uint32 toCollection{0};  // back in the player's own Collection
         uint32 placed{0};
         uint32 gearToBags{0};
         uint32 gearMailed{0};
-        uint32 toOthers{0};   // pieces someone else placed, sent to their House Storage
+        uint32 toOthers{0};   // pieces someone else placed, back in their Collection
         std::vector<std::string> gearMissing;  // couldn't go back on a stand: no longer in the bags
     };
 
@@ -737,7 +741,9 @@ private:
     bool LoadDefinitions();
     void ConvertLegacyData();
     // force: a GM inspecting, past the island's privacy.
-    bool EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason, bool force = false);
+    // With at, the player arrives there (back where they logged out) and keeps the way out
+    // they already have.
+    bool EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason, bool force = false, Position const* at = nullptr);
     bool EnsureSession(ObjectGuid::LowType ownerGuid);
     bool InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason);
     void DespawnSessionObjects(Session& session, Map* map);
@@ -753,20 +759,20 @@ private:
     void GiveFirstLoginItems(Player* player);
     uint32 GetCharacterFlags(ObjectGuid::LowType guid, uint32* tips = nullptr) const;
     void SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, bool tip) const;
+    void ClearCharacterFlag(ObjectGuid::LowType guid, uint32 flag) const;
     void UpdatePendingTrip(Player* player);
 
     // HousingPieces.cpp
     // The island the player may change: their own, or one they're a roommate on (unless
     // ownerOnly).
     Session* GetOwnerSession(Player* player, std::string& reason, bool ownerOnly = false);
-    // Who a piece's item goes back to.
+    // Whose Collection a piece goes back to.
     static ObjectGuid::LowType ItemOwnerOf(Session const& session, Housing::Placement const& placement)
     {
         return placement.placedBy ? placement.placedBy : session.ownerGuid;
     }
-    // The item for a piece coming back: from the player's bags or storage, or (for someone
-    // else's piece) from its owner's House Storage.
-    bool TakeItemFor(Player* player, ObjectGuid::LowType itemOwner, uint32 itemEntry);
+    // One of a piece out of its owner's Collection, for a piece coming back (redo, undo).
+    bool TakePieceFor(Player* player, ObjectGuid::LowType itemOwner, uint32 itemEntry);
     Session const* FindSessionOf(Player const* player) const;
     bool SpawnPlacement(Session& session, Map* map, Housing::Placement const& placement);
     bool SpawnStand(Session& session, Map* map, Housing::Placement const& placement);
@@ -774,16 +780,15 @@ private:
     void RemoveSpawned(Map* map, ObjectGuid const& guid);
     void DespawnPlacement(Session& session, Map* map, uint32 placementId);
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);
-    void SpawnMarkers(Session& session, Map* map);
-    void DespawnMarkers(Session& session, Map* map);
     // Each update: rings under the selected pieces while decorating.
     void UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid);
     void SpawnSteward(Session& session, Map* map);
     void PlaceStarterWreckage(Session& session, Map* map);
     bool CheckLimit(Session const& session, Housing::PieceDefinition const& piece, std::string& reason) const;
     bool IsSpotOnIsland(float x, float y, float z) const;
-    bool ReturnItem(Player* player, uint32 itemEntry, bool& toStorage);
-    bool TakeItem(Player* player, uint32 itemEntry);
+    // A piece back into the player's Collection, or one out of it (false: they have none).
+    void ReturnPiece(Player* player, uint32 itemEntry);
+    bool TakePiece(Player* player, uint32 itemEntry);
     void AddToStorage(ObjectGuid::LowType ownerGuid, uint32 itemEntry, int32 delta) const;
     bool ApplyChanges(Player* player, Session& session, std::vector<Housing::Change> const& changes, bool towardsAfter, std::string& reason);
     bool ApplyState(Player* player, Session& session, Map* map, uint32 placementId, std::optional<Housing::Placement> const& target, std::string& reason);
@@ -792,7 +797,7 @@ private:
     bool JournalStillApplies(Session const& session, Housing::JournalEntry const& entry, bool towardsAfter) const;
     // Undo lists that point at an island's pieces, when those pieces go some other way.
     void ForgetJournals(ObjectGuid::LowType ownerGuid);
-    // What roommates put on an island goes back to them: pieces to House Storage, gear by mail.
+    // What roommates put on an island goes back to them: pieces to their Collection, gear by mail.
     void ReturnRoommatePieces(ObjectGuid::LowType ownerGuid);
     // Housing of characters that no longer exist, at startup.
     void PurgeLeftovers();
@@ -820,10 +825,10 @@ private:
     void SavePlacement(ObjectGuid::LowType ownerGuid, Housing::Placement const& placement, uint32 mapId) const;
     void DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const;
     std::string PieceName(uint32 itemEntry) const;
-    // Where things went back to. bagsToo false: only what the player couldn't guess (House
-    // Storage because the bags were full, someone else's storage, gear by mail).
-    std::string DescribeReturns(bool bagsToo = true) const;
-    std::string DescribeItemReturns(bool bagsToo = true) const;
+    // Where things went back to. collectionToo false: only what the player couldn't guess
+    // (someone else's Collection, gear by mail).
+    std::string DescribeReturns(bool collectionToo = true) const;
+    std::string DescribeItemReturns(bool collectionToo = true) const;
 
 
     // HousingGroups.cpp
@@ -849,12 +854,12 @@ private:
     float FloorHeightNear(Player* player, Session const& session, Housing::Placement const& reference, float x, float y) const;
     bool PickUpGroup(Player* player, Session& session, std::vector<uint32> const& members, std::string& reason);
     bool MoveGroupTo(Player* player, Session& session, std::vector<uint32> const& members, Position const& target, std::string& reason);
-    // The items new pieces need, from the bags and House Storage; FreeMode hands over the
-    // missing ones (unlocked only) into House Storage first.
-    bool EnsurePieces(Player* player, std::map<uint32, uint32> const& needed, std::string& reason);
+    // The pieces new placements need, in the player's Collection: missing copies of unlocked
+    // pieces are bought first (free in FreeMode); paid says what they cost.
+    bool EnsurePieces(Player* player, std::map<uint32, uint32> const& needed, std::string& reason, uint64* paid = nullptr);
     bool FitsLimits(Session const& session, std::map<uint32, uint32> const& adding, std::string& reason) const;
-    bool StampSet(Player* player, Session& session, uint32 setId, Position const& target, std::string& reason);
-    uint32 MoverForRadius(float radius) const;
+    // Sets a saved set down with its first piece at target, the whole set turned to facing.
+    bool StampSet(Player* player, Session& session, uint32 setId, Position const& target, float facing, std::string& reason);
     float GroundHeightNear(Player* player, float x, float y, float z) const;
     void DespawnPhoto(Session& session, Map* map);
 
@@ -877,11 +882,13 @@ private:
         float z{0.0f};
         float o{0.0f};
         uint32 drawnMs{0};      // carried objects: when last redrawn
+        bool reshaped{false};   // sized or tilted since it was last drawn
     };
     struct Ghost
     {
         bool isNew{true};
         uint32 copyOf{0};
+        uint32 setId{0};        // a saved set being set down (new pieces, all of them)
         std::vector<GhostPiece> pieces;  // the lead first
         float forward{3.0f};    // from the player: ahead, to the left, and up from what's under it
         float side{0.0f};
@@ -903,17 +910,26 @@ private:
         float pointX{0.0f};
         float pointY{0.0f};
         float pointZ{0.0f};
+        float rawZ{0.0f};       // the height the client gave with the point, before the rules
         bool onWall{false};     // the point is on a wall: the piece faces out from it
         float wallO{0.0f};
         float wallTurn{0.0f};   // the player's own turn, on top of the wall's
         std::string note;       // why the last point wasn't taken (for the addon), or empty
+        bool local{false};      // the player's own client moves it (see SetAddonClient)
+        std::string piecesSent; // the ghost's pieces as last told to the addon
     };
     // Which way the lead faces now: its own turn, or out from the wall it's on.
     static float GhostFacing(Ghost const& ghost);
     uint32 GhostDisplayFor(uint32 itemEntry) const;
     uint32 SolidDisplayFor(Housing::PieceDefinition const& piece) const;
-    // One in the bags (not counting one a placement still uses) or in House Storage.
+    // One in the player's Collection.
     bool HasOneToPlace(Player* player, uint32 itemEntry) const;
+    // For a client that moves the ghost itself: its creatures and where each sits from the
+    // lead (sent when they change), and where the server has the lead now.
+    void SendGhostPieces(Player* player, Ghost& ghost) const;
+    void SendGhostPose(Player* player, Ghost const& ghost, float x, float y, float z) const;
+    // Shared by new pieces and sets: starts the ghost the player carries from now on.
+    void BeginGhost(Player* player, Session& session, Ghost ghost);
     // The player where they are about now: their last movement packet, carried forward.
     void PredictPlayer(Player* player, Ghost& ghost, float& x, float& y, float& z, float& o) const;
     // What x, y would stand on: a table top (parent), else the floor.
@@ -964,7 +980,7 @@ private:
     uint32 _keyDelaySeconds{5};
     float _sizeMin{0.5f};   // times the piece's normal size
     float _sizeMax{2.0f};
-    float _tiltMax{45.0f};  // degrees either way
+    float _tiltMax{180.0f};  // degrees either way; 180: all the way round
     uint32 _maxSavedLayouts{5};
     bool _catalogEverything{false};
     bool _ghosts{true};     // see-through ghosts for furniture (the client patch has their models)
@@ -991,28 +1007,16 @@ private:
     std::unordered_map<ObjectGuid, CommandWindow> _pointWindows;
     std::unordered_set<ObjectGuid> _editMode;  // asked for edit mode; it holds while they decorate here
     std::unordered_set<ObjectGuid> _groupHold;  // the addon says Ctrl is down: clicks add to the group
-    std::unordered_map<ObjectGuid, bool> _addonClients;  // has the addon -> the House Key opens its window
+    std::unordered_set<ObjectGuid> _addonClients;        // has the addon: the House Key opens its window
     std::unordered_set<ObjectGuid> _mouseClients;        // has PlayerHousing.dll: ghosts follow the mouse
+    std::unordered_set<ObjectGuid> _localGhostClients;   // and the DLL moves the ghost itself
     mutable std::unordered_set<ObjectGuid::LowType> _knownHouses;  // have a house row (EnsureHouse); until logout
     mutable std::unordered_map<ObjectGuid::LowType, float> _gridSizes;  // read once a login: the addon's state has it
     void SendAddonRows(Player* player, std::string const& kind, std::string const& label, std::vector<std::string> const& parts) const;
     std::unordered_map<ObjectGuid::LowType, std::unordered_map<uint64, uint64>> _notified;  // sender -> target << 8 | kind -> sent at (ms)
     std::unordered_set<ObjectGuid> _arrivals;  // teleported onto an island, greeting not shown yet
-    // Items used to place pieces; removed before the player's next packet or update, because
-    // the cast that placed them still holds the item.
-    std::unordered_map<ObjectGuid, std::map<uint32, uint32>> _pendingConsumes;
-    std::atomic<uint32> _pendingConsumeCount{0};  // _pendingConsumes.size(), read without the lock
     std::unordered_map<ObjectGuid, MannequinLook> _mannequins;
     std::unordered_map<ObjectGuid, ObjectGuid> _chestBankers;  // player -> the banker their chest brought
-
-    struct PendingMove
-    {
-        uint32 placementId{0};
-        uint32 moverItem{0};
-        uint32 setId{0};     // not a piece: a saved set to set down
-    };
-    std::unordered_map<ObjectGuid, PendingMove> _pendingMoves;
-    std::map<uint32, uint32> _moverBySpell;  // circle spell -> the "Move a Piece" item using it
 
     // Players on an island: when their clock is resent, and their music replayed.
     struct AmbienceTimers

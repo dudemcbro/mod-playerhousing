@@ -1,5 +1,6 @@
--- Smaller windows: the undo history under an Undo button, the row dialog, the "save as a set"
--- question, and the photo tour that takes the buildings' pictures for the preview.
+-- Smaller windows: the undo history under an Undo button, the "save as a set"
+-- question, a mannequin's dress list, and the photo tour that takes the buildings' pictures
+-- for the preview.
 
 local API = PlayerHousingAPI
 local HISTORY_ROWS = 15
@@ -95,90 +96,6 @@ API.OnData("history", function(list)
 end)
 
 ---------------------------------------------------------------------------------------------
--- A row of copies: how many, how far apart (blank: the piece's own length), which way.
-
-local DIRECTIONS = { "right", "left", "forward", "back" }
-local rowDialog, rowCount, rowSpacing, rowDirection
-
-local function CreateRowDialog()
-    rowDialog = CreateFrame("Frame", "PlayerHousingRowDialog", UIParent)
-    rowDialog:SetWidth(250)
-    rowDialog:SetHeight(128)
-    rowDialog:SetPoint("CENTER", 0, 120)
-    rowDialog:SetFrameStrata("DIALOG")
-    rowDialog:EnableMouse(true)
-    rowDialog:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 32, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    local title = rowDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", 0, -10)
-    title:SetText("A row of copies")
-
-    local function Box(name, label, y, width)
-        local text = rowDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        text:SetPoint("TOPLEFT", 14, y - 3)
-        text:SetText(label)
-        local box = CreateFrame("EditBox", name, rowDialog, "InputBoxTemplate")
-        box:SetWidth(width)
-        box:SetHeight(20)
-        box:SetPoint("TOPLEFT", 130, y)
-        box:SetAutoFocus(false)
-        box:SetScript("OnEscapePressed", box.ClearFocus)
-        return box
-    end
-    rowCount = Box("PlayerHousingRowCount", "How many (1 to 20)", -30, 40)
-    rowSpacing = Box("PlayerHousingRowSpacing", "Yards apart", -54, 40)
-    local blank = rowDialog:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    blank:SetPoint("TOPLEFT", 176, -57)
-    blank:SetText("blank: its length")
-
-    local which = rowDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    which:SetPoint("TOPLEFT", 14, -81)
-    which:SetText("Toward your")
-    rowDirection = API.MakeButton(rowDialog, "right", 80, function(self)
-        local position = 1
-        for index, direction in ipairs(DIRECTIONS) do
-            if direction == self:GetText() then
-                position = index
-            end
-        end
-        self:SetText(DIRECTIONS[position % #DIRECTIONS + 1])
-    end, "Which way", "From where you face now: to your right, left, forward or back.")
-    rowDirection:SetHeight(20)
-    rowDirection:SetPoint("TOPLEFT", 126, -78)
-
-    local place = API.MakeButton(rowDialog, "Place row", 100, function()
-        local count = tonumber(rowCount:GetText() or "")
-        if not count or count < 1 then
-            API.Print("how many copies? 1 to 20.")
-            return
-        end
-        local spacing = tonumber(rowSpacing:GetText() or "") or 0
-        API.Command(("row %d %.2f %s"):format(math.min(20, math.floor(count)), math.max(0, spacing), rowDirection:GetText()))
-        rowDialog:Hide()
-    end, "Place the row", "Copies of the selected piece, turned the same way, from your bags or House Storage (or new ones, where copies are free).")
-    place:SetPoint("BOTTOMLEFT", 14, 10)
-    local cancel = API.MakeButton(rowDialog, CANCEL, 80, function() rowDialog:Hide() end)
-    cancel:SetPoint("BOTTOMRIGHT", -14, 10)
-    rowDialog:Hide()
-end
-
-API.ShowRowDialog = function()
-    if API.state.selected == 0 then
-        API.Print("select a piece first: its copies make the row.")
-        return
-    end
-    if not rowDialog then
-        CreateRowDialog()
-        rowCount:SetText("3")
-    end
-    rowDialog:Show()
-end
-
----------------------------------------------------------------------------------------------
 -- Save the selected pieces as a set.
 
 StaticPopupDialogs["PLAYERHOUSING_SAVE_SET"] = {
@@ -199,6 +116,147 @@ StaticPopupDialogs["PLAYERHOUSING_SAVE_SET"] = {
     end,
     timeout = 0, whileDead = 1, hideOnEscape = 1,
 }
+
+---------------------------------------------------------------------------------------------
+-- A mannequin's dress list: what it wears (take it off), what in your bags it could wear (put
+-- it on), and its figure. The server's list (.house data stand <id>) comes again after each.
+
+local DRESS_ROWS = 12
+local dress, dressTitle, dressFigure, dressRows, dressEmpty, dressAllOff
+local dressing = 0      -- the mannequin the list is for
+
+local function DressCommand(command)
+    API.Command(command)
+    API.RequestData("stand", dressing)
+end
+
+local function CreateDress()
+    dress = CreateFrame("Frame", "PlayerHousingDress", UIParent)
+    dress:SetWidth(320)
+    dress:SetHeight(76 + DRESS_ROWS * 20)
+    dress:SetPoint("CENTER", 0, 60)
+    dress:SetFrameStrata("DIALOG")
+    dress:EnableMouse(true)
+    dress:SetMovable(true)
+    dress:RegisterForDrag("LeftButton")
+    dress:SetScript("OnDragStart", dress.StartMoving)
+    dress:SetScript("OnDragStop", dress.StopMovingOrSizing)
+    dress:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 32, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    dressTitle = dress:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dressTitle:SetPoint("TOPLEFT", 12, -10)
+    dressTitle:SetText("Dress the mannequin")
+    local close = CreateFrame("Button", "PlayerHousingDressClose", dress, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", 2, 2)
+
+    dressFigure = dress:CreateFontString("PlayerHousingDressFigure", "OVERLAY", "GameFontHighlightSmall")
+    dressFigure:SetPoint("TOPLEFT", 12, -32)
+    local figureButton = API.MakeButton(dress, "Change", 64, function() DressCommand("stand figure " .. dressing) end,
+        "Change its figure", "Another race and gender to wear the gear.")
+    figureButton:SetHeight(18)
+    figureButton:SetPoint("TOPRIGHT", -12, -28)
+    dressAllOff = API.MakeButton(dress, "Take all off", 90, function() DressCommand("stand undress all " .. dressing) end,
+        "Take everything off", "Back to your bags (by mail when they're full).")
+    dressAllOff:SetHeight(18)
+    dressAllOff:SetPoint("RIGHT", figureButton, "LEFT", -4, 0)
+
+    dressEmpty = dress:CreateFontString("PlayerHousingDressEmpty", "OVERLAY", "GameFontDisableSmall")
+    dressEmpty:SetPoint("TOPLEFT", 12, -56)
+    dressEmpty:SetWidth(296)
+    dressEmpty:SetJustifyH("LEFT")
+    dressRows = {}
+    for index = 1, DRESS_ROWS do
+        local row = CreateFrame("Frame", "PlayerHousingDressRow" .. index, dress)
+        row:SetWidth(296)
+        row:SetHeight(20)
+        row:SetPoint("TOPLEFT", 12, -54 - (index - 1) * 20)
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetWidth(18)
+        row.icon:SetHeight(18)
+        row.icon:SetPoint("LEFT", 0, 0)
+        row.text = row:CreateFontString("PlayerHousingDressRow" .. index .. "Text", "OVERLAY", "GameFontHighlightSmall")
+        row.text:SetPoint("LEFT", 22, 0)
+        row.text:SetWidth(200)
+        row.text:SetJustifyH("LEFT")
+        row.button = API.MakeButton(row, "", 68, function()
+            local item = row.item
+            if item and item.kind == "worn" then
+                DressCommand(("stand undress %d %d"):format(item.slot, dressing))
+            elseif item then
+                DressCommand(("stand dress %d %d"):format(item.entry, dressing))
+            end
+        end)
+        row.button:SetHeight(18)
+        row.button:SetPoint("RIGHT", 0, 0)
+        row:Hide()
+        dressRows[index] = row
+    end
+    dress:Hide()
+end
+
+API.ShowDress = function(placementId)
+    if not placementId or placementId == 0 then
+        return
+    end
+    if not dress then
+        CreateDress()
+    end
+    dressing = placementId
+    dressFigure:SetText("")
+    dressEmpty:SetText("Asking the server...")
+    for _, row in ipairs(dressRows) do
+        row:Hide()
+    end
+    dress:Show()
+    API.RequestData("stand", placementId)
+end
+
+API.OnData("stand", function(list)
+    if not dress or tonumber(list.arg or "") ~= dressing then
+        return
+    end
+    local items, worn = {}, 0
+    for _, row in ipairs(list.rows) do
+        if row[1] == "figure" then
+            dressFigure:SetText("Figure: " .. (row[2] or ""))
+        elseif row[1] == "worn" then
+            worn = worn + 1
+            table.insert(items, worn, { kind = "worn", slot = tonumber(row[2]), slotName = row[3], entry = tonumber(row[4]), name = row[5] })
+        elseif row[1] == "wear" then
+            items[#items + 1] = { kind = "wear", entry = tonumber(row[2]), name = row[3], slotName = row[4] }
+        end
+    end
+    if worn > 1 then dressAllOff:Show() else dressAllOff:Hide() end
+    dressEmpty:SetText(#items == 0 and "Nothing to show: armor you can see, weapons, shields, shirts and tabards in your bags can go on it." or "")
+    for index, row in ipairs(dressRows) do
+        local item = items[index]
+        row.item = item
+        if item then
+            row.icon:SetTexture(GetItemIcon(item.entry) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            if item.kind == "worn" then
+                row.text:SetText(("%s |cffa0a0a0(%s)|r"):format(item.name, item.slotName))
+                row.button:SetText("Take off")
+            else
+                row.text:SetText(("|cffd0d0d0%s|r |cffa0a0a0%s|r"):format(item.name, item.slotName ~= "" and ("(" .. item.slotName .. ")") or ""))
+                row.button:SetText("Put on")
+            end
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+end)
+
+-- The window closes the list when the mannequin is no longer selected.
+API.OnState(function(state)
+    if dress and dress:IsShown() and state.selected ~= dressing then
+        dress:Hide()
+    end
+end)
 
 ---------------------------------------------------------------------------------------------
 -- The photo tour (GMs, on their own island): the server sets each building up in front of

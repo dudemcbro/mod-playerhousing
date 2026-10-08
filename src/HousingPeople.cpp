@@ -104,7 +104,7 @@ bool PlayerHousingMgr::EnsureHouse(ObjectGuid::LowType ownerGuid) const
 bool PlayerHousingMgr::CanVisit(Player const* visitor, HouseRecord const& house, std::string& reason, VisitContext const* context) const
 {
     ObjectGuid::LowType visitorGuid = visitor->GetGUID().GetCounter();
-    if (visitorGuid == house.ownerGuid)
+    if (HomeOf(visitor) == house.ownerGuid)
         return true;
 
     if (_gmVisitBypass && visitor->IsGameMaster())
@@ -126,15 +126,18 @@ bool PlayerHousingMgr::CanVisit(Player const* visitor, HouseRecord const& house,
 
     if (house.privacy == PRIVACY_FRIENDS)
     {
+        // Friends and guild of any of the owner's characters (the island is the account's).
         if (context ? context->friendOf.count(house.ownerGuid) > 0
-                    : bool(CharacterDatabase.Query("SELECT 1 FROM character_social WHERE guid={} AND friend={} AND (flags & {})",
-                          house.ownerGuid, visitorGuid, SOCIAL_FLAG_FRIEND)))
+                    : bool(CharacterDatabase.Query(
+                          "SELECT 1 FROM character_social s JOIN characters c ON c.guid = s.guid JOIN mod_playerhousing_account a ON a.account_id = c.account "
+                          "WHERE a.home_guid={} AND s.friend={} AND (s.flags & {}) LIMIT 1", house.ownerGuid, visitorGuid, SOCIAL_FLAG_FRIEND)))
             return true;
 
         if (uint32 guildId = visitor->GetGuildId())
-            if (Guild* guild = sGuildMgr->GetGuildById(guildId))
-                if (guild->GetMember(ObjectGuid::Create<HighGuid::Player>(house.ownerGuid)))
-                    return true;
+            if (CharacterDatabase.Query(
+                    "SELECT 1 FROM guild_member gm JOIN characters c ON c.guid = gm.guid JOIN mod_playerhousing_account a ON a.account_id = c.account "
+                    "WHERE a.home_guid={} AND gm.guildid={} LIMIT 1", house.ownerGuid, guildId))
+                return true;
 
         reason = "That island is open to its owner's friends and guild only.";
         return false;
@@ -152,7 +155,7 @@ bool PlayerHousingMgr::SetPrivacy(Player* player, uint8 privacy, std::string& re
         return false;
     }
 
-    ObjectGuid::LowType owner = player->GetGUID().GetCounter();
+    ObjectGuid::LowType owner = HomeOf(player);
     EnsureHouse(owner);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET is_private={} WHERE owner_guid={}", uint32(privacy), owner);
     reason = Acore::StringFormat("Your island is now {}: {}.", PrivacyName(privacy), PrivacyDescription(privacy));
@@ -165,7 +168,7 @@ bool PlayerHousingMgr::CyclePrivacy(Player* player, std::string& reason)
 {
     HouseRecord house;
     uint8 current = _defaultPrivacy;
-    if (GetHouseRecord(player->GetGUID().GetCounter(), house))
+    if (GetHouseRecord(HomeOf(player), house))
         current = house.privacy;
 
     uint8 next = current == PRIVACY_PRIVATE ? PRIVACY_FRIENDS : (current == PRIVACY_FRIENDS ? PRIVACY_PUBLIC : PRIVACY_PRIVATE);
@@ -174,10 +177,10 @@ bool PlayerHousingMgr::CyclePrivacy(Player* player, std::string& reason)
 
 bool PlayerHousingMgr::InviteGuest(Player* player, ObjectGuid::LowType guestGuid, std::string& reason)
 {
-    ObjectGuid::LowType owner = player->GetGUID().GetCounter();
-    if (guestGuid == owner)
+    ObjectGuid::LowType owner = HomeOf(player);
+    if (HomeOfCharacter(guestGuid) == owner)
     {
-        reason = "You can always visit your own island.";
+        reason = "You can always visit your own island (all your characters share it).";
         return false;
     }
 
@@ -186,7 +189,7 @@ bool PlayerHousingMgr::InviteGuest(Player* player, ObjectGuid::LowType guestGuid
 
     std::string guestName = NameOf(guestGuid);
     if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid); guest && MayNotify(player, guestGuid, NOTICE_INVITE))
-        Say(guest, Acore::StringFormat("{} invited you to their island. House Key, Visit an island, Islands you're invited to.", player->GetName()));
+        Say(guest, Acore::StringFormat("{} invited you to their island. The housing window's Visit tab, Invited.", player->GetName()));
 
     reason = Acore::StringFormat("Invited {}. They can visit any time.", guestName);
     QuestEvent(player, QUEST_TOUR_OPEN);
@@ -244,7 +247,7 @@ bool PlayerHousingMgr::InviteParty(Player* player, std::string& reason)
 
 bool PlayerHousingMgr::RemoveGuest(Player* player, ObjectGuid::LowType guestGuid, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} AND guest_guid={}", self, guestGuid);
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -263,8 +266,8 @@ bool PlayerHousingMgr::IsRoommate(ObjectGuid::LowType ownerGuid, ObjectGuid::Low
 
 bool PlayerHousingMgr::SetRoommate(Player* owner, ObjectGuid::LowType guestGuid, bool roommate, std::string& reason)
 {
-    ObjectGuid::LowType self = owner->GetGUID().GetCounter();
-    if (guestGuid == self)
+    ObjectGuid::LowType self = HomeOf(owner);  // the account's island
+    if (HomeOfCharacter(guestGuid) == self)
     {
         reason = "That's you.";
         return false;
@@ -291,7 +294,7 @@ bool PlayerHousingMgr::SetRoommate(Player* owner, ObjectGuid::LowType guestGuid,
 
     std::string name = NameOf(guestGuid);
     if (Player* guest = ObjectAccessor::FindPlayerByLowGUID(guestGuid); guest && MayNotify(owner, guestGuid, NOTICE_ROOMMATE))
-        Say(guest, roommate ? Acore::StringFormat("{} made you a roommate: you can decorate their island (House Key, Start decorating there).", owner->GetName())
+        Say(guest, roommate ? Acore::StringFormat("{} made you a roommate: you can decorate their island (Edit in the housing window, there).", owner->GetName())
                             : Acore::StringFormat("You're no longer a roommate on {}'s island (still a guest).", owner->GetName()));
     reason = roommate ? Acore::StringFormat("{} is now a roommate: they can place their own pieces and change yours. Their pieces stay theirs.", name)
                       : Acore::StringFormat("{} is a guest again, no longer decorating.", name);
@@ -333,6 +336,7 @@ std::vector<VisitEntry> PlayerHousingMgr::GetGuests(ObjectGuid::LowType ownerGui
 std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uint8 list) const
 {
     ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType home = HomeOf(player);  // left out of every list
     // Each candidate with its island's privacy and flags, all in one query, so deciding who
     // may enter costs no query of its own for public islands.
     std::vector<HouseRecord> candidates;
@@ -365,19 +369,22 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
                         members += (members.empty() ? "" : ",") + std::to_string(slot.guid.GetCounter());
                 if (!members.empty())
                     collect(CharacterDatabase.Query(
-                        "SELECT owner_guid, is_private, flags FROM mod_playerhousing_house WHERE owner_guid IN ({})", members));
+                        "SELECT DISTINCT h.owner_guid, h.is_private, h.flags FROM characters c JOIN mod_playerhousing_account a ON a.account_id = c.account "
+                        "JOIN mod_playerhousing_house h ON h.owner_guid = a.home_guid WHERE c.guid IN ({}) AND h.owner_guid<>{}", members, home));
             }
             break;
         case 1:  // guild
             if (uint32 guildId = player->GetGuildId())
                 collect(CharacterDatabase.Query(
-                    "SELECT h.owner_guid, h.is_private, h.flags FROM guild_member gm JOIN mod_playerhousing_house h ON h.owner_guid = gm.guid "
-                    "WHERE gm.guildid={} AND gm.guid<>{} LIMIT 100", guildId, self));
+                    "SELECT DISTINCT h.owner_guid, h.is_private, h.flags FROM guild_member gm JOIN characters c ON c.guid = gm.guid "
+                    "JOIN mod_playerhousing_account a ON a.account_id = c.account JOIN mod_playerhousing_house h ON h.owner_guid = a.home_guid "
+                    "WHERE gm.guildid={} AND h.owner_guid<>{} LIMIT 100", guildId, home));
             break;
         case 2:  // friends
             collect(CharacterDatabase.Query(
-                "SELECT h.owner_guid, h.is_private, h.flags FROM character_social s JOIN mod_playerhousing_house h ON h.owner_guid = s.friend "
-                "WHERE s.guid={} AND (s.flags & {}) LIMIT 100", self, SOCIAL_FLAG_FRIEND));
+                "SELECT DISTINCT h.owner_guid, h.is_private, h.flags FROM character_social s JOIN characters c ON c.guid = s.friend "
+                "JOIN mod_playerhousing_account a ON a.account_id = c.account JOIN mod_playerhousing_house h ON h.owner_guid = a.home_guid "
+                "WHERE s.guid={} AND (s.flags & {}) AND h.owner_guid<>{} LIMIT 100", self, SOCIAL_FLAG_FRIEND, home));
             break;
         case 3:  // invited
             collect(CharacterDatabase.Query(
@@ -387,12 +394,12 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
         case 5:  // most liked, most first
             collect(CharacterDatabase.Query(
                 "SELECT h.owner_guid, h.is_private, h.flags, COUNT(*) FROM mod_playerhousing_like l JOIN mod_playerhousing_house h ON h.owner_guid = l.owner_guid "
-                "WHERE l.owner_guid<>{} GROUP BY h.owner_guid, h.is_private, h.flags ORDER BY COUNT(*) DESC, MIN(l.liked_at) LIMIT 100", self));
+                "WHERE l.owner_guid<>{} GROUP BY h.owner_guid, h.is_private, h.flags ORDER BY COUNT(*) DESC, MIN(l.liked_at) LIMIT 100", home));
             break;
         default:  // public, hidden ones left out
             collect(CharacterDatabase.Query(
                 "SELECT owner_guid, is_private, flags FROM mod_playerhousing_house WHERE is_private={} AND (flags & {}) = 0 AND owner_guid<>{} "
-                "ORDER BY updated_at DESC LIMIT 100", uint32(PRIVACY_PUBLIC), uint32(HOUSE_FLAG_HIDDEN), self));
+                "ORDER BY updated_at DESC LIMIT 100", uint32(PRIVACY_PUBLIC), uint32(HOUSE_FLAG_HIDDEN), home));
             break;
     }
 
@@ -406,7 +413,10 @@ std::vector<VisitEntry> PlayerHousingMgr::GetVisitList(Player const* player, uin
             context.guestOf.insert((*result)[0].Get<uint32>());
         } while (result->NextRow());
     }
-    if (QueryResult result = CharacterDatabase.Query("SELECT guid FROM character_social WHERE friend={} AND (flags & {})", self, SOCIAL_FLAG_FRIEND))
+    // (Islands of accounts where any character has this one as a friend.)
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT DISTINCT a.home_guid FROM character_social s JOIN characters c ON c.guid = s.guid "
+            "JOIN mod_playerhousing_account a ON a.account_id = c.account WHERE s.friend={} AND (s.flags & {})", self, SOCIAL_FLAG_FRIEND))
     {
         do
         {
@@ -464,7 +474,7 @@ bool PlayerHousingMgr::ToggleLike(Player* player, std::string& reason)
         reason = "Visit an island to like it.";
         return false;
     }
-    if (owner == player->GetGUID().GetCounter())
+    if (owner == HomeOf(player))
     {
         reason = "You can't like your own island (everyone else can).";
         return false;
@@ -485,7 +495,7 @@ bool PlayerHousingMgr::ToggleLike(Player* player, std::string& reason)
 
     CharacterDatabase.DirectExecute("INSERT IGNORE INTO mod_playerhousing_like (owner_guid, liker_account, liker_guid) VALUES ({}, {}, {})",
         owner, account, player->GetGUID().GetCounter());
-    if (Player* ownerPlayer = ObjectAccessor::FindPlayerByLowGUID(owner); ownerPlayer && MayNotify(player, owner, NOTICE_LIKE))
+    if (Player* ownerPlayer = FindOwnerOnline(owner); ownerPlayer && MayNotify(player, owner, NOTICE_LIKE))
         Say(ownerPlayer, Acore::StringFormat("{} likes your island.", player->GetName()));
     reason = Acore::StringFormat("You like {}'s island ({} {}).", ownerName, CountLikes(owner), CountLikes(owner) == 1 ? "like" : "likes");
     return true;
@@ -493,7 +503,7 @@ bool PlayerHousingMgr::ToggleLike(Player* player, std::string& reason)
 
 void PlayerHousingMgr::LogVisit(ObjectGuid::LowType ownerGuid, Player* visitor) const
 {
-    if (!visitor || visitor->GetSession()->IsBot() || visitor->GetGUID().GetCounter() == ownerGuid)
+    if (!visitor || visitor->GetSession()->IsBot() || HomeOf(visitor) == ownerGuid)
         return;
 
     // The last 50 arrivals are kept.
@@ -537,7 +547,7 @@ bool PlayerHousingMgr::SetGreeting(Player* player, std::string const& greeting, 
     text.erase(text.find_last_not_of(" \t") + 1);
     TruncateUtf8(text, MAX_GREETING);
 
-    ObjectGuid::LowType owner = player->GetGUID().GetCounter();
+    ObjectGuid::LowType owner = HomeOf(player);  // the account's island
     EnsureHouse(owner);
     CharacterDatabase.EscapeString(text);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET greeting='{}' WHERE owner_guid={}", text, owner);
@@ -551,7 +561,7 @@ bool PlayerHousingMgr::SetGreeting(Player* player, std::string const& greeting, 
 bool PlayerHousingMgr::SignGuestbook(Player* visitor, std::string const& text, std::string& reason)
 {
     ObjectGuid::LowType owner = GetIslandOwner(visitor);
-    ObjectGuid::LowType self = visitor->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(visitor);  // the visitor's account's island
     if (!owner || owner == self)
     {
         reason = owner ? "It's your own guestbook: visitors write in it." : "Visit an island to sign its guestbook.";
@@ -592,7 +602,7 @@ bool PlayerHousingMgr::SignGuestbook(Player* visitor, std::string const& text, s
     CharacterDatabase.CommitTransaction(trans);
 
     std::string ownerName = NameOf(owner);
-    if (Player* ownerPlayer = ObjectAccessor::FindPlayerByLowGUID(owner))
+    if (Player* ownerPlayer = FindOwnerOnline(owner))
         if (ownerPlayer != visitor && MayNotify(visitor, owner, NOTICE_GUESTBOOK))
             Say(ownerPlayer, Acore::StringFormat("{} signed your guestbook.", visitor->GetName()));
     reason = Acore::StringFormat("You signed {}'s guestbook.", ownerName);
@@ -630,7 +640,7 @@ void PlayerHousingMgr::MarkGuestbookRead(ObjectGuid::LowType ownerGuid) const
 
 bool PlayerHousingMgr::DeleteNote(Player* owner, uint32 noteId, std::string& reason)
 {
-    ObjectGuid::LowType self = owner->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(owner);  // the account's island
     if (!CharacterDatabase.Query("SELECT 1 FROM mod_playerhousing_guestbook WHERE owner_guid={} AND id={}", self, noteId))
     {
         reason = "That note is gone.";
@@ -646,7 +656,7 @@ bool PlayerHousingMgr::DeleteNote(Player* owner, uint32 noteId, std::string& rea
 
 bool PlayerHousingMgr::SetDoor(Player* player, bool reset, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     EnsureHouse(self);
     if (reset)
     {

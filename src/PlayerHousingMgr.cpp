@@ -117,7 +117,7 @@ void PlayerHousingMgr::LoadConfig()
 
     _sizeMin = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Min", 0.5f), 0.1f, 1.0f);
     _sizeMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Size.Max", 2.0f), 1.0f, 10.0f);
-    _tiltMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Tilt.Max", 45.0f), 0.0f, 180.0f);
+    _tiltMax = std::clamp(sConfigMgr->GetOption<float>("PlayerHousing.Tilt.Max", 180.0f), 0.0f, 180.0f);
     _maxSavedLayouts = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.SavedLayouts", 5), 20);
     std::string catalog = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Catalog", "curated"));
     _catalogEverything = catalog == "everything";
@@ -132,10 +132,6 @@ bool PlayerHousingMgr::LoadDefinitions()
 
     _pieces.clear();
     _piecesByRule.clear();
-    _moverBySpell.clear();
-    for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
-        if (ItemTemplate const* mover = sObjectMgr->GetItemTemplate(entry))
-            _moverBySpell[mover->Spells[0].SpellId] = entry;
 
     QueryResult layoutResult = WorldDatabase.Query(
         "SELECT layout, map_id, landing_x, landing_y, landing_z, landing_o, steward_offset_x, steward_offset_y, center_x, center_y, radius "
@@ -255,7 +251,7 @@ void PlayerHousingMgr::ConvertLegacyData()
             itemEntry, piece.legacyCatalogId);
     }
 
-    // Old catalog unlocks become Collection unlocks plus one copy in House Storage.
+    // Old catalog unlocks become Collection unlocks plus one copy in the Collection.
     if (QueryResult unlockResult = CharacterDatabase.Query(
             "SELECT u.owner_guid, u.catalog_id, c.account FROM mod_playerhousing_unlock u JOIN characters c ON c.guid = u.owner_guid"))
     {
@@ -330,6 +326,7 @@ void PlayerHousingMgr::OnStartup()
     }
 
     ConvertLegacyData();
+    MergeAccountHomes();
     PurgeLeftovers();
     _ready = true;
 }
@@ -386,7 +383,7 @@ ObjectGuid::LowType PlayerHousingMgr::GetIslandOwner(Player const* player) const
 
 bool PlayerHousingMgr::IsOnOwnIsland(Player const* player) const
 {
-    return player && GetIslandOwner(player) == player->GetGUID().GetCounter();
+    return player && GetIslandOwner(player) == HomeOf(player);
 }
 
 bool PlayerHousingMgr::CanDecorate(Player const* player) const
@@ -394,7 +391,7 @@ bool PlayerHousingMgr::CanDecorate(Player const* player) const
     ObjectGuid::LowType owner = player ? GetIslandOwner(player) : 0;
     if (!owner)
         return false;
-    if (owner == player->GetGUID().GetCounter())
+    if (owner == HomeOf(player))
         return true;
 
     std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -437,50 +434,9 @@ void PlayerHousingMgr::SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, b
             "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) ON DUPLICATE KEY UPDATE flags = flags | {}", guid, flag, flag);
 }
 
-uint8 PlayerHousingMgr::GetAdjustMode(ObjectGuid::LowType guid) const
+void PlayerHousingMgr::ClearCharacterFlag(ObjectGuid::LowType guid, uint32 flag) const
 {
-    // No menu unless asked for: Undo takes a piece back just as well.
-    uint32 flags = GetCharacterFlags(guid);
-    if (flags & CHAR_FLAG_ADJUST_NEVER)
-        return ADJUST_NEVER;
-    if (flags & CHAR_FLAG_ADJUST_ALL)
-        return ADJUST_ALL;
-    return (flags & CHAR_FLAG_ADJUST_BUILDINGS) ? ADJUST_BUILDINGS : ADJUST_NEVER;
-}
-
-void PlayerHousingMgr::SetAdjustMode(Player* player, uint8 mode, std::string& reason) const
-{
-    uint32 set = mode == ADJUST_ALL ? CHAR_FLAG_ADJUST_ALL : (mode == ADJUST_NEVER ? CHAR_FLAG_ADJUST_NEVER : CHAR_FLAG_ADJUST_BUILDINGS);
-    uint32 both = CHAR_FLAG_ADJUST_ALL | CHAR_FLAG_ADJUST_NEVER | CHAR_FLAG_ADJUST_BUILDINGS;
-    CharacterDatabase.DirectExecute(
-        "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) "
-        "ON DUPLICATE KEY UPDATE flags = (flags & ~{}) | {}", player->GetGUID().GetCounter(), set, both, set);
-    switch (mode)
-    {
-        case ADJUST_ALL: reason = "After placing anything, its menu opens so you can turn, nudge or take it back."; break;
-        case ADJUST_NEVER: reason = "Placing no longer opens a menu. Click a piece to change it."; break;
-        default: reason = "After placing a building, its menu opens so you can turn, nudge or take it back."; break;
-    }
-}
-
-bool PlayerHousingMgr::ShouldAdjustAfterPlacing(Player const* player, uint32 itemEntry) const
-{
-    PieceDefinition const* piece = GetPiece(itemEntry);
-    if (!piece)
-        return false;
-
-    uint8 mode = GetAdjustMode(player->GetGUID().GetCounter());
-    return mode == ADJUST_ALL || (mode == ADJUST_BUILDINGS && piece->IsBuilding());
-}
-
-char const* PlayerHousingMgr::AdjustModeName(uint8 mode)
-{
-    switch (mode)
-    {
-        case ADJUST_ALL: return "after everything";
-        case ADJUST_NEVER: return "never";
-        default: return "after buildings";
-    }
+    CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_character SET flags = flags & ~{} WHERE guid={}", flag, guid);
 }
 
 void PlayerHousingMgr::TruncateUtf8(std::string& text, size_t maxBytes)
@@ -679,14 +635,20 @@ void PlayerHousingMgr::GiveFirstLoginItems(Player* player)
                 gifts.push_back(itemEntry);
     }
 
-    for (uint32 itemEntry : gifts)
+    // The first pieces come once an account: a character that already had its key when islands
+    // were per character had them too.
+    ObjectGuid::LowType home = HomeOf(player);
+    bool firstOnAccount = !(GetCharacterFlags(home) & (CHAR_FLAG_GIFTS_GIVEN | CHAR_FLAG_KEY_GIVEN));
+    if (firstOnAccount)
     {
-        bool toStorage = false;
-        ReturnItem(player, itemEntry, toStorage);
+        for (uint32 itemEntry : gifts)
+            ReturnPiece(player, itemEntry);
+        SetCharacterFlag(home, CHAR_FLAG_GIFTS_GIVEN, false);
     }
 
     SetCharacterFlag(guid, CHAR_FLAG_KEY_GIVEN, false);
-    Say(player, "You have a house! Right-click your House Key to go there.");
+    Say(player, firstOnAccount ? "You have a house! Your House Key (or /housing) opens the housing window: Go home takes you there."
+        : "Here is your House Key: your island is shared by all your characters. The key (or /housing) opens the housing window.");
 }
 
 bool PlayerHousingMgr::GiveHouseKey(Player* player, std::string& reason)
@@ -706,7 +668,7 @@ bool PlayerHousingMgr::GiveHouseKey(Player* player, std::string& reason)
         return false;
     }
 
-    reason = "Here is your House Key. Right-click it for your Home menu.";
+    reason = "Here is your House Key. Right-click it for the housing window.";
     return true;
 }
 
@@ -715,20 +677,38 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
     if (!_enabled || !player)
         return;
 
-    EnsureHouse(player->GetGUID().GetCounter());
+    // Playerbots get no house, items or unlocks; one that logged out on an island still leaves it.
+    bool bot = player->GetSession()->IsBot();
+    if (!bot)
+        EnsureHouse(HomeOf(player));
 
     bool legacyEvac = false;
     for (uint32 legacyMapId : LEGACY_HOUSING_MAPS)
         if (player->GetMapId() == legacyMapId && legacyMapId != _layout.mapId)
             legacyEvac = true;
 
-    // Nobody is tracked on an island right after login, so whoever logged out on one goes
-    // back to where they came from (SetEntryPoint is stored with the character).
+    // Nobody is tracked on an island right after login. Whoever logged out on their own
+    // island goes back onto it, where they stood; anyone else goes back to where they came
+    // from (SetEntryPoint is stored with the character).
     if (legacyEvac || IsInHousingArea(player))
-        player->TeleportToEntryPoint();
+    {
+        bool backHome = false;
+        if (!bot && !legacyEvac && (GetCharacterFlags(player->GetGUID().GetCounter()) & CHAR_FLAG_HOME_AT_LOGOUT))
+        {
+            Position at = player->GetPosition();
+            std::string reason;
+            backHome = EnterHouse(player, HomeOf(player), reason, false, &at);
+        }
+        if (!backHome)
+            player->TeleportToEntryPoint();
+    }
+
+    if (bot)
+        return;
 
     GiveFirstLoginItems(player);
-    CancelMove(player);  // "Move a Piece" items never outlive the visit they were for
+    // Pieces from before the Collection kept count, in the bags or the bank, join it.
+    SweepHousingItems(player, true);
 
     // Past progress counts: anything already earned unlocks now, including pieces added to
     // the Collection since the last login.
@@ -751,6 +731,14 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     if (!_enabled || !player)
         return;
 
+    if (!player->GetSession()->IsBot())
+    {
+        if (IsOnOwnIsland(player))
+            SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_HOME_AT_LOGOUT, false);
+        else
+            ClearCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_HOME_AT_LOGOUT);
+    }
+
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
         _ambienceTimers.erase(player->GetGUID());
@@ -761,15 +749,11 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
         _editMode.erase(player->GetGUID());
         _addonClients.erase(player->GetGUID());
         _mouseClients.erase(player->GetGUID());
+        _localGhostClients.erase(player->GetGUID());
         _knownHouses.erase(player->GetGUID().GetCounter());
         _gridSizes.erase(player->GetGUID().GetCounter());
         _notified.erase(player->GetGUID().GetCounter());
     }
-
-    // A piece placed in the player's last moments still owes its item, and a move not
-    // finished is dropped (a quick relog can skip the login hook, so not left for that).
-    ProcessPendingConsumes(player);
-    CancelMove(player);
 
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -833,11 +817,6 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
     if (!busy.owns_lock())
         return;
 
-    ProcessPendingConsumes(player);
-    // A move not finished before leaving the island is dropped, with its item (and a copy
-    // not placed yet no longer takes after the original).
-    if (GetPendingMover(player) && !player->IsBeingTeleported() && !CanDecorate(player))
-        CancelMove(player);
     UpdateAmbience(player, diffMs);
     UpdatePendingTrip(player);
 
@@ -871,13 +850,12 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
 
     if (tracked && !inArea)
     {
-        // Left without the House Key (hearthstone, summon, death). Only the island map's own
+        // Left some other way (hearthstone, summon, death). Only the island map's own
         // thread may despawn the island; from anywhere else the next visit respawns it.
         ObjectGuid::LowType leftOwner = RemovePlayerTracking(player->GetGUID(), true);
         if (player->GetMapId() == _layout.mapId)
             EndSessionIfEmpty(leftOwner);
         RestoreNormalPhase(player);
-        CancelMove(player);
         return;
     }
 
@@ -921,7 +899,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
     if (dx * dx + dy * dy > edge * edge || player->GetPositionZ() < _layout.landing.GetPositionZ() - 60.0f)
     {
         player->NearTeleportTo(_layout.landing.GetPositionX(), _layout.landing.GetPositionY(), _layout.landing.GetPositionZ() + 0.5f, _layout.landing.GetOrientation());
-        Say(player, "That's the edge of your island. Use your House Key to leave the island.");
+        Say(player, "That's the edge of your island. The housing window's Leave takes you off it.");
     }
 }
 
@@ -937,12 +915,11 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
     SendAmbience(player, house, true);
     LogVisit(ownerGuid, player);
 
-    ObjectGuid::LowType guid = player->GetGUID().GetCounter();
-    if (guid == ownerGuid)
+    if (HomeOf(player) == ownerGuid)
     {
         if (house.flags & HOUSE_FLAG_HALL_NOTICE)
         {
-            Say(player, "The old guild hall is gone. Everything you had placed inside it is in your House Storage (House Key, Storage).");
+            Say(player, "The old guild hall is gone. Everything you had placed inside it is back in your Collection.");
             CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = flags & ~{} WHERE owner_guid={}", uint32(HOUSE_FLAG_HALL_NOTICE), ownerGuid);
         }
 
@@ -953,21 +930,22 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
                 "SELECT COUNT(*) FROM mod_playerhousing_visit_log l JOIN mod_playerhousing_house h ON h.owner_guid = l.owner_guid "
                 "WHERE l.owner_guid={} AND l.visited_at > h.last_home", ownerGuid))
             if (uint32 visits = uint32((*result)[0].Get<uint64>()))
-                Say(player, Acore::StringFormat("{} since you were last home. Island settings, Visitor log.",
+                Say(player, Acore::StringFormat("{} since you were last home. Island tab, Visitor log.",
                     visits == 1 ? std::string("One visit") : Acore::StringFormat("{} visits", visits)));
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET last_home=NOW() WHERE owner_guid={}", ownerGuid);
         if (uint32 notes = CountNewNotes(ownerGuid))
-            Say(player, Acore::StringFormat("{} in your guestbook. Island settings, Guestbook.",
+            Say(player, Acore::StringFormat("{} in your guestbook. Island tab, Guestbook.",
                 notes == 1 ? std::string("A new note") : Acore::StringFormat("{} new notes", notes)));
 
-        if (!(GetCharacterFlags(guid) & CHAR_FLAG_GREETED))
+        // Once an account (the flag sits on the home character).
+        if (!(GetCharacterFlags(ownerGuid) & CHAR_FLAG_GREETED))
         {
-            SetCharacterFlag(guid, CHAR_FLAG_GREETED, false);
+            SetCharacterFlag(ownerGuid, CHAR_FLAG_GREETED, false);
             ChatHandler handler(player->GetSession());
-            handler.SendSysMessage("|cffffd000Krook:|r Welcome to your island! Three things to know:");
-            handler.SendSysMessage("|cffffd000Krook:|r 1. Right-click a furnishing in your bags, then click where it should go.");
-            handler.SendSysMessage("|cffffd000Krook:|r 2. House Key, Start decorating, then click a piece to turn, move or pick it up.");
-            handler.SendSysMessage("|cffffd000Krook:|r 3. Don't like it? House Key, Undo. Nothing is ever lost.");
+            handler.SendSysMessage("|cffffd000Krook:|r Welcome to your island! Every character of yours shares it. Three things to know:");
+            handler.SendSysMessage("|cffffd000Krook:|r 1. Click a piece in the housing window's Collection: it goes on your mouse. Click where it should go.");
+            handler.SendSysMessage("|cffffd000Krook:|r 2. Right-click a piece on the island to pick it up again. The mouse wheel turns it; the window lists the rest.");
+            handler.SendSysMessage("|cffffd000Krook:|r 3. Don't like it? Undo. Nothing is ever lost: picked up pieces go back to your Collection.");
         }
         SendAddonState(player);
         return;
@@ -980,7 +958,7 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
         Say(player, Acore::StringFormat("Welcome to {}'s island.", ownerName));
 
     if (!player->GetSession()->IsBot())
-        if (Player* owner = ObjectAccessor::FindPlayerByLowGUID(ownerGuid))
+        if (Player* owner = FindOwnerOnline(ownerGuid))
             if (owner != player)
                 Say(owner, Acore::StringFormat("{} arrived on your island.", player->GetName()));
 }
@@ -1004,7 +982,6 @@ void PlayerHousingMgr::OnPlayerMapChanged(Player* player)
     if (tracked)
     {
         EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
-        CancelMove(player);
     }
 
     if (IsHousingPhase(player->GetPhaseMask()))
@@ -1021,6 +998,9 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     // until the character is gone for good (OnPlayerDeleteFromDB), so a restored character
     // finds it as it was.
     ObjectGuid::LowType guidLow = guid.GetCounter();
+    // The account's island is kept under this character: it moves, as it is, to another of the
+    // account's characters (then nothing is left under this one to close).
+    RehomeAccountOf(guidLow);
     RemovePlayerTracking(guid, true);
 
     std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -1054,7 +1034,7 @@ void PlayerHousingMgr::OnPlayerDeleteFromDB(ObjectGuid::LowType guidLow)
 {
     // Before the module is up (the core purges old deleted characters early in startup), or
     // while it's off, PurgeLeftovers catches up at the next start.
-    if (_ready)
+    if (_ready && !RehomeAccountOf(guidLow))
         RemoveHousingOf(guidLow);
 }
 
@@ -1133,7 +1113,9 @@ void PlayerHousingMgr::PurgeLeftovers()
     uint32 count = 0;
     do
     {
-        RemoveHousingOf((*result)[0].Get<uint32>());
+        // An account's home character: the island goes to another of its characters.
+        if (!RehomeAccountOf((*result)[0].Get<uint32>()))
+            RemoveHousingOf((*result)[0].Get<uint32>());
         ++count;
     } while (result->NextRow());
     LOG_INFO("server.loading", "mod-playerhousing: Removed the housing of {} characters deleted for good.", count);
@@ -1240,9 +1222,6 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = flags | {} WHERE owner_guid={}", uint32(HOUSE_FLAG_WRECKAGE_PLACED), ownerGuid);
     }
 
-    if (session.decorating)
-        SpawnMarkers(session, map);
-
     session.initialized = true;
     return true;
 }
@@ -1255,7 +1234,6 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
     for (auto const& [placementId, spawned] : session.spawned)
         RemoveSpawned(map, spawned.guid);
 
-    DespawnMarkers(session, map);
     for (auto const& [who, rings] : session.rings)
         for (auto const& [id, ring] : rings)
             if (GameObject* object = map->GetGameObject(ring.guid))
@@ -1400,7 +1378,7 @@ void PlayerHousingMgr::RestoreNormalPhase(Player* player)
     player->SetPhaseMask(phaseMask, true);
 }
 
-bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason, bool force)
+bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason, bool force, Position const* at)
 {
     if (!_enabled || !player)
     {
@@ -1420,7 +1398,7 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
         return false;
     }
 
-    if (ownerGuid == player->GetGUID().GetCounter())
+    if (ownerGuid == HomeOf(player))
         EnsureHouse(ownerGuid);
 
     HouseRecord house;
@@ -1439,7 +1417,8 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
         return false;
     }
 
-    bool wasOnIsland = IsInHousingArea(player) && GetIslandOwner(player) != 0;
+    // Coming back at a spot (after logging out there) keeps the way out from before.
+    bool wasOnIsland = at || (IsInHousingArea(player) && GetIslandOwner(player) != 0);
     ObjectGuid::LowType previousOwner = 0;
     uint32 phaseMask = 0;
     {
@@ -1480,9 +1459,11 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
     // The island itself is spawned by the first occupant's update once they are on the map.
     // Visitors come in at the owner's door, if there is one.
     Position arrival = _layout.landing;
-    if (house.hasDoor && ownerGuid != player->GetGUID().GetCounter()
+    if (house.hasDoor && ownerGuid != HomeOf(player)
             && IsSpotOnIsland(house.door.GetPositionX(), house.door.GetPositionY(), house.door.GetPositionZ()))
         arrival = house.door;
+    if (at)
+        arrival = *at;
     if (!player->TeleportTo(_layout.mapId, arrival.GetPositionX(), arrival.GetPositionY(), arrival.GetPositionZ() + 0.35f, arrival.GetOrientation()))
     {
         EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), !wasOnIsland));
@@ -1491,12 +1472,20 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
         return false;
     }
 
+    // Kept up to date on the way in too, in case the server stops without logging them out.
+    if (!player->GetSession()->IsBot())
+    {
+        if (ownerGuid == HomeOf(player))
+            SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_HOME_AT_LOGOUT, false);
+        else
+            ClearCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_HOME_AT_LOGOUT);
+    }
     return true;
 }
 
 bool PlayerHousingMgr::EnterOwnHouse(Player* player, std::string& reason)
 {
-    return player && EnterHouse(player, player->GetGUID().GetCounter(), reason);
+    return player && EnterHouse(player, HomeOf(player), reason);
 }
 
 bool PlayerHousingMgr::VisitHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason)
@@ -1514,7 +1503,8 @@ bool PlayerHousingMgr::VisitHouseByName(Player* player, std::string const& owner
         return false;
     }
 
-    return VisitHouse(player, ownerGuid, reason);
+    // Any of the owner's characters: their account's island.
+    return VisitHouse(player, HomeOfCharacter(ownerGuid), reason);
 }
 
 bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
@@ -1579,7 +1569,6 @@ bool PlayerHousingMgr::LeaveHouse(Player* player, std::string& reason)
 
     EndSessionIfEmpty(RemovePlayerTracking(player->GetGUID(), true));
     RestoreNormalPhase(player);
-    CancelMove(player);  // Move a Piece (edit mode keeps one ready) stays behind
 
     bool teleportOk = hasReturn ? player->TeleportTo(returnLocation) : player->TeleportToEntryPoint();
     if (!teleportOk)
@@ -1611,18 +1600,22 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
         return;
 
     ObjectGuid::LowType owner = GetIslandOwner(player);
-    bool own = owner && owner == player->GetGUID().GetCounter();
+    bool own = owner && owner == HomeOf(player);
     bool roommate = !own && CanDecorate(player);
     uint32 selected = (own || roommate) ? GetSelectedPlacement(player) : 0;
     std::string selectedName;
     bool selectedBuilding = false;
+    bool selectedStand = false;
     if (selected)
     {
         if (std::optional<Placement> placement = GetPlacement(player, selected))
         {
             selectedName = PieceName(placement->itemEntry);
             if (PieceDefinition const* piece = GetPiece(placement->itemEntry))
+            {
                 selectedBuilding = piece->IsBuilding();
+                selectedStand = piece->HasFlag(PIECE_FLAG_STAND);
+            }
         }
         else
             selected = 0;  // picked up since
@@ -1637,13 +1630,40 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
     size_t groupSize = (own || roommate) ? GetGroup(player).size() : 0;
     uint32 ghostItem = GetGhostItem(player);
 
-    // Fields 15 and 19 (a copy waiting for its spot, edit mode's Move a Piece) went with ghosts: 0.
-    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    // Fields 15 and 19 (a copy waiting for its spot, edit mode's Move a Piece) went with ghosts,
+    // and 14 (Move a Piece waiting for its circle) with the circle: 0.
+    std::string message = Acore::StringFormat("state\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         own ? 1 : 0, IsDecorating(player) ? 1 : 0, selected, selectedName,
         furnishings, _maxFurnishings, buildings, _maxBuildings, UndoLabel(player),
-        owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, GetPendingMover(player),
+        owner ? NameOf(owner) : "", (own || roommate) ? RedoLabel(player) : "", selectedBuilding ? 1 : 0, 0,
         0, roommate ? 1 : 0, IsInEditMode(player) ? 1 : 0,
         FormatYards(GetGridSize(player->GetGUID().GetCounter())), 0, groupSize,
-        ghostItem, ghostItem ? (IsGhostMove(player) ? "move" : "new") : "", _ghosts ? 1 : 0, ghostItem ? GetGhostNote(player) : "");
+        ghostItem, ghostItem ? (IsGhostMove(player) ? "move" : "new") : "", _ghosts ? 1 : 0, ghostItem ? GetGhostNote(player) : "",
+        selectedStand ? 1 : 0);
+
+    // What follows the player: its size (percent), tilt (degrees forward and to its right),
+    // how many pieces come with it, and where its front points relative to the player. For the
+    // last field, 0 is away (the same direction the player faces), +90 left, -90 right.
+    uint32 ghostSize = 100;
+    int32 ghostPitch = 0;
+    int32 ghostRoll = 0;
+    size_t ghostCount = 0;
+    int32 ghostFront = 0;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto itr = _carrying.find(player->GetGUID());
+        if (itr != _carrying.end() && !itr->second.pieces.empty())
+        {
+            GhostPiece const& lead = itr->second.pieces.front();
+            PieceDefinition const* piece = GetPiece(lead.itemEntry);
+            float normal = piece && piece->scale > 0.0f ? piece->scale : 1.0f;
+            ghostSize = uint32(std::lround(lead.scale / normal * 100.0f));
+            ghostPitch = int32(std::lround(lead.pitch * 57.29578f));  // degrees
+            ghostRoll = int32(std::lround(lead.roll * 57.29578f));
+            ghostCount = itr->second.pieces.size();
+            ghostFront = int32(std::lround(std::remainder(GhostFacing(itr->second) - player->GetOrientation(), 6.28318530717958647692f) * 57.29578f));
+        }
+    }
+    message += Acore::StringFormat("\t{}\t{}\t{}\t{}\t{}", ghostSize, ghostPitch, ghostRoll, ghostCount, ghostFront);
     SendAddon(player, message);
 }

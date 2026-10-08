@@ -171,7 +171,7 @@ uint32 PlayerHousingMgr::NextLayoutId(ObjectGuid::LowType ownerGuid) const
 
 bool PlayerHousingMgr::SaveLayout(Player* player, uint32 layoutId, std::string const& name, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     if (!_maxSavedLayouts)
     {
         reason = "Saved layouts are turned off on this server.";
@@ -229,7 +229,7 @@ bool PlayerHousingMgr::SaveLayout(Player* player, uint32 layoutId, std::string c
 
 bool PlayerHousingMgr::RenameLayout(Player* player, uint32 layoutId, std::string const& name, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::string clean = CleanName(name);
     if (clean.empty())
     {
@@ -251,7 +251,7 @@ bool PlayerHousingMgr::RenameLayout(Player* player, uint32 layoutId, std::string
 
 bool PlayerHousingMgr::DeleteLayout(Player* player, uint32 layoutId, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::optional<SavedLayout> layout = GetSavedLayout(self, layoutId);
     if (!layout)
     {
@@ -269,7 +269,7 @@ bool PlayerHousingMgr::DeleteLayout(Player* player, uint32 layoutId, std::string
 
 std::map<uint32, uint32> PlayerHousingMgr::LayoutShortfall(Player* player, uint32 layoutId) const
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::map<uint32, uint32> needed;
     for (Placement const& placement : LoadSavedPieces(self, layoutId))
         if (_pieces.count(placement.itemEntry))
@@ -290,7 +290,7 @@ std::map<uint32, uint32> PlayerHousingMgr::LayoutShortfall(Player* player, uint3
     std::map<uint32, uint32> missing;
     for (auto const& [itemEntry, count] : needed)
     {
-        uint32 owned = have[itemEntry] + player->GetItemCount(itemEntry);
+        uint32 owned = have[itemEntry];
         if (owned < count)
             missing[itemEntry] = count - owned;
     }
@@ -322,7 +322,7 @@ bool PlayerHousingMgr::GetMissingForLayout(Player* player, uint32 layoutId, std:
 {
     if (OnCooldown(player, COOLDOWN_HEAVY, 3000, reason))
         return false;
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::map<uint32, uint32> missing = LayoutShortfall(player, layoutId);
     uint32 gettable = 0;
     uint64 cost = 0;
@@ -340,31 +340,21 @@ bool PlayerHousingMgr::GetMissingForLayout(Player* player, uint32 layoutId, std:
         return false;
     }
 
-    // Into the bags while they fit, then House Storage.
+    // Into the Collection.
     std::set<uint32> known = LoadUnlocks(player);
-    uint32 toBags = 0;
-    uint32 toStorage = 0;
+    uint32 got = 0;
     for (auto const& [itemEntry, count] : missing)
     {
         PieceDefinition const* piece = GetPiece(itemEntry);
         if (!piece || !IsUnlocked(player, *piece, &known))
             continue;
-        for (uint32 i = 0; i < count; ++i)
-        {
-            if (player->AddItem(itemEntry, 1))
-                ++toBags;
-            else
-            {
-                AddToStorage(self, itemEntry, 1);
-                ++toStorage;
-            }
-        }
+        AddToStorage(self, itemEntry, int32(count));
+        got += count;
     }
     if (cost)
         player->ModifyMoney(-int64(cost));
 
-    reason = Acore::StringFormat("Got {}{}{}.", Plural(toBags + toStorage, "piece", "pieces"),
-        toStorage ? Acore::StringFormat(" ({} in House Storage)", toStorage) : std::string(),
+    reason = Acore::StringFormat("Got {} for your Collection{}.", Plural(got, "piece", "pieces"),
         cost ? " for " + FormatMoney(cost) : std::string());
     if (locked)
         reason += Acore::StringFormat(" {} still locked.", Plural(locked, "piece is", "pieces are"));
@@ -395,23 +385,11 @@ bool PlayerHousingMgr::SwitchLayout(Player* player, uint32 layoutId, std::string
         return false;
     }
 
-    // What there is to set it out with: the pieces out now (packed up first), the bags, and
-    // House Storage.
+    // What there is to set it out with: the pieces out now (packed up first) and the rest of
+    // the Collection.
     std::map<uint32, uint32> have = GetStorage(self);
     for (auto const& [id, placement] : session->placements)
         ++have[placement.itemEntry];
-    std::set<uint32> wanted;
-    for (Placement const& placement : saved)
-        wanted.insert(placement.itemEntry);
-    auto consumes = _pendingConsumes.find(player->GetGUID());
-    for (uint32 itemEntry : wanted)
-    {
-        uint32 reserved = 0;
-        if (consumes != _pendingConsumes.end() && consumes->second.count(itemEntry))
-            reserved = consumes->second.at(itemEntry);
-        uint32 inBags = player->GetItemCount(itemEntry);
-        have[itemEntry] += inBags > reserved ? inBags - reserved : 0;
-    }
 
     uint32 furnishings = 0;
     uint32 buildings = 0;
@@ -460,7 +438,6 @@ bool PlayerHousingMgr::SwitchLayout(Player* player, uint32 layoutId, std::string
     for (Placement const& placement : kept)
         changes.push_back(Change{ placement.id, std::nullopt, placement });
 
-    CancelMove(player);
     _report = {};
     std::string failure;
     ApplyChanges(player, *session, changes, true, failure);
@@ -483,7 +460,7 @@ bool PlayerHousingMgr::SwitchLayout(Player* player, uint32 layoutId, std::string
         leftOut = Acore::StringFormat(" Left out {} you don't have: {}.", Plural(total, "piece", "pieces"), names);
     }
 
-    reason = Acore::StringFormat("Set out {}: {}.{}{} Changed your mind? House Key, Undo.", layout->name, Plural(uint32(kept.size()), "piece", "pieces"),
+    reason = Acore::StringFormat("Set out {}: {}.{}{} Changed your mind? Undo.", layout->name, Plural(uint32(kept.size()), "piece", "pieces"),
         leftOut, DescribeReturns());
     SendAddonState(player);
     return true;
@@ -497,7 +474,7 @@ bool PlayerHousingMgr::IsLayoutCopyable(ObjectGuid::LowType ownerGuid) const
 
 void PlayerHousingMgr::SetLayoutCopyable(Player* player, bool copyable, std::string& reason) const
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     EnsureHouse(self);
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = (flags & ~{}) | {} WHERE owner_guid={}",
         uint32(HOUSE_FLAG_LAYOUT_COPYABLE), copyable ? uint32(HOUSE_FLAG_LAYOUT_COPYABLE) : 0, self);
@@ -507,7 +484,7 @@ void PlayerHousingMgr::SetLayoutCopyable(Player* player, bool copyable, std::str
 
 bool PlayerHousingMgr::CopyIslandLayout(Player* visitor, std::string& reason)
 {
-    ObjectGuid::LowType self = visitor->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(visitor);  // the visitor's account's island
     ObjectGuid::LowType owner = GetIslandOwner(visitor);
     if (!owner || owner == self)
     {
@@ -539,7 +516,7 @@ bool PlayerHousingMgr::CopyIslandLayout(Player* visitor, std::string& reason)
 
 bool PlayerHousingMgr::SendLayout(Player* player, uint32 layoutId, std::string const& recipientName, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::optional<SavedLayout> layout = GetSavedLayout(self, layoutId);
     if (!layout)
     {
@@ -554,9 +531,9 @@ bool PlayerHousingMgr::SendLayout(Player* player, uint32 layoutId, std::string c
         reason = "There's no character called " + CleanName(recipientName) + ".";
         return false;
     }
-    if (recipient == self)
+    if (HomeOfCharacter(recipient) == self)
     {
-        reason = "That's you.";
+        reason = "That's you (all your characters share their layouts).";
         return false;
     }
 
@@ -569,14 +546,16 @@ bool PlayerHousingMgr::SendLayout(Player* player, uint32 layoutId, std::string c
         known = bool(CharacterDatabase.Query("SELECT 1 FROM guild_member WHERE guid={} AND guildid={}", recipient, player->GetGuildId()));
     if (!known)
         known = bool(CharacterDatabase.Query("SELECT 1 FROM character_social WHERE guid={} AND friend={} AND (flags & {})",
-            recipient, self, SOCIAL_FLAG_FRIEND));
+            recipient, player->GetGUID().GetCounter(), SOCIAL_FLAG_FRIEND));
     if (!known)
     {
         reason = Acore::StringFormat("Layouts go to your party, your guild, or friends who have you on their list; {} is none of those.", name);
         return false;
     }
 
-    if (GetSavedLayouts(recipient).size() >= _maxSavedLayouts)
+    // Kept with the recipient's account's island.
+    ObjectGuid::LowType recipientHome = HomeOfCharacter(recipient);
+    if (GetSavedLayouts(recipientHome).size() >= _maxSavedLayouts)
     {
         reason = Acore::StringFormat("{}'s saved layouts are full.", name);
         return false;
@@ -584,7 +563,7 @@ bool PlayerHousingMgr::SendLayout(Player* player, uint32 layoutId, std::string c
 
     std::string senderName = player->GetName();
     std::string copyName = CleanName(layout->name + " (from " + senderName + ")");
-    WriteLayout(recipient, NextLayoutId(recipient), copyName, senderName, self, layoutId);
+    WriteLayout(recipientHome, NextLayoutId(recipientHome), copyName, senderName, self, layoutId);
     if (Player* online = ObjectAccessor::FindPlayerByLowGUID(recipient))
         Say(online, Acore::StringFormat("{} sent you a layout: {}. Island settings, Saved layouts.", senderName, copyName));
     reason = Acore::StringFormat("Sent {} a copy of {}.", name, layout->name);

@@ -2,6 +2,7 @@
 -- worldserver stopped: the mail below takes the next free mail ids, which a running server
 -- also hands out.
 DROP TABLE IF EXISTS `mod_playerhousing_meta`;
+DROP TABLE IF EXISTS `mod_playerhousing_account`;
 DROP TABLE IF EXISTS `mod_playerhousing_guestbook`;
 DROP TABLE IF EXISTS `mod_playerhousing_set_piece`;
 DROP TABLE IF EXISTS `mod_playerhousing_set`;

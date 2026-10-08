@@ -6,7 +6,7 @@
 #   dev-container.sh rebuild        compile the module, re-apply its SQL, restart the worldserver
 #   dev-container.sh sql            re-apply the module SQL
 #   dev-container.sh restart        restart the worldserver
-#   dev-container.sh test [args]    run housing_smoke.py inside (e.g. --verbose)
+#   dev-container.sh test [args]    run collection_smoke.py inside (e.g. --verbose)
 #   dev-container.sh console CMD    run a worldserver console command
 #   dev-container.sh logs           follow the server log
 #   dev-container.sh shell          a shell inside the container
@@ -28,6 +28,10 @@ run() { "$ENGINE" exec "$NAME" bash -c "$1"; }
 wait_ready() {
     for _ in $(seq 1 600); do
         if run "grep -q 'ready\.\.\.' /opt/acore/server/logs/Server.log 2>/dev/null"; then
+            if ! run "pgrep -x authserver >/dev/null"; then
+                run "tmux new-window -t acore -n auth-retry -c /opt/acore/server/bin './authserver -c /opt/acore/server/etc/authserver.conf'"
+                sleep 2
+            fi
             echo "$NAME: worldserver is up"
             return 0
         fi
@@ -92,7 +96,7 @@ case "${1:-}" in
         ;;
     sql) apply_sql ;;
     restart) restart_world ;;
-    test) shift; "$ENGINE" exec "$NAME" python3 "$IN/tools/test-server/testclient/housing_smoke.py" "$@" ;;
+    test) shift; "$ENGINE" exec "$NAME" python3 "$IN/tools/test-server/testclient/collection_smoke.py" "$@" ;;
     console) shift; run "tmux send-keys -t acore:world '$*' Enter; sleep 1; tail -n 5 /opt/acore/server/logs/Server.log" ;;
     logs) "$ENGINE" exec "$NAME" tail -f /opt/acore/server/logs/Server.log ;;
     shell) "$ENGINE" exec -it "$NAME" bash ;;

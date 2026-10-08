@@ -1,5 +1,6 @@
 #include "PlayerHousingMgr.h"
 
+#include "Bag.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
@@ -51,25 +52,6 @@ PieceDefinition const* PlayerHousingMgr::GetPiece(uint32 itemEntry) const
     return itr != _pieces.end() ? &itr->second : nullptr;
 }
 
-std::vector<PieceDefinition const*> PlayerHousingMgr::GetPiecesInCategory(uint8 category) const
-{
-    std::vector<PieceDefinition const*> pieces;
-    {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
-        for (auto const& [itemEntry, piece] : _pieces)
-            if (piece.category == category)
-                pieces.push_back(&piece);
-    }
-
-    std::sort(pieces.begin(), pieces.end(), [](PieceDefinition const* left, PieceDefinition const* right)
-    {
-        if (left->sortOrder != right->sortOrder)
-            return left->sortOrder < right->sortOrder;
-        return left->name < right->name;
-    });
-    return pieces;
-}
-
 std::string PlayerHousingMgr::PieceName(uint32 itemEntry) const
 {
     PieceDefinition const* piece = GetPiece(itemEntry);
@@ -97,11 +79,11 @@ PlayerHousingMgr::Session* PlayerHousingMgr::GetOwnerSession(Player* player, std
     ObjectGuid::LowType owner = GetIslandOwner(player);
     if (owner == 0)
     {
-        reason = "Go home first: House Key, Go home.";
+        reason = "Go home first: the housing window's Go home.";
         return nullptr;
     }
 
-    if (owner != player->GetGUID().GetCounter())
+    if (owner != HomeOf(player))
     {
         auto islandItr = _sessionsByOwner.find(owner);
         bool roommate = islandItr != _sessionsByOwner.end() && islandItr->second.roommates.count(player->GetGUID().GetCounter());
@@ -244,22 +226,15 @@ std::map<uint32, uint32> PlayerHousingMgr::GetStorage(ObjectGuid::LowType ownerG
     return storage;
 }
 
-bool PlayerHousingMgr::ReturnItem(Player* player, uint32 itemEntry, bool& toStorage)
+void PlayerHousingMgr::ReturnPiece(Player* player, uint32 itemEntry)
 {
-    toStorage = false;
-    if (player->AddItem(itemEntry, 1))
-        return true;
-
-    AddToStorage(player->GetGUID().GetCounter(), itemEntry, 1);
-    toStorage = true;
-    Tip(player, TIP_FIRST_STORAGE, "Your bags were full, so it went to House Storage. House Key, Storage, to take it out.");
-    return true;
+    AddToStorage(HomeOf(player), itemEntry, 1);
 }
 
-bool PlayerHousingMgr::TakeItemFor(Player* player, ObjectGuid::LowType itemOwner, uint32 itemEntry)
+bool PlayerHousingMgr::TakePieceFor(Player* player, ObjectGuid::LowType itemOwner, uint32 itemEntry)
 {
-    if (itemOwner == player->GetGUID().GetCounter())
-        return TakeItem(player, itemEntry);
+    if (itemOwner == HomeOf(player))
+        return TakePiece(player, itemEntry);
 
     std::map<uint32, uint32> storage = GetStorage(itemOwner);
     auto itr = storage.find(itemEntry);
@@ -269,70 +244,81 @@ bool PlayerHousingMgr::TakeItemFor(Player* player, ObjectGuid::LowType itemOwner
     return true;
 }
 
-bool PlayerHousingMgr::TakeItem(Player* player, uint32 itemEntry)
+bool PlayerHousingMgr::TakePiece(Player* player, uint32 itemEntry)
 {
-    uint32 reserved = 0;
-    {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
-        auto pendingItr = _pendingConsumes.find(player->GetGUID());
-        if (pendingItr != _pendingConsumes.end())
-        {
-            auto entryItr = pendingItr->second.find(itemEntry);
-            if (entryItr != pendingItr->second.end())
-                reserved = entryItr->second;
-        }
-    }
-
-    if (player->GetItemCount(itemEntry) > reserved)
-    {
-        player->DestroyItemCount(itemEntry, 1, true);
-        return true;
-    }
-
-    std::map<uint32, uint32> storage = GetStorage(player->GetGUID().GetCounter());
+    ObjectGuid::LowType home = HomeOf(player);
+    std::map<uint32, uint32> storage = GetStorage(home);
     auto itr = storage.find(itemEntry);
     if (itr == storage.end() || itr->second == 0)
         return false;
 
-    AddToStorage(player->GetGUID().GetCounter(), itemEntry, -1);
+    AddToStorage(home, itemEntry, -1);
     return true;
 }
 
-void PlayerHousingMgr::ProcessPendingConsumes(Player* player)
+bool PlayerHousingMgr::SweepHousingItems(Player* player, bool bankToo)
 {
-    std::map<uint32, uint32> consumes;
+    if (!_enabled || !player || player->GetSession()->IsBot())
+        return false;
+
+    // Where each one is first, then they go: the positions don't move as items are destroyed.
+    std::vector<std::pair<uint8, uint8>> found;
+    auto check = [&](Item const* item, uint8 bag, uint8 slot)
     {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
-        auto itr = _pendingConsumes.find(player->GetGUID());
-        if (itr == _pendingConsumes.end())
+        if (!item || item->GetEntry() == HOUSE_KEY_ITEM)
             return;
-        consumes.swap(itr->second);
-        _pendingConsumes.erase(itr);
-        _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
-    }
-
-    // This runs before the player's next packet is handled (see CanPacketReceive), so the
-    // item can't have been banked, mailed, traded or sold in between.
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
-    for (auto const& [itemEntry, count] : consumes)
+        uint32 entry = item->GetEntry();
+        if (IsMoverItem(entry) || GetPiece(entry))
+            found.emplace_back(bag, slot);
+    };
+    auto checkBag = [&](uint8 bagSlot)
     {
-        uint32 inBags = player->GetItemCount(itemEntry);
-        uint32 fromBags = std::min(inBags, count);
-        if (fromBags)
-            player->DestroyItemCount(itemEntry, fromBags, true);
-        if (fromBags == count)
-            continue;
+        if (Bag* bag = player->GetBagByPos(bagSlot))
+            for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+                check(bag->GetItemByPos(uint8(slot)), bagSlot, uint8(slot));
+    };
 
-        // Gone some other way (a GM took it, say): the rest from storage, as far as it goes.
-        uint32 missing = count - fromBags;
-        std::map<uint32, uint32> storage = GetStorage(self);
-        uint32 fromStorage = std::min(missing, storage.count(itemEntry) ? storage[itemEntry] : 0u);
-        if (fromStorage)
-            AddToStorage(self, itemEntry, -int32(fromStorage));
-        if (fromStorage < missing)
-            LOG_WARN("module", "mod-playerhousing: {} placed {} x item {} no longer in their bags or House Storage.",
-                player->GetName(), missing - fromStorage, itemEntry);
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        check(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), INVENTORY_SLOT_BAG_0, slot);
+    for (uint8 slot = KEYRING_SLOT_START; slot < CURRENCYTOKEN_SLOT_END; ++slot)
+        check(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), INVENTORY_SLOT_BAG_0, slot);
+    for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        checkBag(bag);
+    if (bankToo)
+    {
+        for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+            check(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), INVENTORY_SLOT_BAG_0, slot);
+        for (uint8 bag = BANK_SLOT_BAG_START; bag < BANK_SLOT_BAG_END; ++bag)
+            checkBag(bag);
     }
+    if (found.empty())
+        return false;
+
+    std::map<uint32, uint32> pieces;
+    for (auto const& [bag, slot] : found)
+    {
+        Item* item = player->GetItemByPos(bag, slot);
+        if (!item)
+            continue;
+        if (!IsMoverItem(item->GetEntry()))
+            pieces[item->GetEntry()] += item->GetCount();
+        player->DestroyItem(bag, slot, true);
+    }
+
+    ObjectGuid::LowType home = HomeOf(player);
+    std::string names;
+    uint32 total = 0;
+    for (auto const& [entry, count] : pieces)
+    {
+        AddToStorage(home, entry, int32(count));
+        total += count;
+        if (total <= 6)
+            names += (names.empty() ? "" : ", ") + (count > 1 ? Acore::StringFormat("{} x{}", PieceName(entry), count) : PieceName(entry));
+    }
+    if (total)
+        Say(player, Acore::StringFormat("Housing pieces don't take bag space any more: {}{} went into your Collection (the housing window, /housing).",
+            names, total > 6 ? " and more" : ""));
+    return true;
 }
 
 void PlayerHousingMgr::SavePlacement(ObjectGuid::LowType ownerGuid, Placement const& placement, uint32 mapId) const
@@ -381,7 +367,7 @@ bool PlayerHousingMgr::SpawnPlacement(Session& session, Map* map, Placement cons
     object->SetSpawnedByDefault(false);
     object->SetObjectScale(goInfo->size * (placement.scale / piece.scale));
     if (placement.pitch != 0.0f || placement.roll != 0.0f)
-        object->SetLocalRotationAngles(placement.o, placement.pitch, placement.roll);
+        SetRotationAngles(object, placement.o, placement.pitch, placement.roll);
     // Buildings are seen from across the island instead of popping in at the normal range.
     if (piece.IsBuilding())
         object->SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
@@ -411,15 +397,6 @@ void PlayerHousingMgr::DespawnPlacement(Session& session, Map* map, uint32 place
         RemoveSpawned(map, itr->second.guid);
         session.spawned.erase(itr);
     }
-
-    auto markerItr = session.markers.find(placementId);
-    if (markerItr != session.markers.end())
-    {
-        if (map)
-            if (GameObject* marker = map->GetGameObject(markerItr->second))
-                marker->AddObjectToRemoveList();
-        session.markers.erase(markerItr);
-    }
 }
 
 void PlayerHousingMgr::RespawnPlacement(Session& session, Map* map, uint32 placementId)
@@ -430,54 +407,6 @@ void PlayerHousingMgr::RespawnPlacement(Session& session, Map* map, uint32 place
         return;
 
     SpawnPlacement(session, map, itr->second);
-    if (session.decorating)
-        SpawnMarkers(session, map);
-}
-
-void PlayerHousingMgr::SpawnMarkers(Session& session, Map* map)
-{
-    if (!map)
-        return;
-
-    for (auto const& [id, placement] : session.placements)
-    {
-        if (session.markers.count(id))
-            continue;
-
-        auto pieceItr = _pieces.find(placement.itemEntry);
-        if (pieceItr == _pieces.end() || !pieceItr->second.HasFlag(PIECE_FLAG_SURFACE))
-            continue;
-
-        float top = placement.z + pieceItr->second.height * (placement.scale / pieceItr->second.scale);
-        GameObject* marker = new GameObject();
-        if (!marker->Create(map->GenerateLowGuid<HighGuid::GameObject>(), HOOK_MARKER_GO, map, PHASEMASK_NORMAL,
-                placement.x, placement.y, top + 0.05f, placement.o, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
-        {
-            delete marker;
-            continue;
-        }
-
-        marker->SetRespawnTime(0);
-        marker->SetSpawnedByDefault(false);
-        if (!map->AddToMap(marker))
-        {
-            delete marker;
-            continue;
-        }
-
-        marker->SetPhaseMask(session.phaseMask, true);
-        marker->EnableCollision(false);
-        session.markers[id] = marker->GetGUID();
-    }
-}
-
-void PlayerHousingMgr::DespawnMarkers(Session& session, Map* map)
-{
-    for (auto const& [id, guid] : session.markers)
-        if (map)
-            if (GameObject* marker = map->GetGameObject(guid))
-                marker->AddObjectToRemoveList();
-    session.markers.clear();
 }
 
 void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid)
@@ -636,81 +565,6 @@ void PlayerHousingMgr::PlaceStarterWreckage(Session& session, Map* map)
     }
 }
 
-bool PlayerHousingMgr::HandlePlacementCast(Player* player, Item* castItem, Position const& target, std::string& reason)
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-
-    PieceDefinition const* piece = castItem ? GetPiece(castItem->GetEntry()) : nullptr;
-    if (!piece)
-    {
-        reason = "That isn't a furnishing.";
-        return false;
-    }
-
-    Session* session = GetOwnerSession(player, reason);
-    if (!session)
-    {
-        if (!GetIslandOwner(player))
-            reason = "Furnishings go on your own island. House Key, Go home.";
-        return false;
-    }
-
-    if (!IsSpotOnIsland(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ()))
-    {
-        reason = "That spot is off your island.";
-        return false;
-    }
-
-    if (!CheckLimit(*session, *piece, reason))
-    {
-        Tip(player, TIP_LIMIT, "Pick up pieces you don't need: they go back to your bags.");
-        return false;
-    }
-
-    uint32& reserved = _pendingConsumes[player->GetGUID()][piece->itemEntry];
-    _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
-    if (player->GetItemCount(piece->itemEntry) <= reserved)
-    {
-        reason = Acore::StringFormat("You don't have another {}.", piece->name);
-        return false;
-    }
-
-    Placement placement;
-    placement.id = session->nextPlacementId++;
-    placement.itemEntry = piece->itemEntry;
-    placement.x = target.GetPositionX();
-    placement.y = target.GetPositionY();
-    placement.z = target.GetPositionZ();
-    placement.o = NormalizeAngle(std::atan2(player->GetPositionY() - placement.y, player->GetPositionX() - placement.x));
-    placement.scale = piece->scale;
-    // A roommate's piece stays theirs: picking it up returns it to them.
-    if (player->GetGUID().GetCounter() != session->ownerGuid)
-        placement.placedBy = player->GetGUID().GetCounter();
-    // A new mannequin takes after its owner.
-    if (piece->HasFlag(PIECE_FLAG_STAND))
-        placement.look = uint32(player->getRace()) | (uint32(player->getGender()) << 8);
-    // Clicked right onto a table top: it stands on the table and moves with it.
-    if (!piece->IsBuilding())
-        placement.parent = FindSurfaceUnder(*session, placement.x, placement.y, placement.z);
-
-    // The grid (when on) squares it up.
-    if (GetGridSize(player->GetGUID().GetCounter()) > 0.0f)
-    {
-        float step = PI_F / 4.0f;
-        placement.o = NormalizeAngle(std::round(placement.o / step) * step);
-    }
-    if (!placement.parent)
-        SnapToGrid(player->GetGUID().GetCounter(), placement.x, placement.y);
-
-    if (!AddNewPlacement(player, *session, placement, reason))
-        return false;
-
-    // The item is still in use by the cast that brought us here; it is removed before the
-    // player's next packet or update (see ProcessPendingConsumes).
-    ++reserved;
-    return true;
-}
-
 bool PlayerHousingMgr::AddNewPlacement(Player* player, Session& session, Placement const& placement, std::string& reason)
 {
     PieceDefinition const* piece = GetPiece(placement.itemEntry);
@@ -724,8 +578,6 @@ bool PlayerHousingMgr::AddNewPlacement(Player* player, Session& session, Placeme
     session.placements[placement.id] = placement;
     SelectOne(session, player->GetGUID().GetCounter(), placement.id);
     SavePlacement(session.ownerGuid, placement, session.mapId);
-    if (session.decorating)
-        SpawnMarkers(session, map);
 
     Record(player, "placed " + piece->name, { Change{ placement.id, std::nullopt, placement } });
     // It's there to see: said only when the island is nearly full.
@@ -736,7 +588,7 @@ bool PlayerHousingMgr::AddNewPlacement(Player* player, Session& session, Placeme
     if (piece->IsBuilding() ? buildings + 2 >= _maxBuildings : furnishings + 10 >= _maxFurnishings)
         reason = Acore::StringFormat("Placed {} ({}).", piece->name, CountsText(session.ownerGuid));
     QuestEvent(player, QUEST_TOUR_PLACE);
-    Tip(player, TIP_FIRST_PLACE, "Click a piece to turn, move or pick it up. Mistake? House Key, Undo.");
+    Tip(player, TIP_FIRST_PLACE, "Right-click a piece to pick it up again; the mouse wheel turns it. Mistake? Undo, in the housing window.");
     return true;
 }
 
@@ -760,20 +612,16 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         for (auto& [who, group] : session.groups)
             group.erase(std::remove(group.begin(), group.end(), placementId), group.end());
 
-        // A piece goes back to whoever placed it: the owner, or a roommate.
-        if (itemOwner != player->GetGUID().GetCounter())
+        // A piece goes back to the Collection of whoever placed it: the owner, or a roommate.
+        if (itemOwner != HomeOf(player))
         {
             AddToStorage(itemOwner, current.itemEntry, 1);
             ++_report.toOthers;
             return true;
         }
 
-        bool toStorage = false;
-        ReturnItem(player, current.itemEntry, toStorage);
-        if (toStorage)
-            ++_report.toStorage;
-        else
-            ++_report.toBags;
+        ReturnPiece(player, current.itemEntry);
+        ++_report.toCollection;
         return true;
     }
 
@@ -789,11 +637,11 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         if (!CheckLimit(session, pieceItr->second, reason))
             return false;
 
-        if (!TakeItemFor(player, ItemOwnerOf(session, *target), target->itemEntry))
+        if (!TakePieceFor(player, ItemOwnerOf(session, *target), target->itemEntry))
         {
-            reason = ItemOwnerOf(session, *target) == player->GetGUID().GetCounter()
-                ? Acore::StringFormat("You no longer have {}.", pieceItr->second.name)
-                : Acore::StringFormat("{} no longer has the {} in House Storage.", NameOf(ItemOwnerOf(session, *target)), pieceItr->second.name);
+            reason = ItemOwnerOf(session, *target) == HomeOf(player)
+                ? Acore::StringFormat("You no longer have a {} in your Collection.", pieceItr->second.name)
+                : Acore::StringFormat("{} no longer has the {} in their Collection.", NameOf(ItemOwnerOf(session, *target)), pieceItr->second.name);
             return false;
         }
 
@@ -830,7 +678,7 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
 
         // Gear on a stand is only ever changed by whoever it belongs to; anyone else's undo
         // moves the stand and leaves what it wears alone.
-        if (ItemOwnerOf(session, current) != player->GetGUID().GetCounter())
+        if (ItemOwnerOf(session, current) != HomeOf(player))
             applied.gear = current.gear;
 
         // Gear comes off first, so a swap frees the slot, then the new gear goes on.
@@ -880,9 +728,6 @@ bool PlayerHousingMgr::ApplyChanges(Player* player, Session& session, std::vecto
     else
         for (auto itr = changes.rbegin(); itr != changes.rend(); ++itr)
             apply(*itr);
-
-    if (session.decorating)
-        SpawnMarkers(session, map);
     return allOk;
 }
 
@@ -965,16 +810,16 @@ std::string PlayerHousingMgr::RedoLabel(Player const* player) const
     return itr != _journals.end() && !itr->second.redo.empty() ? itr->second.redo.back().label : "";
 }
 
-std::string PlayerHousingMgr::DescribeReturns(bool bagsToo) const
+std::string PlayerHousingMgr::DescribeReturns(bool collectionToo) const
 {
     std::string gear;
-    // Gear taken off a stand is the subject of the sentence before; gear coming back with
-    // a picked-up stand is extra news.
-    bool piecesReturned = _report.toBags || _report.toStorage;
+    // Gear (real items, unlike the pieces) taken off a stand is the subject of the sentence
+    // before; gear coming back with a picked-up stand is extra news.
+    bool piecesReturned = _report.toCollection || _report.toOthers;
     if (_report.gearToBags && !piecesReturned)
         gear += _report.gearToBags == 1 ? " It's back in your bags." : " They're back in your bags.";
-    else if (_report.gearToBags && bagsToo)
-        gear += _report.gearToBags == 1 ? " A piece of gear went back to your bags too." : Acore::StringFormat(" {} pieces of gear went back to your bags too.", _report.gearToBags);
+    else if (_report.gearToBags)
+        gear += _report.gearToBags == 1 ? " Its gear went back to your bags." : Acore::StringFormat(" {} pieces of gear went back to your bags.", _report.gearToBags);
     if (_report.gearMailed)
         gear += Acore::StringFormat(" Your bags were full, so Krook mailed you {} (check your mailbox).",
             _report.gearMailed == 1 ? "a piece of gear" : Acore::StringFormat("{} pieces of gear", _report.gearMailed));
@@ -985,25 +830,21 @@ std::string PlayerHousingMgr::DescribeReturns(bool bagsToo) const
             names += (names.empty() ? "" : ", ") + name;
         gear += " Not in your bags any more, so not put back: " + names + ".";
     }
-    return DescribeItemReturns(bagsToo) + gear;
+    return DescribeItemReturns(collectionToo) + gear;
 }
 
-std::string PlayerHousingMgr::DescribeItemReturns(bool bagsToo) const
+std::string PlayerHousingMgr::DescribeItemReturns(bool collectionToo) const
 {
     std::string mine;
-    if (_report.toStorage && _report.toBags)
-        mine = Acore::StringFormat(" {} went back to your bags and {} to House Storage (bags full).", _report.toBags, _report.toStorage);
-    else if (_report.toStorage)
-        mine = _report.toStorage == 1 ? " It's in your House Storage (bags full)." : " They're in your House Storage (bags full).";
-    else if (_report.toBags && bagsToo)
-        mine = _report.toBags == 1 ? " It's back in your bags." : " They're back in your bags.";
+    if (_report.toCollection && collectionToo)
+        mine = _report.toCollection == 1 ? " It's back in your Collection." : " They're back in your Collection.";
 
     // Pieces someone else placed went back to them.
     if (_report.toOthers == 1)
-        mine += (_report.toBags || _report.toStorage) ? " One piece went back to the House Storage of whoever placed it."
-                                                      : " It went back to the House Storage of whoever placed it.";
+        mine += _report.toCollection ? " One piece went back to the Collection of whoever placed it."
+                                     : " It went back to the Collection of whoever placed it.";
     else if (_report.toOthers > 1)
-        mine += Acore::StringFormat(" {} pieces went back to the House Storage of whoever placed them.", _report.toOthers);
+        mine += Acore::StringFormat(" {} pieces went back to the Collections of whoever placed them.", _report.toOthers);
     return mine;
 }
 
@@ -1151,19 +992,6 @@ uint32 PlayerHousingMgr::GetPlacementForObject(Player const* player, ObjectGuid 
     return 0;
 }
 
-uint32 PlayerHousingMgr::GetSurfaceForMarker(Player const* player, ObjectGuid const& guid) const
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session const* session = FindSessionOf(player);
-    if (!session)
-        return 0;
-
-    for (auto const& [id, markerGuid] : session->markers)
-        if (markerGuid == guid)
-            return id;
-    return 0;
-}
-
 std::vector<std::pair<Placement, float>> PlayerHousingMgr::GetNearbyPlacements(Player const* player, float range) const
 {
     std::vector<std::pair<Placement, float>> nearby;
@@ -1285,7 +1113,7 @@ bool PlayerHousingMgr::PickUp(Player* player, uint32 placementId, bool withInsid
     std::string label = insideCount ? Acore::StringFormat("picked up {} and {} {}", name, pieces, where) : "picked up " + name;
     Record(player, label, std::move(changes));
 
-    // Gone from where it stood, back in the bags: said only when it went somewhere else.
+    // Gone from where it stood, back in the Collection: said only when it went somewhere else.
     reason = DescribeReturns(false);
     if (!reason.empty())
         reason = Acore::StringFormat("Picked up {}{}.{}", name, insideCount ? Acore::StringFormat(" and the {} {}", pieces,
@@ -1469,140 +1297,6 @@ bool PlayerHousingMgr::IsOverSurface(PieceDefinition const& piece, Placement con
     return localX >= piece.outlineMinX && localX <= piece.outlineMaxX && localY >= piece.outlineMinY && localY <= piece.outlineMaxY;
 }
 
-bool PlayerHousingMgr::StartMove(Player* player, uint32 placementId, std::string& reason)
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session* session = GetOwnerSession(player, reason);
-    if (!session)
-        return false;
-
-    placementId = ResolvePlacementArgument(player, placementId);
-    auto itr = session->placements.find(placementId);
-    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
-    if (!piece)
-    {
-        reason = "Choose a piece first: click it while decorating, or stand next to it.";
-        return false;
-    }
-
-    // The mover with the same circle as the piece, so the circle shows its size again.
-    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(piece->itemEntry);
-    auto moverItr = proto ? _moverBySpell.find(proto->Spells[0].SpellId) : _moverBySpell.end();
-    if (moverItr == _moverBySpell.end())
-    {
-        reason = "That can't be moved with the circle. Nudge it, or move it to where you're standing.";
-        return false;
-    }
-
-    CancelMove(player);
-    EndGhost(player);
-    if (!player->AddItem(moverItr->second, 1))
-    {
-        reason = "Your bags are full: make room for a Move a Piece item first.";
-        return false;
-    }
-
-    _pendingMoves[player->GetGUID()] = PendingMove{ placementId, moverItr->second };
-    SelectOne(*session, player->GetGUID().GetCounter(), placementId);
-    reason = Acore::StringFormat("Right-click Move a Piece in your bags, then click where the {} should go.", piece->name);
-    SendAddonState(player);
-    return true;
-}
-
-bool PlayerHousingMgr::HandleMoveCast(Player* player, Item* castItem, Position const& target, std::string& reason)
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto pending = _pendingMoves.find(player->GetGUID());
-    if (pending == _pendingMoves.end())
-    {
-        reason = "Nothing to move: click a piece while decorating and choose Move.";
-        return false;
-    }
-
-    if (!IsSpotOnIsland(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ()))
-    {
-        reason = "That spot is off your island.";
-        return false;
-    }
-
-    // A saved set, set down where the circle was clicked.
-    if (uint32 setId = pending->second.setId)
-    {
-        Session* session = GetOwnerSession(player, reason);
-        if (!session || !StampSet(player, *session, setId, target, reason))
-            return false;
-        _pendingMoves.erase(player->GetGUID());
-        ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
-        _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
-        SendAddonState(player);
-        return true;
-    }
-
-    uint32 placementId = pending->second.placementId;
-    std::optional<Placement> placement = GetPlacement(player, placementId);
-    if (!placement || !CanDecorate(player))
-    {
-        CancelMove(player);
-        reason = "That piece isn't there any more.";
-        return false;
-    }
-
-    // Several pieces selected, this one first: they all go, keeping their places around it.
-    std::vector<uint32> group = GetGroup(player);
-    if (group.size() > 1 && group.front() == placementId)
-    {
-        Session* session = GetOwnerSession(player, reason);
-        if (!session || !MoveGroupTo(player, *session, group, target, reason))
-            return false;
-        _pendingMoves.erase(player->GetGUID());
-        ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
-        _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
-        SendAddonState(player);
-        return true;
-    }
-
-    float tx = target.GetPositionX();
-    float ty = target.GetPositionY();
-    if (Session const* session = FindSessionOf(player))
-    {
-        // On the grid, unless it's going onto a table top (the grid could put it off the edge).
-        std::vector<uint32> carried = CarriedBy(*session, placementId, true);
-        std::set<uint32> exclude(carried.begin(), carried.end());
-        exclude.insert(placementId);
-        if (!FindSurfaceUnder(*session, tx, ty, target.GetPositionZ(), exclude))
-            SnapToGrid(player->GetGUID().GetCounter(), tx, ty);
-    }
-
-    if (!Transform(player, placementId, "moved", tx - placement->x, ty - placement->y,
-            target.GetPositionZ() - placement->z, 0.0f, false, 0.0f, reason))
-        return false;
-
-    // The item is still in use by the cast; it goes before the player's next packet or update.
-    _pendingMoves.erase(player->GetGUID());
-    ++_pendingConsumes[player->GetGUID()][castItem->GetEntry()];
-    _pendingConsumeCount.store(uint32(_pendingConsumes.size()), std::memory_order_relaxed);
-    SendAddonState(player);
-    return true;
-}
-
-void PlayerHousingMgr::CancelMove(Player* player)
-{
-    {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
-        _pendingMoves.erase(player->GetGUID());
-    }
-    for (uint32 entry = MOVER_ITEM_FIRST; entry <= MOVER_ITEM_LAST; ++entry)
-        if (uint32 count = player->GetItemCount(entry, true))
-            player->DestroyItemCount(entry, count, true);
-}
-
-uint32 PlayerHousingMgr::GetPendingMover(Player const* player) const
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto itr = _pendingMoves.find(player->GetGUID());
-    return itr != _pendingMoves.end() ? itr->second.moverItem : 0;
-}
-
 void PlayerHousingMgr::SelectPlacement(Player const* player, uint32 placementId)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -1755,7 +1449,7 @@ bool PlayerHousingMgr::SetEditMode(Player* player, bool on, std::string& reason)
             _editMode.erase(player->GetGUID());
     }
 
-    // Edit mode is decorating with the keys: pieces are clickable and runes show on tables.
+    // Edit mode is decorating with the keys: pieces are clickable.
     if (on && !IsDecorating(player) && !SetDecorating(player, true, reason))
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
@@ -1764,8 +1458,6 @@ bool PlayerHousingMgr::SetEditMode(Player* player, bool on, std::string& reason)
     }
     if (!on && IsDecorating(player))
         SetDecorating(player, false, reason);
-    if (!on)
-        CancelMove(player);
 
     reason.clear();  // the addon's banner says so
     SendAddonState(player);
@@ -1855,6 +1547,8 @@ bool PlayerHousingMgr::MoveHere(Player* player, uint32 placementId, std::string&
 
 bool PlayerHousingMgr::Resize(Player* player, uint32 placementId, float percent, bool relative, std::string& reason)
 {
+    if (!placementId && IsCarrying(player))
+        return ResizeGhost(player, percent, relative, reason);
     if (!placementId && GetGroup(player).size() > 1)
     {
         reason = "Size and tilt change one piece at a time: click just that piece.";
@@ -1947,6 +1641,8 @@ bool PlayerHousingMgr::Resize(Player* player, uint32 placementId, float percent,
 
 bool PlayerHousingMgr::Tilt(Player* player, uint32 placementId, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason)
 {
+    if (!placementId && IsCarrying(player))
+        return TiltGhost(player, forwardDegrees, rightDegrees, straighten, reason);
     if (!placementId && GetGroup(player).size() > 1)
     {
         reason = "Size and tilt change one piece at a time: click just that piece.";
@@ -1979,14 +1675,29 @@ bool PlayerHousingMgr::Tilt(Player* player, uint32 placementId, float forwardDeg
         return false;
     }
 
-    // Tenths of a degree, so steps back and forth land back on level.
+    // Tenths of a degree, so steps back and forth land back on level. Up to the server's limit
+    // either way; at 180 there's no limit: a piece turns right over (upside down) and on round,
+    // kept between -180 and 180.
     auto toTenths = [](float radians) { return int32(std::lround(radians * 1800.0f / PI_F)); };
     auto toRadians = [](int32 tenths) { return float(tenths) * PI_F / 1800.0f; };
     int32 limit = int32(std::lround(_tiltMax * 10.0f));
+    bool allTheWay = _tiltMax >= 180.0f;
+    auto tilted = [&](float radians, float degrees)
+    {
+        int32 tenths = toTenths(radians) + int32(std::lround(degrees * 10.0f));
+        if (!allTheWay)
+            return std::clamp(tenths, -limit, limit);
+        tenths %= 3600;
+        if (tenths > 1800)
+            tenths -= 3600;
+        else if (tenths <= -1800)
+            tenths += 3600;
+        return tenths;
+    };
 
     Placement const before = itr->second;
-    int32 pitch = straighten ? 0 : std::clamp(toTenths(before.pitch) + int32(std::lround(forwardDegrees * 10.0f)), -limit, limit);
-    int32 roll = straighten ? 0 : std::clamp(toTenths(before.roll) + int32(std::lround(rightDegrees * 10.0f)), -limit, limit);
+    int32 pitch = straighten ? 0 : tilted(before.pitch, forwardDegrees);
+    int32 roll = straighten ? 0 : tilted(before.roll, rightDegrees);
     if (pitch == toTenths(before.pitch) && roll == toTenths(before.roll))
     {
         reason = straighten ? "It's already standing straight." : Acore::StringFormat("That's as far as it tilts ({:.0f}°).", _tiltMax);
@@ -2030,59 +1741,6 @@ void PlayerHousingMgr::SnapToGrid(ObjectGuid::LowType guid, float& x, float& y) 
     y = std::round(y / grid) * grid;
 }
 
-bool PlayerHousingMgr::PlaceOnHook(Player* player, uint32 surfacePlacementId, uint32 itemEntry, std::string& reason)
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    Session* session = GetOwnerSession(player, reason);
-    if (!session)
-        return false;
-
-    auto surfaceItr = session->placements.find(surfacePlacementId);
-    PieceDefinition const* surfacePiece = surfaceItr != session->placements.end() ? GetPiece(surfaceItr->second.itemEntry) : nullptr;
-    if (!surfacePiece || !surfacePiece->HasFlag(PIECE_FLAG_SURFACE))
-    {
-        reason = "Nothing can go on top of that.";
-        return false;
-    }
-
-    PieceDefinition const* piece = GetPiece(itemEntry);
-    if (!piece || piece->IsBuilding())
-    {
-        reason = "That doesn't fit there.";
-        return false;
-    }
-
-    Placement const& surface = surfaceItr->second;
-    Placement placement;
-    placement.id = session->nextPlacementId++;
-    placement.itemEntry = itemEntry;
-    placement.x = surface.x;
-    placement.y = surface.y;
-    placement.z = surface.z + surfacePiece->height * (surface.scale / surfacePiece->scale);
-    placement.o = surface.o;
-    placement.scale = piece->scale;
-    placement.parent = surfacePlacementId;
-    if (player->GetGUID().GetCounter() != session->ownerGuid)
-        placement.placedBy = player->GetGUID().GetCounter();
-
-    _report = {};
-    std::string failure;
-    if (!ApplyState(player, *session, player->GetMap(), placement.id, placement, failure))
-    {
-        reason = failure;
-        return false;
-    }
-
-    if (session->decorating)
-        SpawnMarkers(*session, player->GetMap());
-
-    Record(player, Acore::StringFormat("put {} on {}", piece->name, surfacePiece->name), { Change{ placement.id, std::nullopt, placement } });
-    reason = Acore::StringFormat("Put {} on the {} ({}).", piece->name, surfacePiece->name, CountsText(session->ownerGuid));
-    QuestEvent(player, QUEST_TOUR_PLACE);
-    SendAddonState(player);
-    return true;
-}
-
 bool PlayerHousingMgr::PackUpEverything(Player* player, std::string& reason)
 {
     if (OnCooldown(player, COOLDOWN_HEAVY, 3000, reason))
@@ -2108,7 +1766,7 @@ bool PlayerHousingMgr::PackUpEverything(Player* player, std::string& reason)
     uint32 count = uint32(changes.size());
     Record(player, Acore::StringFormat("packed up {} pieces", count), std::move(changes));
 
-    reason = Acore::StringFormat("Packed up {} pieces.{} Changed your mind? House Key, Undo.", count, DescribeReturns());
+    reason = Acore::StringFormat("Packed up {} pieces.{} Changed your mind? Undo.", count, DescribeReturns());
     SendAddonState(player);
     return true;
 }
@@ -2180,66 +1838,13 @@ bool PlayerHousingMgr::SetDecorating(Player* player, bool on, std::string& reaso
             RespawnPlacement(*session, map, id);
     }
 
-    // The addon shows it; without it, a line.
+    // The addon shows it; typed, a line.
     bool quiet = HasAddon(player);
     if (on)
-    {
-        SpawnMarkers(*session, map);
-        reason = quiet ? "" : "Decorating: click any piece to change it (blue runes on tables take small pieces). House Key, Done decorating, when you're finished.";
-    }
+        reason = quiet ? "" : "Decorating: click any piece to select it. .house decorate off when you're finished.";
     else
-    {
-        DespawnMarkers(*session, map);
         reason = quiet ? "" : "Done decorating: chairs, mailboxes and crafting stations work again.";
-    }
 
     SendAddonState(player);
-    return true;
-}
-
-bool PlayerHousingMgr::TakeFromStorage(Player* player, uint32 itemEntry, bool all, std::string& reason, uint32 limit)
-{
-    std::map<uint32, uint32> storage = GetStorage(player->GetGUID().GetCounter());
-    if (storage.empty())
-    {
-        reason = "Your House Storage is empty.";
-        return false;
-    }
-
-    uint32 taken = 0;
-    bool bagsFull = false;
-    for (auto const& [entry, count] : storage)
-    {
-        if (!all && entry != itemEntry)
-            continue;
-
-        uint32 added = 0;
-        uint32 wanted = limit ? std::min(count, limit - taken) : count;
-        for (; added < wanted; ++added)
-        {
-            if (!player->AddItem(entry, 1))
-            {
-                bagsFull = true;
-                break;
-            }
-        }
-        // One write per kind of piece, however many were taken.
-        if (added)
-            AddToStorage(player->GetGUID().GetCounter(), entry, -int32(added));
-        taken += added;
-
-        if (bagsFull || (limit && taken >= limit))
-            break;
-    }
-
-    if (!taken)
-    {
-        reason = "Your bags are full.";
-        return false;
-    }
-
-    // In the bags to see: said only when some had to stay behind.
-    reason = bagsFull ? Acore::StringFormat("Took {} {} out of House Storage; your bags are full, so the rest stays there.", taken,
-        taken == 1 ? "piece" : "pieces") : "";
     return true;
 }

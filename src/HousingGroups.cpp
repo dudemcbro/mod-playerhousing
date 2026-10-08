@@ -7,8 +7,6 @@
 #include "Map.h"
 #include "ObjectMgr.h"
 #include "Player.h"
-#include "SpellInfo.h"
-#include "SpellMgr.h"
 #include "StringFormat.h"
 
 #include <algorithm>
@@ -20,7 +18,7 @@
 using namespace Housing;
 
 // Working with several pieces at once: a group selected with Ctrl-click moves, turns, lines
-// up and is picked up together; rows of copies; saved sets set down with the circle; undo
+// up and is picked up together; rows of copies; saved sets that follow you to their spot; undo
 // history; walking over to a piece; and the GM's photo tour for the addon's pictures.
 
 namespace
@@ -415,7 +413,7 @@ bool PlayerHousingMgr::PickUpGroup(Player* player, Session& session, std::vector
     Record(player, "picked up " + Pieces(count), std::move(changes));
     session.groups.erase(player->GetGUID().GetCounter());
 
-    // Said only when some went somewhere other than the bags.
+    // Said only when some went somewhere other than the player's Collection.
     reason = DescribeReturns(false);
     if (!reason.empty())
         reason = Acore::StringFormat("Picked up {}.{}", Pieces(count), reason);
@@ -551,40 +549,39 @@ bool PlayerHousingMgr::FitsLimits(Session const& session, std::map<uint32, uint3
     return true;
 }
 
-bool PlayerHousingMgr::EnsurePieces(Player* player, std::map<uint32, uint32> const& needed, std::string& reason)
+bool PlayerHousingMgr::EnsurePieces(Player* player, std::map<uint32, uint32> const& needed, std::string& reason, uint64* paid)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    if (paid)
+        *paid = 0;
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::map<uint32, uint32> storage = GetStorage(self);
-    auto consumes = _pendingConsumes.find(player->GetGUID());
 
     std::map<uint32, uint32> missing;
     for (auto const& [itemEntry, count] : needed)
     {
-        uint32 reserved = 0;
-        if (consumes != _pendingConsumes.end() && consumes->second.count(itemEntry))
-            reserved = consumes->second.at(itemEntry);
-        uint32 inBags = player->GetItemCount(itemEntry);
-        uint32 have = (inBags > reserved ? inBags - reserved : 0) + (storage.count(itemEntry) ? storage[itemEntry] : 0);
+        uint32 have = storage.count(itemEntry) ? storage[itemEntry] : 0;
         if (have < count)
             missing[itemEntry] = count - have;
     }
     if (missing.empty())
         return true;
 
-    std::string names;
-    uint32 listed = 0;
+    // Locked ones can't be had; the rest are bought, as a piece placed from the Collection is.
     std::vector<std::string> locked;
+    uint64 cost = 0;
+    uint32 buying = 0;
+    std::set<uint32> known = LoadUnlocks(player);
     for (auto const& [itemEntry, count] : missing)
     {
         PieceDefinition const* piece = GetPiece(itemEntry);
-        if (!piece || !IsUnlocked(player, *piece))
+        if (!piece || !IsUnlocked(player, *piece, &known))
+        {
             locked.push_back(PieceName(itemEntry));
-        if (++listed <= 4)
-            names += (names.empty() ? "" : ", ") + (count > 1 ? Acore::StringFormat("{} {}", count, PieceName(itemEntry)) : PieceName(itemEntry));
+            continue;
+        }
+        cost += uint64(_freeMode ? 0 : piece->copyCost) * count;
+        buying += count;
     }
-    if (listed > 4)
-        names += Acore::StringFormat(" and {} more kinds", listed - 4);
-
     if (!locked.empty())
     {
         std::string lockedNames;
@@ -593,15 +590,18 @@ bool PlayerHousingMgr::EnsurePieces(Player* player, std::map<uint32, uint32> con
         reason = "Still locked, so there are none to use: " + lockedNames + ".";
         return false;
     }
-    if (!_freeMode)
+    if (cost > player->GetMoney())
     {
-        reason = Acore::StringFormat("You need {} more: get them from your Collection first.", names);
+        reason = Acore::StringFormat("You'd need {} more pieces, which cost {}.", buying, FormatMoney(cost));
         return false;
     }
 
-    // FreeMode: the Collection hands them over, straight into House Storage (no bag space needed).
+    if (cost)
+        player->ModifyMoney(-int64(cost));
     for (auto const& [itemEntry, count] : missing)
         AddToStorage(self, itemEntry, int32(count));
+    if (paid)
+        *paid = cost;
     return true;
 }
 
@@ -669,11 +669,12 @@ bool PlayerHousingMgr::PlaceRow(Player* player, uint32 placementId, uint32 count
     float stepX = std::cos(heading);
     float stepY = std::sin(heading);
 
-    if (!FitsLimits(*session, { { piece->itemEntry, count } }, reason) || !EnsurePieces(player, { { piece->itemEntry, count } }, reason))
+    uint64 paid = 0;
+    if (!FitsLimits(*session, { { piece->itemEntry, count } }, reason) || !EnsurePieces(player, { { piece->itemEntry, count } }, reason, &paid))
         return false;
 
     std::vector<Change> changes;
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     for (uint32 i = 1; i <= count; ++i)
     {
         Placement copy = source;
@@ -694,7 +695,8 @@ bool PlayerHousingMgr::PlaceRow(Player* player, uint32 placementId, uint32 count
     if (!Commit(player, *session, label, std::move(changes), reason, false, true))
         return false;
     SelectOne(*session, self, placementId);
-    reason = Acore::StringFormat("Placed a row of {} {} ({}).", count, piece->name, CountsText(session->ownerGuid));
+    reason = Acore::StringFormat("Placed a row of {} {} ({}).{}", count, piece->name, CountsText(session->ownerGuid),
+        paid ? " Bought the ones you didn't have for " + FormatMoney(paid) + "." : std::string());
     SendAddonState(player);
     return true;
 }
@@ -755,7 +757,7 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
     if (!session)
         return false;
 
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::vector<SavedSet> sets = GetSavedSets(self);
     if (sets.size() >= MAX_SAVED_SETS)
     {
@@ -786,7 +788,7 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
         return false;
     }
 
-    // Across, from the first piece (it goes where the circle is clicked); up, from the lowest
+    // Across, from the first piece (it leads when the set follows the player); up, from the lowest
     // (it goes on the ground there), so a vase picked before its table doesn't sink it.
     Placement const anchor = session->placements[ids.front()];
     float cosA = std::cos(-anchor.o);
@@ -821,7 +823,7 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
 
 bool PlayerHousingMgr::DeleteSet(Player* player, uint32 setId, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::optional<SavedSet> set = FindSavedSet(self, std::to_string(setId));
     if (!set)
     {
@@ -836,39 +838,14 @@ bool PlayerHousingMgr::DeleteSet(Player* player, uint32 setId, std::string& reas
     return true;
 }
 
-uint32 PlayerHousingMgr::MoverForRadius(float radius) const
-{
-    // The smallest circle that holds it, else the biggest there is.
-    uint32 best = 0;
-    float bestRadius = 0.0f;
-    uint32 biggest = 0;
-    float biggestRadius = -1.0f;
-    for (auto const& [spell, mover] : _moverBySpell)
-    {
-        SpellInfo const* info = sSpellMgr->GetSpellInfo(spell);
-        float circle = info ? info->Effects[0].CalcRadius() : 0.0f;
-        if (circle > biggestRadius)
-        {
-            biggest = mover;
-            biggestRadius = circle;
-        }
-        if (circle >= radius && (!best || circle < bestRadius))
-        {
-            best = mover;
-            bestRadius = circle;
-        }
-    }
-    return best ? best : biggest;
-}
-
-bool PlayerHousingMgr::StartSetPlacement(Player* player, uint32 setId, std::string& reason)
+bool PlayerHousingMgr::StartGhostSet(Player* player, uint32 setId, std::string& reason)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     Session* session = GetOwnerSession(player, reason);
     if (!session)
         return false;
 
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::optional<SavedSet> set = FindSavedSet(self, std::to_string(setId));
     std::vector<SetPiece> pieces = set ? LoadSet(self, setId) : std::vector<SetPiece>{};
     if (pieces.empty())
@@ -877,33 +854,49 @@ bool PlayerHousingMgr::StartSetPlacement(Player* player, uint32 setId, std::stri
         return false;
     }
 
+    // Every piece follows the player as one, the set's first piece leading, each where the set
+    // has it from there; the whole set faces the player to begin with, like a new piece.
+    Ghost ghost;
+    ghost.isNew = true;
+    ghost.setId = setId;
     float radius = 1.0f;
     for (SetPiece const& piece : pieces)
-        if (PieceDefinition const* definition = GetPiece(piece.itemEntry))
-            radius = std::max(radius, std::sqrt(piece.x * piece.x + piece.y * piece.y) + definition->footprint);
-    uint32 mover = MoverForRadius(radius);
-    if (!mover)
     {
-        reason = "The targeting circle isn't set up on this server.";
-        return false;
+        PieceDefinition const* definition = GetPiece(piece.itemEntry);
+        if (!definition)
+        {
+            reason = "A piece in that set no longer exists.";
+            return false;
+        }
+        GhostPiece ghostPiece;
+        ghostPiece.itemEntry = piece.itemEntry;
+        ghostPiece.dx = piece.x;
+        ghostPiece.dy = piece.y;
+        ghostPiece.dz = piece.z;
+        ghostPiece.dO = piece.o;
+        ghostPiece.scale = std::clamp(piece.scale, definition->scale * _sizeMin, definition->scale * _sizeMax);
+        ghostPiece.pitch = definition->IsCreature() ? 0.0f : piece.pitch;
+        ghostPiece.roll = definition->IsCreature() ? 0.0f : piece.roll;
+        ghostPiece.look = piece.look;
+        ghost.pieces.push_back(ghostPiece);
+        radius = std::max(radius, std::sqrt(piece.x * piece.x + piece.y * piece.y) + definition->footprint);
+    }
+    ghost.forward = std::clamp(radius + 1.5f, 2.0f, 40.0f);
+    ghost.o = NormalizeAngle(player->GetOrientation() + PI_F);
+    if (GetGridSize(self) > 0.0f)
+    {
+        float step = PI_F / 4.0f;
+        ghost.o = NormalizeAngle(std::round(ghost.o / step) * step);
     }
 
-    CancelMove(player);
-    EndGhost(player);
-    if (!player->AddItem(mover, 1))
-    {
-        reason = "Your bags are full: make room for a Move a Piece item first.";
-        return false;
-    }
-    _pendingMoves[player->GetGUID()] = PendingMove{ 0, mover, setId };
-    reason = Acore::StringFormat("Right-click Move a Piece in your bags, then click where {} should go. It faces you.", set->name);
-    SendAddonState(player);
+    BeginGhost(player, *session, std::move(ghost));
+    reason.clear();
     return true;
 }
 
-bool PlayerHousingMgr::StampSet(Player* player, Session& session, uint32 setId, Position const& target, std::string& reason)
+bool PlayerHousingMgr::StampSet(Player* player, Session& session, uint32 setId, Position const& target, float facing, std::string& reason)
 {
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    ObjectGuid::LowType self = HomeOf(player);  // the account's island
     std::optional<SavedSet> set = FindSavedSet(self, std::to_string(setId));
     std::vector<SetPiece> pieces = set ? LoadSet(self, setId) : std::vector<SetPiece>{};
     if (pieces.empty())
@@ -922,20 +915,13 @@ bool PlayerHousingMgr::StampSet(Player* player, Session& session, uint32 setId, 
         }
         ++needed[piece.itemEntry];
     }
-    if (!FitsLimits(session, needed, reason) || !EnsurePieces(player, needed, reason))
+    uint64 paid = 0;
+    if (!FitsLimits(session, needed, reason) || !EnsurePieces(player, needed, reason, &paid))
         return false;
 
-    // It faces the player, like a piece placed by hand (straight or diagonal on the grid).
+    // Where the ghost showed it (on the grid already, when it's on).
     float tx = target.GetPositionX();
     float ty = target.GetPositionY();
-    float facing = NormalizeAngle(std::atan2(player->GetPositionY() - ty, player->GetPositionX() - tx));
-    if (GetGridSize(self) > 0.0f)
-    {
-        float step = PI_F / 4.0f;
-        facing = NormalizeAngle(std::round(facing / step) * step);
-        SnapToGrid(self, tx, ty);
-    }
-
     float cosF = std::cos(facing);
     float sinF = std::sin(facing);
     // Every piece's number first: a vase can come before the table it stands on.
@@ -966,7 +952,8 @@ bool PlayerHousingMgr::StampSet(Player* player, Session& session, uint32 setId, 
     std::string label = Acore::StringFormat("set down {} ({})", set->name, Pieces(pieces.size()));
     if (!Commit(player, session, label, std::move(changes), reason, false, true))
         return false;
-    reason = Acore::StringFormat("Set down {}: {} ({}).", set->name, Pieces(pieces.size()), CountsText(session.ownerGuid));
+    reason = Acore::StringFormat("Set down {}: {} ({}).{}", set->name, Pieces(pieces.size()), CountsText(session.ownerGuid),
+        paid ? " Bought the pieces you didn't have for " + FormatMoney(paid) + "." : std::string());
     return true;
 }
 

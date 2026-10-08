@@ -142,7 +142,7 @@ cat <<EOF
 
 Done. Next:
   SERVER_DIR=$SERVER_DIR $HERE/start.sh
-  python3 $HERE/testclient/housing_smoke.py
+  python3 $HERE/testclient/collection_smoke.py
 
 Accounts: houseowner/houseowner and houseguest/houseguest (players), admin/admin (GM 3).
 For a real 3.3.5a client, set realmlist.wtf to: set realmlist 127.0.0.1

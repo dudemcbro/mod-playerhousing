@@ -23,10 +23,15 @@ using namespace Housing;
 // there: on the floor, on a table, or on a wall facing out; a click sets it down. Without it
 // the piece floats ahead of the player instead: they walk it where it goes, push it farther
 // or nearer, raise it and turn it, and see it there before setting it down. Furniture is a
-// see-through copy of itself (a creature with its model, which can glide); a building (a world
-// model, which a creature can't show) is a see-through block its size. Pieces whose ghost the
-// server doesn't have (content from before ghosts) are carried as they are, redrawn a few times
-// a second. (A player whose client patch is older than the server's content sees no ghost.)
+// see-through copy of itself (a creature with its model, which can glide). An M2 building uses
+// that exact same path. A world-model building cannot be a creature, so it is carried as its
+// real collisionless game object, redrawn a few times a second. Pieces whose ghost the server
+// doesn't have are carried the same way. (An older client patch may show no translucent ghost.)
+//
+// With a DLL that moves units (version 2 and up) the player's own client moves the ghost every
+// frame, under the mouse: the server only follows along (so others and the click see the same
+// spot) and tells the client where it put the ghost after its own rules (the grid, a table's
+// top, a wall, the ground under a building), which the client then shows.
 
 namespace
 {
@@ -67,9 +72,18 @@ namespace
 uint32 PlayerHousingMgr::GhostDisplayFor(uint32 itemEntry) const
 {
     PieceDefinition const* piece = GetPiece(itemEntry);
-    // (A building's is a see-through block its size.)
     if (!_ghosts || !piece || itemEntry < 900000 || !sObjectMgr->GetCreatureTemplate(GHOST_ENTRY))
         return 0;
+
+    // M2 buildings have an exact translucent creature model, like furnishings. A WMO cannot
+    // be a creature model in this client; show its real collisionless game object instead of
+    // an ambiguous rectangular block. Generated WMO building templates use this type.
+    if (piece->IsBuilding())
+    {
+        GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(piece->goEntry);
+        if (goInfo && goInfo->type == GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING)
+            return 0;
+    }
     // Its display and its model both: a display without a model would stop the server.
     uint32 display = GHOST_DISPLAY_BASE + (itemEntry - 900000);
     CreatureDisplayInfoEntry const* info = sCreatureDisplayInfoStore.LookupEntry(display);
@@ -88,14 +102,7 @@ uint32 PlayerHousingMgr::SolidDisplayFor(PieceDefinition const& piece) const
 
 bool PlayerHousingMgr::HasOneToPlace(Player* player, uint32 itemEntry) const
 {
-    // In the bags (not counting one a placement is still using), or in House Storage.
-    uint32 reserved = 0;
-    auto consumes = _pendingConsumes.find(player->GetGUID());
-    if (consumes != _pendingConsumes.end() && consumes->second.count(itemEntry))
-        reserved = consumes->second.at(itemEntry);
-    if (player->GetItemCount(itemEntry) > reserved)
-        return true;
-    std::map<uint32, uint32> storage = GetStorage(player->GetGUID().GetCounter());
+    std::map<uint32, uint32> storage = GetStorage(HomeOf(player));
     auto stored = storage.find(itemEntry);
     return stored != storage.end() && stored->second > 0;
 }
@@ -112,6 +119,12 @@ bool PlayerHousingMgr::IsGhostMove(Player const* player) const
     std::lock_guard<std::recursive_mutex> guard(_lock);
     auto itr = _carrying.find(player->GetGUID());
     return itr != _carrying.end() && !itr->second.isNew;
+}
+
+bool PlayerHousingMgr::IsCarrying(Player const* player) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    return _carrying.count(player->GetGUID()) > 0;
 }
 
 void PlayerHousingMgr::PredictPlayer(Player* player, Ghost& ghost, float& x, float& y, float& z, float& o) const
@@ -264,6 +277,7 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
     float facing = GhostFacing(ghost);
     float cosO = std::cos(facing);
     float sinO = std::sin(facing);
+    bool anyMoved = false;
     for (GhostPiece& piece : ghost.pieces)
     {
         // Its spot: the lead's, and its own place around the lead, turned with it.
@@ -271,19 +285,30 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
         float gy = y + piece.dx * sinO + piece.dy * cosO;
         float gz = z + piece.dz;
         float go = NormalizeAngle(facing + piece.dO);
-        bool moved = force || !piece.shown || std::fabs(gx - piece.x) > 0.02f || std::fabs(gy - piece.y) > 0.02f
+        bool moved = force || piece.reshaped || !piece.shown || std::fabs(gx - piece.x) > 0.02f || std::fabs(gy - piece.y) > 0.02f
             || std::fabs(gz - piece.z) > 0.02f || AngleBetween(go, piece.o) > 0.005f;
         if (!moved)
             continue;
+        anyMoved = true;
 
         PieceDefinition const* definition = GetPiece(piece.itemEntry);
         if (!definition)
             continue;
         float size = definition->scale > 0.0f ? piece.scale / definition->scale : 1.0f;
-        uint32 display = GhostDisplayFor(piece.itemEntry);
+        // Tilted: the object itself, which can lean (a creature, the see-through ghost, can't),
+        // so the tilt shows while it's held.
+        bool tilted = piece.pitch != 0.0f || piece.roll != 0.0f;
+        uint32 display = tilted ? 0 : GhostDisplayFor(piece.itemEntry);
         if (!display)
             display = SolidDisplayFor(*definition);
         // Shown the other way before (the setting changed): that one goes.
+        auto ghostScale = [&]()
+        {
+            if (definition->IsCreature())
+                return piece.scale;  // figurines and mannequins are sized like the piece
+            GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(definition->goEntry);
+            return goInfo ? goInfo->size * size : 1.0f;
+        };
         if (piece.shown && piece.shown.IsCreature() != (display != 0))
         {
             RemoveSpawned(map, piece.shown);
@@ -294,6 +319,9 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
         {
             // See-through: a creature with the piece's model, gliding to the new spot.
             Creature* ghostCreature = piece.shown ? map->GetCreature(piece.shown) : nullptr;
+            // Sized: the same ghost grows or shrinks (a new one would show both for a moment).
+            if (ghostCreature && piece.reshaped)
+                ghostCreature->SetObjectScale(ghostScale());
             if (!ghostCreature)
             {
                 Position position;
@@ -303,13 +331,7 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
                     continue;
                 summon->SetDisplayId(display);
                 summon->SetNativeDisplayId(display);
-                float scale = 1.0f;
-                if (definition->IsCreature())
-                    scale = piece.scale;  // figurines and mannequins are sized like the piece
-                else
-                    if (GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(definition->goEntry))
-                        scale = goInfo->size * size;
-                summon->SetObjectScale(scale);
+                summon->SetObjectScale(ghostScale());
                 if (definition->IsBuilding())
                     summon->SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
                 summon->SetReactState(REACT_PASSIVE);
@@ -317,6 +339,12 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
                 summon->SetCanFly(true);
                 summon->SetPhaseMask(session.phaseMask, true);
                 piece.shown = summon->GetGUID();
+            }
+            else if (ghost.local && ghost.atPoint)
+            {
+                // The player's own client moves it under the mouse: here it only keeps up, with
+                // no move sent to anyone (one would fight the client over where it is).
+                map->CreatureRelocation(ghostCreature, gx, gy, gz, go);
             }
             else
             {
@@ -334,7 +362,7 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
         {
             // Carried as it is: the object itself, put down again in the new spot, a few
             // times a second at most (a key held down can't make it more; each is a new object).
-            if (piece.shown && getMSTimeDiff(piece.drawnMs, now) < CARRY_REDRAW_MS)
+            if (piece.shown && !piece.reshaped && getMSTimeDiff(piece.drawnMs, now) < CARRY_REDRAW_MS)
                 continue;  // soon: the next update redraws it
             GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(definition->goEntry);
             if (!goInfo)
@@ -350,7 +378,7 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
             object->SetSpawnedByDefault(false);
             object->SetObjectScale(goInfo->size * size);
             if (piece.pitch != 0.0f || piece.roll != 0.0f)
-                object->SetLocalRotationAngles(go, piece.pitch, piece.roll);
+                SetRotationAngles(object, go, piece.pitch, piece.roll);
             if (definition->IsBuilding())
                 object->SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
             if (!map->AddToMap(object))
@@ -371,8 +399,50 @@ void PlayerHousingMgr::DrawGhost(Player* player, Session& session, Ghost& ghost,
         piece.y = gy;
         piece.z = gz;
         piece.o = go;
+        piece.reshaped = false;
     }
     ghost.posed = true;
+
+    // A client moving it itself hears which creatures to move, and where the server's rules
+    // put it (the grid, a table top, the ground under a building).
+    if (ghost.local)
+    {
+        SendGhostPieces(player, ghost);
+        if (anyMoved || force)
+            SendGhostPose(player, ghost, x, y, z);
+    }
+}
+
+void PlayerHousingMgr::SendGhostPieces(Player* player, Ghost& ghost) const
+{
+    // One row a piece: its creature (0 when it's carried as an object, which only the server
+    // can move) and where it sits from the lead, in the lead's own frame.
+    std::vector<std::string> rows;
+    for (size_t index = 0; index < ghost.pieces.size(); ++index)
+    {
+        GhostPiece const& piece = ghost.pieces[index];
+        uint64 raw = piece.shown.IsCreature() ? piece.shown.GetRawValue() : 0;
+        rows.push_back(Acore::StringFormat("gpiece\t{}\t{}\t{:08X}\t{:08X}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.4f}", index + 1, ghost.pieces.size(),
+            uint32(raw >> 32), uint32(raw & 0xFFFFFFFF), piece.dx, piece.dy, piece.dz, piece.dO));
+    }
+    std::string all;
+    for (std::string const& row : rows)
+        all += row + "\n";
+    if (all == ghost.piecesSent)
+        return;
+    ghost.piecesSent = all;
+    for (std::string const& row : rows)
+        SendAddon(player, row);
+}
+
+void PlayerHousingMgr::SendGhostPose(Player* player, Ghost const& ghost, float x, float y, float z) const
+{
+    // The lead's spot and facing; then what the client needs to place it the same way itself:
+    // the lift, the turn on the floor, the turn on a wall, and how far the server's rules moved
+    // it up or down from the point it was given (the ground under a building, a table's top).
+    float zfix = ghost.atPoint ? z - (ghost.rawZ + ghost.lift) : 0.0f;
+    SendAddon(player, Acore::StringFormat("gpose\t{:.3f}\t{:.3f}\t{:.3f}\t{:.4f}\t{:.3f}\t{:.4f}\t{:.4f}\t{:.3f}\t{}", x, y, z,
+        GhostFacing(ghost), ghost.lift, ghost.o, ghost.wallTurn, zfix, ghost.onWall ? 1 : 0));
 }
 
 void PlayerHousingMgr::DespawnGhost(Ghost& ghost, Map* map)
@@ -410,7 +480,7 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
     if (!session)
     {
         if (!GetIslandOwner(player))
-            reason = "Furnishings go on your own island. House Key, Go home.";
+            reason = "Furnishings go on your own island: Go home first.";
         return false;
     }
 
@@ -433,12 +503,12 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
     }
     if (!CheckLimit(*session, *piece, reason))
     {
-        Tip(player, TIP_LIMIT, "Pick up pieces you don't need: they go back to your bags.");
+        Tip(player, TIP_LIMIT, "Pick up pieces you don't need: they go back to your Collection.");
         return false;
     }
 
-    // One to set down: from the bags or House Storage, or else a new copy from the Collection,
-    // paid for (outside FreeMode) only when it's set down: Never mind costs nothing.
+    // One to set down: one the player owns, or else a new copy from the Collection, paid for
+    // (outside FreeMode) only when it's set down: Never mind costs nothing.
     if (!HasOneToPlace(player, itemEntry))
     {
         if (!IsUnlocked(player, *piece))
@@ -452,9 +522,6 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
             return false;
         }
     }
-
-    CancelMove(player);
-    EndGhost(player);
 
     Ghost ghost;
     ghost.isNew = true;
@@ -480,14 +547,21 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
         ghost.o = NormalizeAngle(std::round(ghost.o / step) * step);
     }
 
-    Ghost& carried = _carrying[player->GetGUID()] = ghost;
-    DrawGhost(player, *session, carried, true);
-    // The addon's banner says what to do; without the addon, once.
+    BeginGhost(player, *session, std::move(ghost));
     reason.clear();
-    if (!HasAddon(player))
-        Tip(player, TIP_GHOST, "It follows you: walk it where it goes, then House Key, Set it down (or Never mind).");
-    SendAddonState(player);
     return true;
+}
+
+void PlayerHousingMgr::BeginGhost(Player* player, Session& session, Ghost ghost)
+{
+    EndGhost(player);
+    ghost.local = HasLocalGhosts(player);
+    Ghost& carried = _carrying[player->GetGUID()] = std::move(ghost);
+    DrawGhost(player, session, carried, true);
+    // The addon's banner says what to do; typed, once.
+    if (!HasAddon(player))
+        Tip(player, TIP_GHOST, "It follows you: walk it where it goes, then .house ghost place (or .house ghost cancel).");
+    SendAddonState(player);
 }
 
 bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::string& reason)
@@ -524,9 +598,6 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
         return false;
     }
     Placement const& lead = session->placements[roots.front()];
-
-    CancelMove(player);
-    EndGhost(player);
 
     Ghost ghost;
     ghost.isNew = false;
@@ -569,13 +640,8 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
         leadPiece && leadPiece->IsBuilding(), under);
     ghost.lift = std::clamp(lead.z - floor, MIN_LIFT, MAX_LIFT);
 
-    Ghost& shown = _carrying[player->GetGUID()] = ghost;
-    DrawGhost(player, *session, shown, true);
-    // The addon's banner says what to do; without the addon, once.
+    BeginGhost(player, *session, std::move(ghost));
     reason.clear();
-    if (!HasAddon(player))
-        Tip(player, TIP_GHOST, "It follows you: walk it where it goes, then House Key, Set it down (or Never mind).");
-    SendAddonState(player);
     return true;
 }
 
@@ -621,6 +687,128 @@ bool PlayerHousingMgr::AdjustGhost(Player* player, float forward, float left, fl
     }
     ghost.lift = std::clamp(ghost.lift + std::clamp(up, -2.0f, 2.0f), MIN_LIFT, MAX_LIFT);
     DrawGhost(player, *session, ghost, true);
+    // The window names which way the front points. Keep that current while the wheel turns
+    // the held piece.
+    SendAddonState(player);
+    return true;
+}
+
+bool PlayerHousingMgr::ResizeGhost(Player* player, float percent, bool relative, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _carrying.find(player->GetGUID());
+    Session* session = itr != _carrying.end() ? GetOwnerSession(player, reason) : nullptr;
+    if (!session)
+        return false;
+    Ghost& ghost = itr->second;
+    if (ghost.setId)
+    {
+        reason = "A set keeps its pieces' sizes.";
+        return false;
+    }
+    PieceDefinition const* lead = GetPiece(ghost.pieces.front().itemEntry);
+    if (!lead)
+        return false;
+
+    int32 lowest = int32(std::lround(_sizeMin * 100.0f));
+    int32 highest = int32(std::lround(_sizeMax * 100.0f));
+    if (lowest >= 100 && highest <= 100)
+    {
+        reason = "Pieces keep their size on this server.";
+        return false;
+    }
+
+    // Whole percents of the lead's normal size; whatever comes along with it (what stands on
+    // it, what's inside) grows or shrinks with it, and keeps its place on it.
+    float normal = lead->scale > 0.0f ? lead->scale : 1.0f;
+    int32 current = int32(std::lround(ghost.pieces.front().scale / normal * 100.0f));
+    int32 wanted = std::clamp(relative ? current + int32(std::lround(percent)) : int32(std::lround(percent)), lowest, highest);
+    if (wanted == current)
+    {
+        if (!relative && wanted == 100)
+            reason = "It's already its normal size.";
+        else if (wanted == highest)
+            reason = Acore::StringFormat("That's as big as it gets ({}%).", highest);
+        else
+            reason = Acore::StringFormat("That's as small as it gets ({}%).", lowest);
+        return false;
+    }
+    float k = float(wanted) / float(current);
+    for (GhostPiece& piece : ghost.pieces)
+    {
+        piece.scale *= k;
+        piece.dx *= k;
+        piece.dy *= k;
+        piece.dz *= k;
+    }
+    ghost.pieces.front().scale = normal * float(wanted) / 100.0f;
+
+    // Shown at the new size, in place.
+    for (GhostPiece& piece : ghost.pieces)
+        piece.reshaped = true;
+    DrawGhost(player, *session, ghost, true);
+    reason = HasAddon(player) ? "" : Acore::StringFormat("Size {}%.", wanted);  // the window shows it
+    SendAddonState(player);
+    return true;
+}
+
+bool PlayerHousingMgr::TiltGhost(Player* player, float forwardDegrees, float rightDegrees, bool straighten, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _carrying.find(player->GetGUID());
+    Session* session = itr != _carrying.end() ? GetOwnerSession(player, reason) : nullptr;
+    if (!session)
+        return false;
+    Ghost& ghost = itr->second;
+    if (ghost.setId || ghost.pieces.size() > 1)
+    {
+        reason = "Tilting is one piece at a time: this one has others with it.";
+        return false;
+    }
+    GhostPiece& lead = ghost.pieces.front();
+    PieceDefinition const* piece = GetPiece(lead.itemEntry);
+    if (!piece)
+        return false;
+    if (piece->IsCreature())
+    {
+        reason = piece->HasFlag(PIECE_FLAG_STAND) ? "Mannequins always stand upright." : "Figurines always stand upright.";
+        return false;
+    }
+    if (_tiltMax <= 0.0f && !straighten)
+    {
+        reason = "Pieces stand upright on this server.";
+        return false;
+    }
+
+    // As Tilt: tenths of a degree, up to the server's limit, or right round at 180.
+    auto toTenths = [](float radians) { return int32(std::lround(radians * 1800.0f / PI_F)); };
+    int32 limit = int32(std::lround(_tiltMax * 10.0f));
+    auto tilted = [&](float radians, float degrees)
+    {
+        int32 tenths = toTenths(radians) + int32(std::lround(degrees * 10.0f));
+        if (_tiltMax < 180.0f)
+            return std::clamp(tenths, -limit, limit);
+        tenths %= 3600;
+        if (tenths > 1800)
+            tenths -= 3600;
+        else if (tenths <= -1800)
+            tenths += 3600;
+        return tenths;
+    };
+    int32 pitch = straighten ? 0 : tilted(lead.pitch, forwardDegrees);
+    int32 roll = straighten ? 0 : tilted(lead.roll, rightDegrees);
+    if (pitch == toTenths(lead.pitch) && roll == toTenths(lead.roll))
+    {
+        reason = straighten ? "It's already standing straight." : Acore::StringFormat("That's as far as it tilts ({:.0f}°).", _tiltMax);
+        return false;
+    }
+    lead.pitch = float(pitch) * PI_F / 1800.0f;
+    lead.roll = float(roll) * PI_F / 1800.0f;
+    // Shown again, leaning: tilted, it's the object itself (see DrawGhost).
+    lead.reshaped = true;
+    DrawGhost(player, *session, ghost, true);
+    reason.clear();
+    SendAddonState(player);
     return true;
 }
 
@@ -640,6 +828,7 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
 
     Ghost& ghost = itr->second;
     std::string note;
+    float rawZ = z;
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || player->GetExactDist(x, y, z) > MAX_POINT_DISTANCE)
         note = "That's too far away.";
     else if (!IsSpotOnIsland(x, y, z))
@@ -706,6 +895,7 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
     ghost.pointX = x;
     ghost.pointY = y;
     ghost.pointZ = z;
+    ghost.rawZ = rawZ;
     // A wall (the surface facing more sideways than up): the piece faces out from it.
     bool wall = false;
     if (facing && !onOriginal && !building && std::isfinite(facing[0]) && std::isfinite(facing[1]) && std::isfinite(facing[2]))
@@ -779,6 +969,27 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
         placement.o = NormalizeAngle(facing + piece.dO);
     };
 
+    if (ghost.setId)
+    {
+        // A saved set: every piece, its first one where the ghost's lead is (pieces it doesn't
+        // own come from the Collection, paid for).
+        Position target;
+        target.Relocate(x, y, z);
+        if (!IsSpotOnIsland(x, y, z))
+        {
+            reason = "That spot is off your island.";
+            return false;
+        }
+        if (!StampSet(player, *session, ghost.setId, target, facing, reason))
+            return false;
+        if (another)
+            DrawGhost(player, *session, ghost, true);  // another of the set follows
+        else
+            EndGhost(player);
+        SendAddonState(player);
+        return true;
+    }
+
     if (ghost.isNew)
     {
         GhostPiece const& lead = ghost.pieces.front();
@@ -792,11 +1003,10 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
             reason = "That spot is off your island.";
             return false;
         }
-        // From the bags or House Storage, or a new copy from the Collection (bought now, outside
-        // FreeMode).
+        // One the player owns, or a new copy from the Collection (bought now, outside FreeMode).
         bool handedOver = false;
         uint32 paid = 0;
-        if (!TakeItem(player, lead.itemEntry))
+        if (!TakePiece(player, lead.itemEntry))
         {
             if (!IsUnlocked(player, *piece))
             {
@@ -826,15 +1036,12 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
         placement.look = lead.look;
         placement.parent = piece->IsBuilding() ? 0 : parent;
         // A roommate's piece stays theirs: picking it up returns it to them.
-        if (player->GetGUID().GetCounter() != session->ownerGuid)
-            placement.placedBy = player->GetGUID().GetCounter();
+        if (HomeOf(player) != session->ownerGuid)
+            placement.placedBy = HomeOf(player);
         if (!AddNewPlacement(player, *session, placement, reason))
         {
             if (!handedOver)
-            {
-                bool toStorage;
-                ReturnItem(player, lead.itemEntry, toStorage);
-            }
+                ReturnPiece(player, lead.itemEntry);
             if (paid)
                 player->ModifyMoney(int64(paid));
             return false;
@@ -878,6 +1085,10 @@ bool PlayerHousingMgr::PlaceGhost(Player* player, bool another, std::string& rea
         Placement const& before = placementItr->second;
         Placement after = before;
         spotOf(piece, after);
+        // Sized and tilted while it followed.
+        after.scale = piece.scale;
+        after.pitch = piece.pitch;
+        after.roll = piece.roll;
         PieceDefinition const* definition = GetPiece(before.itemEntry);
         bool standsOnMoving = before.parent && moving.count(before.parent);
         if (definition && definition->IsBuilding())

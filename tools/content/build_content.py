@@ -43,6 +43,9 @@ SKILLS = {164: "Blacksmithing", 186: "Mining", 171: "Alchemy", 185: "Cooking", 2
           182: "Herbalism", 393: "Skinning", 356: "Fishing"}
 
 GO_TYPE_CHAIR, GO_TYPE_GENERIC, GO_TYPE_GOOBER = 7, 5, 10
+# The client draws a world model (.wmo) only for a few object types (destructible buildings,
+# transports); as a generic object it shows its error cube instead.
+GO_TYPE_DESTRUCTIBLE_BUILDING = 33
 GO_SCRIPT = "go_playerhousing_piece"
 ITEM_SCRIPT = "item_playerhousing_piece"
 # The targeting circle of each piece comes from its item's spell. These ground-target spells
@@ -426,14 +429,18 @@ def build(args):
             go_type, data = source["type"], source["data"]
         elif style == "chair":
             go_type, data = GO_TYPE_CHAIR, [piece.get("slots", 1), piece.get("chair_height", 1)] + [0] * 22
+        elif building and models.get(display, "").lower().endswith(".wmo"):
+            go_type, data = GO_TYPE_DESTRUCTIBLE_BUILDING, [0] * 24
         elif building:
             go_type, data = GO_TYPE_GENERIC, [0] * 24
         else:
             go_type, data = GO_TYPE_GOOBER, [0] * 24
 
         live = 0 if stand or figure else live_entry(item)
-        # Pieces that work like the real thing get a clickable copy for decorate mode.
-        edit = edit_entry(item) if go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC) and not stand and not figure else 0
+        # Pieces that work like the real thing, and every building, get a clickable goober copy
+        # while the housing window is open. Generic/destructible building objects otherwise do
+        # not deliver clicks to the script, which made buildings movable only from the Placed tab.
+        edit = edit_entry(item) if (building or go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC, GO_TYPE_DESTRUCTIBLE_BUILDING)) and not stand and not figure else 0
 
         def go_row(entry, gtype, gdata):
             return "(%d, %d, %d, %s, '', '', '', %s, %s, '', %s, 0)" % (
@@ -495,18 +502,17 @@ def build(args):
             model = os.path.splitext(model)[0] + ".m2"
         framing = model_frame(boxes.get(display)) if model and model != "player" and not model.startswith("creature:") else model_frame(None)
         previews.append((item, model) + preview_size + framing)
-        # Its ghost, for placing and moving it: a see-through copy, or for a building (a world
-        # model, which a creature can't show) a see-through block its size: its outline, from
-        # the bottom of its model to its top.
+        # Its ghost, for placing and moving it. M2 buildings use the same exact translucent
+        # model as furnishings; only world-model (.wmo) buildings need a different fallback,
+        # because the client cannot display a WMO as a creature.
         if stand:
             ghosts.copy(item, MANNEQUIN_DISPLAY)
         elif figure:
             ghosts.copy(item, creature_display)
-        elif not building:
+        elif not building or not models.get(display, "").lower().endswith(".wmo"):
             ghosts.model(item, models.get(display, ""), boxes.get(display))
-        elif size > 0:
-            bottom = min((world_box or box)[2], 0.0)
-            ghosts.block(item, (outline[0] / size, outline[1] / size, bottom, outline[2] / size, outline[3] / size, height / size))
+        # WMO buildings deliberately have no creature ghost: the server carries their real
+        # collisionless game object, so their doors, porches and front are visible.
 
         flags = FLAG_BITS["stand"] if stand else 0
         if figure:

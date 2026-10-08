@@ -139,40 +139,6 @@ void PlayerHousingMgr::MarkSeen(Player const* player, std::vector<uint32> const&
         player->GetSession()->GetAccountId(), player->GetGUID().GetCounter(), list);
 }
 
-std::vector<PieceDefinition const*> PlayerHousingMgr::SearchPieces(std::string const& text) const
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    std::string wanted = ToLower(text);
-    std::vector<PieceDefinition const*> found;
-    for (auto const& [itemEntry, piece] : _pieces)
-        if (ToLower(piece.name).find(wanted) != std::string::npos || ToLower(CategoryName(piece.category)).find(wanted) != std::string::npos)
-            found.push_back(&piece);
-    std::sort(found.begin(), found.end(), [](PieceDefinition const* left, PieceDefinition const* right) { return left->name < right->name; });
-    return found;
-}
-
-bool PlayerHousingMgr::IsCollectionUnlockedOnly(ObjectGuid::LowType guid) const
-{
-    return (GetCharacterFlags(guid) & CHAR_FLAG_UNLOCKED_ONLY) != 0;
-}
-
-void PlayerHousingMgr::SetCollectionUnlockedOnly(Player* player, bool unlockedOnly) const
-{
-    CharacterDatabase.DirectExecute(
-        "INSERT INTO mod_playerhousing_character (guid, flags, tips) VALUES ({}, {}, 0) "
-        "ON DUPLICATE KEY UPDATE flags = (flags & ~{}) | {}", player->GetGUID().GetCounter(), unlockedOnly ? CHAR_FLAG_UNLOCKED_ONLY : 0,
-        uint32(CHAR_FLAG_UNLOCKED_ONLY), unlockedOnly ? CHAR_FLAG_UNLOCKED_ONLY : 0);
-}
-
-uint32 PlayerHousingMgr::CountPlacedOf(ObjectGuid::LowType ownerGuid, uint32 itemEntry) const
-{
-    if (QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM mod_playerhousing_placement WHERE owner_guid={} AND source_item_entry={} AND map_id={}",
-            ownerGuid, itemEntry, _layout.mapId))
-        return uint32((*result)[0].Get<uint64>());
-    return 0;
-}
-
 bool PlayerHousingMgr::IsUnlocked(Player const* player, PieceDefinition const& piece, std::set<uint32> const* known) const
 {
     if (_unlockAll || piece.rules.empty())
@@ -186,16 +152,25 @@ bool PlayerHousingMgr::IsUnlocked(Player const* player, PieceDefinition const& p
 
 bool PlayerHousingMgr::Unlock(Player* player, PieceDefinition const& piece, bool announce)
 {
+    // Playerbots never collect pieces.
+    if (player->GetSession()->IsBot())
+        return false;
+
+    // Unlocking it gives the character who did it one to place; more cost a copy each. Only the
+    // first time: a GM unlocking it again, or an alt on the same account, gets no extra one.
+    bool already = LoadUnlocks(player).count(piece.itemEntry) > 0;
     uint32 guid = piece.HasFlag(PIECE_FLAG_PER_CHARACTER) ? player->GetGUID().GetCounter() : 0;
     CharacterDatabase.DirectExecute(
         "INSERT IGNORE INTO mod_playerhousing_collection (account_id, guid, item_entry, seen) VALUES ({}, {}, {}, 0)",
         player->GetSession()->GetAccountId(), guid, piece.itemEntry);
+    if (!already)
+        AddToStorage(HomeOf(player), piece.itemEntry, 1);
 
     if (announce)
     {
         std::string kind = piece.IsBuilding() ? "building" : "furnishing";
         ChatHandler(player->GetSession()).SendNotification("Housing unlock: " + piece.name);
-        Say(player, Acore::StringFormat("New {} unlocked: {}. Get one from your Collection (House Key, Collection).", kind, piece.name));
+        Say(player, Acore::StringFormat("New {} unlocked: {}. There's one waiting in your Collection (/housing).", kind, piece.name));
         Tip(player, TIP_FIRST_UNLOCK, "Your Collection grows as you explore, run dungeons and raids, earn reputation and level your professions.");
     }
     return true;
@@ -203,7 +178,7 @@ bool PlayerHousingMgr::Unlock(Player* player, PieceDefinition const& piece, bool
 
 void PlayerHousingMgr::EvaluateUnlocks(Player* player, uint8 ruleType, uint32 param, bool announce, uint32 value)
 {
-    if (!_enabled || !player || _unlockAll)
+    if (!_enabled || !player || _unlockAll || player->GetSession()->IsBot())
         return;
 
     std::vector<PieceDefinition const*> candidates;
@@ -276,7 +251,7 @@ uint32 PlayerHousingMgr::CreditPastProgress(Player* player)
 
 void PlayerHousingMgr::OnCreatureKilled(Player* killer, uint32 creatureEntry)
 {
-    if (!_enabled || !killer)
+    if (!_enabled || !killer || killer->GetSession()->IsBot())
         return;
 
     {
@@ -372,11 +347,6 @@ void PlayerHousingMgr::CollectionCounts(Player const* player, int32 category, ui
     }
 }
 
-bool PlayerHousingMgr::GetCopy(Player* player, uint32 itemEntry, std::string& reason)
-{
-    return GetCopies(player, itemEntry, 1, reason);
-}
-
 bool PlayerHousingMgr::GetCopies(Player* player, uint32 itemEntry, uint32 count, std::string& reason)
 {
     PieceDefinition const* piece = GetPiece(itemEntry);
@@ -393,36 +363,24 @@ bool PlayerHousingMgr::GetCopies(Player* player, uint32 itemEntry, uint32 count,
     }
 
     count = std::clamp<uint32>(count, 1, 20);
-    uint32 cost = _freeMode ? 0 : piece->copyCost;
-    if (cost && player->GetMoney() < uint64(cost) * count)
+    uint64 cost = uint64(_freeMode ? 0 : piece->copyCost) * count;
+    if (cost && player->GetMoney() < cost)
     {
         reason = count == 1 ? Acore::StringFormat("A {} costs {}.", piece->name, FormatMoney(cost))
-                            : Acore::StringFormat("{} of them cost {}.", count, FormatMoney(uint64(cost) * count));
-        return false;
-    }
-
-    // As many as fit; only those are paid for.
-    uint32 given = 0;
-    while (given < count && player->AddItem(itemEntry, 1))
-        ++given;
-    if (!given)
-    {
-        reason = "Your bags are full.";
+                            : Acore::StringFormat("{} of them cost {}.", count, FormatMoney(cost));
         return false;
     }
 
     if (cost)
-        player->ModifyMoney(-int64(uint64(cost) * given));
+        player->ModifyMoney(-int64(cost));
+    AddToStorage(HomeOf(player), itemEntry, int32(count));
 
-    std::string where = piece->IsBuilding() ? "where it should stand" : "where it should go";
-    if (given == count && HasAddon(player))
-        reason.clear();  // the addon's Collection shows it in the bags, with Place next to it
-    else if (given == 1 && count == 1)
-        reason = Acore::StringFormat("Here's a {}. Right-click it on your island, then click {}.", piece->name, where);
-    else if (given == count)
-        reason = Acore::StringFormat("Here are {} of the {}. Right-click one on your island, then click {}.", given, piece->name, where);
+    // The addon's Collection shows the new count; typed, a line.
+    if (HasAddon(player))
+        reason.clear();
     else
-        reason = Acore::StringFormat("Your bags only had room for {} of the {}.", given, piece->name);
+        reason = Acore::StringFormat("Added {}{} to your Collection{}.", piece->name, count > 1 ? Acore::StringFormat(" x{}", count) : std::string(),
+            cost ? " for " + FormatMoney(cost) : std::string());
     return true;
 }
 
@@ -445,25 +403,20 @@ bool PlayerHousingMgr::GetOneOfEverything(Player* player, std::string& reason)
                 entries.push_back(itemEntry);
     }
 
-    uint32 toBags = 0;
-    uint32 toStorage = 0;
     for (uint32 itemEntry : entries)
-    {
-        if (player->AddItem(itemEntry, 1))
-            ++toBags;
-        else
-        {
-            AddToStorage(player->GetGUID().GetCounter(), itemEntry, 1);
-            ++toStorage;
-        }
-    }
-
-    reason = Acore::StringFormat("Added {} pieces: {} in your bags, {} in House Storage.", toBags + toStorage, toBags, toStorage);
+        AddToStorage(HomeOf(player), itemEntry, 1);
+    reason = Acore::StringFormat("Added one of each of {} pieces to your Collection.", entries.size());
     return true;
 }
 
 bool PlayerHousingMgr::GmUnlock(Player* target, std::string const& what, bool unlock, std::string& reason)
 {
+    if (unlock && target->GetSession()->IsBot())
+    {
+        reason = "Playerbots don't do housing.";
+        return false;
+    }
+
     // An item entry, "all", an exact name, or else every name containing the text. Pieces
     // everyone has (no unlock rules) are left out: there's nothing to unlock.
     std::vector<PieceDefinition const*> matches;
