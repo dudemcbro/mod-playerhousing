@@ -12,59 +12,23 @@ shredded tent at level 1 to faction halls at Exalted.
 The design and the reasoning behind it are in [docs/UX_PLAN.md](docs/UX_PLAN.md). Every
 piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
 
-## Requirements
+## Setting it up
 
-- AzerothCore WotLK (3.3.5a). Developed and tested on the `custom` branch of
-  [azerothcore-wotlk-playerbots-custom](https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom),
-  which the [test server](tools/test-server/README.md) builds. The module uses only
-  standard AzerothCore script hooks; no core patches are needed.
-- For the default island layout (`cleared`): the core's map tools
-  (`-DTOOLS_BUILD=maps-only`, for `mmaps_generator`) on the server, and a client patch
-  for every player, built with `smpq` and Python 3 from a 3.3.5a client (see
-  [tools/gm-island-cleared](tools/gm-island-cleared/README.md)).
-- For every player: the [client addon](#client-addon) (required: it is the housing
-  window), and [PlayerHousing.dll](client-dll/README.md) (recommended: pieces follow the
-  mouse).
+- **Server admins:** [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md), step by step: build the
+  module, configure, apply the SQL (`tools/release/apply_sql.sh`), clear the island in the
+  server data, and make the one download players need
+  (`tools/release/make_player_bundle.sh`).
+- **Players:** [docs/PLAYER_SETUP.md](docs/PLAYER_SETUP.md): unzip the server's
+  PlayerHousing-client.zip into the game folder, start the game with
+  PlayerHousingLauncher.exe, and ask Krook at any capital's inn for a House Key.
+- **Trying it out:** [tools/test-server](tools/test-server/README.md) runs a complete
+  server with the module in a container.
 
-## Installation
-
-1. Clone the module into the core's `modules` directory, then re-run CMake and rebuild:
-
-   ```sh
-   cd <azerothcore>/modules
-   git clone https://github.com/dudemcbro/mod-playerhousing.git
-   ```
-
-2. Apply the SQL. The worldserver's updater only imports a module's `data/sql/world`,
-   `data/sql/characters` and `data/sql/auth` folders, and these files live in `sql/`,
-   so apply them by hand, in this order, from the module directory (every file can be
-   applied again safely; the test server scripts do this for you):
-
-   ```sh
-   cd <azerothcore>/modules/mod-playerhousing
-   mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world.sql
-   # optional: the catalog of every object, used with PlayerHousing.Catalog = everything
-   mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_catalog.sql
-   mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_content.sql
-   mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters.sql
-   mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters_hotfix.sql
-   ```
-
-3. In your server's `etc/modules` directory (the build installs
-   `mod_playerhousing.conf.dist` there), copy it to `mod_playerhousing.conf`.
-4. The island: the default layout, `cleared`, is GM Island with its guild hall removed.
-   It needs two things from [tools/gm-island-cleared](tools/gm-island-cleared/README.md):
-   the server data (collision and pathing without the hall, one script) and a client patch
-   every player installs once. The same patch gives the housing pieces their icons and adds
-   the ghosts' see-through models. M2 buildings use their exact translucent model; world-model
-   buildings use their real solid model while held. To keep
-   the hall instead, set `PlayerHousing.Layout = "guildhouse"`; players then build the
-   patch with `--icons-only`.
-5. Restart the worldserver.
-6. For each player: the [client addon](#client-addon) (required), and
-   [PlayerHousing.dll](client-dll/README.md) (copy two files next to Wow.exe and start the
-   game with the launcher), which lets a piece being placed follow the mouse and a click set
-   it down. Without the DLL a held piece floats ahead of the player instead.
+In short, a server needs AzerothCore WotLK (3.3.5a) built with the module and its map tools;
+every player needs the [client addon](#client-addon) (required: it is the housing window),
+the client patch (icons, see-through ghosts, the cleared island) and, recommended,
+[PlayerHousing.dll](client-dll/README.md) (pieces follow the mouse). The module uses only
+standard script hooks; no core patches.
 
 ## Configuration
 
@@ -406,7 +370,7 @@ bindings can't change in combat, so they wait for it to end.
 
 It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over
 (held higher, it floats). A building always stands on the ground, wherever the mouse is. The
-see-through ghosts need the client patch (see [Installation](#installation)) from this
+see-through ghosts need the client patch (see [Setting it up](#setting-it-up)) from this
 version: without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as
 it is instead.
 
@@ -662,10 +626,10 @@ cd <azerothcore>/modules/mod-playerhousing
 git pull
 ```
 
-Then re-run CMake, rebuild, apply the SQL files again in the order above (they are all
-safe to re-apply), and restart the worldserver. When the content changed, players need
-the rebuilt client patch (see [tools/gm-island-cleared](tools/gm-island-cleared/README.md))
-and the new addon.
+Then rebuild, run `tools/release/apply_sql.sh` again with the worldserver stopped, and start
+it. When the addon, the DLL or the content changed, build the player zip again
+(`tools/release/make_player_bundle.sh`) and have players install it over the old one. The
+full steps are in [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md#updating).
 
 The repository's history was rewritten in September 2026. A clone from before that
 cannot pull: clone it again, or run `git fetch && git reset --hard origin/main` (this

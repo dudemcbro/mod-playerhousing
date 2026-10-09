@@ -5,52 +5,36 @@ help a piece being placed follows you and you walk it into place. This small DLL
 thing. With it, and the Player Housing addon, a piece follows your mouse cursor and a click
 sets it down: on the floor, on a table, or on a wall (it turns to face out from the wall).
 
-It is optional, and only for Wow.exe 3.3.5a build 12340. Everything else in the module works
+It is recommended, not required, and only for Wow.exe 3.3.5a build 12340. Everything else in the module works
 without it. The addon sends where the mouse points over AzerothCore's addon command channel,
 which is on unless the server sets `AddonChannel = 0` in worldserver.conf; without it the
 addon doesn't use the mouse (it checks when you log in), and pieces follow you as before.
 
 ## Install (each player)
 
+Players get it in the server's PlayerHousing-client.zip (see
+[docs/PLAYER_SETUP.md](../docs/PLAYER_SETUP.md)). By hand:
+
 1. Copy `bin/PlayerHousing.dll` and `bin/PlayerHousingLauncher.exe` into the game's folder,
    next to `Wow.exe`.
 2. Start the game with `PlayerHousingLauncher.exe` instead of `Wow.exe`. Anything you would
-   pass to Wow.exe goes after it. Under Wine (Linux, Bluefin):
-
-   ```
-   cd "/path/to/World of Warcraft 3.3.5a"
-   wine PlayerHousingLauncher.exe
-   ```
-
-   In Lutris, Bottles or Steam, change the game's program from `Wow.exe` to
-   `PlayerHousingLauncher.exe`; keep the same Wine prefix and settings.
+   pass to Wow.exe goes after it. Under Wine: `wine PlayerHousingLauncher.exe` from the game
+   folder; in Lutris, Bottles or Steam, change the game's executable to
+   `PlayerHousingLauncher.exe` and keep the same Wine prefix and settings.
 3. In game, check it's there: `/run print(PlayerHousing_DLLInfo())` should print
-   `PlayerHousing.dll 1: ready (Wow.exe 3.3.5.12340) ...`. `PlayerHousing.log`, next to the
+   `PlayerHousing.dll 4: ready (Wow.exe 3.3.5.12340) ...`. `PlayerHousing.log`, next to the
    DLL, says the same.
 
 The launcher starts Wow.exe paused, loads the DLL into it, and lets it carry on. Wow.exe itself
 is never changed. If the DLL can't load, the game still starts, with a message saying why, and
-pieces follow you as before.
+pieces float ahead of the player instead.
 
 ## Using it
 
-Click a piece in the housing window's Collection (or Place, Move, Another like this): its
-see-through ghost appears. Move the mouse over the world and the ghost follows the cursor.
-
-| | |
-|---|---|
-| Click | Set it down where it is |
-| Shift-click | Set it down, then another of the same follows |
-| Mouse wheel | Turn it (Shift: finer) |
-| Ctrl+wheel, Page Up/Down | Raise, lower it |
-| Arrow keys | Nudge it from where the mouse put it |
-| Alt+wheel | Zoom the camera |
-| Hold a mouse button | Turn the camera, as ever: the ghost waits, and it isn't a click |
-| Escape | Never mind |
-
-Pointing at a wall, the piece hangs there facing out (paintings, shields, banners); the wheel
-still turns it. Pointing at a table's top, it stands on the table and moves with it later.
-The banner says when the mouse points somewhere it can't go (off your island, too far away).
+Click a piece in the housing window's Collection, or right-click a placed piece: it follows
+the mouse over the world (floor, table top, a wall facing out, under a ceiling), and a click
+sets it down. The mouse and key controls are in the main
+[README](../README.md#client-addon).
 
 ## What it does, exactly
 
