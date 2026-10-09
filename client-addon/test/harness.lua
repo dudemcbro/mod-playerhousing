@@ -894,6 +894,18 @@ PlayerHousingPlacedPanelRow1Button1.scripts.OnClick()
 assert(sent[#sent - 1] == ".house select 3" and last() == ".house ghost move 3", sent[#sent - 1] .. " " .. last())
 PlayerHousingPlacedPanelRow1Button2.scripts.OnClick(); assert(last() == ".house goto 3", last())
 PlayerHousingPlacedPanelRow1Button3.scripts.OnClick(); assert(last() == ".house pickup 3", last())
+-- A click on a row: it's highlighted, and the piece gets a green ring on the island. Still highlighted
+-- after the list comes again (the same piece by id); another click moves the highlight.
+PlayerHousingPlacedPanelRow2.scripts.OnMouseUp(PlayerHousingPlacedPanelRow2, "LeftButton")
+assert(last() == ".house highlight 7", last())
+assert(PlayerHousingPlacedPanelRow2.chosen.shown and not PlayerHousingPlacedPanelRow1.chosen.shown, "the clicked row is highlighted")
+rows("placed", { "3\t901105\t2.5", "7\t902200\t9.1" })
+assert(PlayerHousingPlacedPanelRow2.chosen.shown, "still highlighted after a refresh")
+PlayerHousingPlacedPanelRow1.scripts.OnMouseUp(PlayerHousingPlacedPanelRow1, "LeftButton")
+assert(last() == ".house highlight 3" and PlayerHousingPlacedPanelRow1.chosen.shown and not PlayerHousingPlacedPanelRow2.chosen.shown, "moved")
+-- Leaving the tab takes the ring away.
+PlayerHousingPlacedPanel.scripts.OnHide(PlayerHousingPlacedPanel)
+assert(last() == ".house highlight 0", last())
 assert(not PlayerHousingPlacedPanelRow1Button4, "no Select, + or Here: one way to move")
 local placedPopups = #popups
 PlayerHousingPlacedPanelRow2Button3.scripts.OnClick()

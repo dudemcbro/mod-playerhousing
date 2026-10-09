@@ -199,8 +199,10 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 -- with the menus: pieces go on a table where the mouse points.
 DELETE FROM `gameobject_template` WHERE `entry` = @MARKER;
 
--- The green rune that marked selected pieces is retired.
+-- The green rune under the piece chosen in the Placed list (scaled to the piece when spawned).
 DELETE FROM `gameobject_template` WHERE `entry` = @RING;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
+(@RING, 5, 674, 'Selected', '', '', '', 1, '', 0);
 
 -- Krook's welcome tour: five short quests that walk through housing. Each completes the
 -- moment the player does the thing (the module reports it as an event), and Krook anywhere,

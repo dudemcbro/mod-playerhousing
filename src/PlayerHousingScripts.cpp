@@ -1005,6 +1005,12 @@ public:
                 reason = "The grid is off. Usage: .house grid <off|yards> (0.25 to 4).";
             mgr->SendAddonState(player);  // the edit mode banner shows it
         }
+        else if (sub == "highlight")
+        {
+            // Quiet: a click on a piece in the Placed list rings it (0: no ring).
+            mgr->HighlightPlacement(player, number(1));
+            return true;
+        }
         else if (sub == "select" && tokens.size() > 1 && (Lower(tokens[1]) == "next" || Lower(tokens[1]) == "previous" || Lower(tokens[1]) == "prev"))
         {
             // Quiet too: Tab in edit mode.

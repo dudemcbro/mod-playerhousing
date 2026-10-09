@@ -343,6 +343,15 @@ def main():
     check("a click sets it down where the client showed it", table is not None and math.dist((table["x"], table["y"]), (x, y)) < 0.05
           and storage(owner_guid).get(TABLE) == before - 1, "%s %s" % (table, storage(owner_guid)))
 
+    # Placed list: a click on one puts a green ring under it; closing the list takes it away.
+    RING = 903991
+    owner.addon_command("house highlight %d" % (table["id"] if table else 0), name, wait=1.0)
+    ring = owner.nearest(RING, TYPEID_GAMEOBJECT)
+    check("a chosen piece gets a green ring under it", ring is not None and table is not None
+          and math.dist((ring.x, ring.y), (table["x"], table["y"])) < 0.1, str(ring and (ring.x, ring.y)))
+    owner.addon_command("house highlight 0", name, wait=1.0)
+    check("and loses it when the list closes", owner.nearest(RING, TYPEID_GAMEOBJECT) is None)
+
     # A lantern on a wall faces out from it; under a ceiling it hangs, its top at the point.
     lantern_height = float(db("SELECT height * 1 FROM mod_playerhousing_piece WHERE item_entry = %d" % LANTERN, "acore_world")[0][0])
     mark = len(owner.addon_messages)

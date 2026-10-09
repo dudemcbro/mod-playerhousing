@@ -1236,6 +1236,10 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
 
     for (auto const& [placementId, spawned] : session.spawned)
         RemoveSpawned(map, spawned.guid);
+    for (auto const& [player, highlight] : session.highlights)
+        if (GameObject* ring = map->GetGameObject(highlight.ring))
+            ring->AddObjectToRemoveList();
+    session.highlights.clear();
 
     DespawnPhoto(session, map);
 
@@ -1287,6 +1291,7 @@ ObjectGuid::LowType PlayerHousingMgr::RemovePlayerTracking(ObjectGuid playerGuid
             }
             sessionItr->second.selected.erase(playerGuid.GetCounter());
             sessionItr->second.groups.erase(playerGuid.GetCounter());
+            RemoveHighlight(sessionItr->second, GetHousingMap(), playerGuid.GetCounter());
             _journals.erase(playerGuid.GetCounter());
         }
 

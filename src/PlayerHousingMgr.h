@@ -65,6 +65,7 @@ namespace Housing
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
+    constexpr uint32 HIGHLIGHT_RING_GO = 903991;  // under the piece chosen in the Placed list
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
     constexpr uint32 GHOST_ENTRY = 900203;          // a see-through piece following its player
     // Each piece's ghost model (tools/content/build_content.py): its see-through creature
@@ -409,6 +410,8 @@ public:
     uint32 ResolvePlacementArgument(Player* player, uint32 placementId) const;
     std::optional<Housing::Placement> GetPlacement(Player const* player, uint32 placementId) const;
     uint32 GetPlacementForObject(Player const* player, ObjectGuid const& guid) const;
+    // A green ring under the piece chosen in the Placed list, to show which one it is (0: none).
+    void HighlightPlacement(Player* player, uint32 placementId);
     std::vector<std::pair<Housing::Placement, float>> GetNearbyPlacements(Player const* player, float range) const;
     std::vector<Housing::Placement> GetPiecesInside(ObjectGuid::LowType ownerGuid, uint32 buildingPlacementId) const;
     void CountPlaced(ObjectGuid::LowType ownerGuid, uint32& furnishings, uint32& buildings) const;
@@ -678,6 +681,13 @@ private:
         bool editCopy{false};
     };
 
+    // The green ring under a piece someone chose in the Placed list.
+    struct Highlight
+    {
+        uint32 placementId{0};
+        ObjectGuid ring;
+    };
+
     // One per occupied island. Islands share the spot on an open-world map and are kept apart
     // by giving each owner an exact phase of their own (see IsHousingPhase).
     struct Session
@@ -694,6 +704,7 @@ private:
         std::unordered_set<ObjectGuid> occupants;
         std::map<uint32, Housing::Placement> placements;
         std::unordered_map<uint32, SpawnedPiece> spawned;
+        std::unordered_map<ObjectGuid::LowType, Highlight> highlights;  // per player
         ObjectGuid photoGuid;  // the photo tour's building
         ObjectGuid stewardGuid;
     };
@@ -751,6 +762,9 @@ private:
     bool EnsureSession(ObjectGuid::LowType ownerGuid);
     bool InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason);
     void DespawnSessionObjects(Session& session, Map* map);
+    // Rings under chosen pieces: one player's, or every one under a piece.
+    void RemoveHighlight(Session& session, Map* map, ObjectGuid::LowType player);
+    void RemoveHighlightsOf(Session& session, Map* map, uint32 placementId);
     void EndSessionIfEmpty(ObjectGuid::LowType ownerGuid);
     ObjectGuid::LowType RemovePlayerTracking(ObjectGuid playerGuid, bool eraseReturnLocation);
     bool TryAdmitGroupBot(Player* bot);

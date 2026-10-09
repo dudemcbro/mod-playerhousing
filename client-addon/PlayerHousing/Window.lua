@@ -155,7 +155,9 @@ end
 
 -- A list of rows, a page at a time: an icon, a line of text and buttons on the right.
 -- tooltip: optional function(item) returning the text shown while hovering a row.
-local function MakeList(panel, top, rows, buttons, tooltip)
+-- onClick: optional function(item) for a click on the row itself, which then stays
+-- highlighted (list.chosen) until another is clicked.
+local function MakeList(panel, top, rows, buttons, tooltip, onClick)
     local list = { rows = {}, items = {}, page = 1 }
     local width = API.WIDTH - 24
     for index = 1, rows do
@@ -184,6 +186,28 @@ local function MakeList(panel, top, rows, buttons, tooltip)
             row.buttons[position] = button
         end
         row.text:SetWidth(width - 22 - right - 4)
+        row.chosen, row.hover = false, false
+        if onClick then
+            row.chosen = row:CreateTexture(nil, "BACKGROUND")
+            row.chosen:SetPoint("TOPLEFT", -2, 0)
+            row.chosen:SetPoint("BOTTOMRIGHT", -(right + 2), 0)
+            row.chosen:SetTexture(1, 0.82, 0, 0.25)
+            row.chosen:Hide()
+            row.hover = row:CreateTexture(nil, "BACKGROUND")
+            row.hover:SetAllPoints(row.chosen)
+            row.hover:SetTexture(1, 1, 1, 0.08)
+            row.hover:Hide()
+            row:EnableMouse(true)
+            row:SetScript("OnMouseUp", function(self, mouseButton)
+                if self.item and mouseButton == "LeftButton" then
+                    list.chosen = self.item
+                    list:Refresh()
+                    onClick(self.item)
+                end
+            end)
+            row:SetScript("OnEnter", function(self) self.hover:Show() end)
+            row:SetScript("OnLeave", function(self) self.hover:Hide() end)
+        end
         if tooltip then
             row:EnableMouse(true)
             row:SetScript("OnEnter", function(self)
@@ -215,6 +239,11 @@ local function MakeList(panel, top, rows, buttons, tooltip)
     list.empty = panel:CreateFontString(panel:GetName() .. "Empty", "OVERLAY", "GameFontDisable")
     list.empty:SetPoint("TOP", panel, "TOP", 0, top - 30)
 
+    -- Items are fresh tables after each refresh from the server: an id says it's the same one.
+    function list.same(a, b)
+        return a == b or (a.id ~= nil and a.id == b.id)
+    end
+
     function list:SetItems(items, render, emptyText)
         self.items, self.render, self.emptyText = items, render, emptyText
         self:Refresh()
@@ -228,6 +257,9 @@ local function MakeList(panel, top, rows, buttons, tooltip)
             row.item = item
             if item and not self.hidden then
                 self.render(row, item)
+                if row.chosen then
+                    if self.chosen and self.same(self.chosen, item) then row.chosen:Show() else row.chosen:Hide() end
+                end
                 row:Show()
             else
                 row:Hide()
@@ -621,7 +653,9 @@ local function CreateCollection()
 end
 
 ---------------------------------------------------------------------------------------------
--- Placed: the pieces on the island, nearest first, as another way to find and move them.
+-- Placed: the pieces on the island, nearest first, as another way to find and move them. A
+-- click on one highlights it, with a green ring under it on the island, so it's clear which
+-- is which; the ring goes when the list closes.
 -- With the housing window open, buildings are clickable just like furnishings.
 
 local placedList, placedStatus, placedItems, placedSearch = nil, nil, {}, ""
@@ -661,7 +695,16 @@ local function CreatePlaced()
         end, "Move it", "It goes on your mouse, like a right-click on it: a click sets it down." },
         { "Go", 30, function(item) API.Command("goto " .. item.id) end, "Go to it", "Takes you next to it." },
         { "Put away", 60, function(item) API.PickUpPlacement(item.id) end, "Put it away", "Back to your Collection. Undo puts it back." },
-    })
+    }, nil, function(item)
+        -- Which one is it? A green ring under it on the island.
+        API.Command("highlight " .. item.id)
+    end)
+    panel:SetScript("OnHide", function()
+        if placedList.chosen then
+            placedList.chosen = nil
+            API.Command("highlight 0")
+        end
+    end)
     panel:SetScript("OnShow", function()
         if not API.CanEdit() then
             placedStatus:SetText("")

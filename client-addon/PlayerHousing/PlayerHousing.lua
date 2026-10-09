@@ -915,6 +915,12 @@ local function CreateWindow()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 },
     })
+    -- The dialog background lets what's behind show through (bags, the world): solid
+    -- underneath, so the lists read cleanly.
+    local solid = frame:CreateTexture(nil, "BACKGROUND")
+    solid:SetPoint("TOPLEFT", 11, -12)
+    solid:SetPoint("BOTTOMRIGHT", -12, 11)
+    solid:SetTexture(0.03, 0.03, 0.03, 0.9)
     frame:SetScript("OnDragStart", function(self)
         if not InCombatLockdown() then
             self:StartMoving()

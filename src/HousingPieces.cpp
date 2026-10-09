@@ -397,6 +397,8 @@ void PlayerHousingMgr::DespawnPlacement(Session& session, Map* map, uint32 place
         RemoveSpawned(map, itr->second.guid);
         session.spawned.erase(itr);
     }
+    // Moved or put away: its ring doesn't stay behind.
+    RemoveHighlightsOf(session, map, placementId);
 }
 
 void PlayerHousingMgr::RespawnPlacement(Session& session, Map* map, uint32 placementId)
@@ -1215,6 +1217,69 @@ void PlayerHousingMgr::SelectPlacement(Player const* player, uint32 placementId)
         itr->second.selected[player->GetGUID().GetCounter()] = placementId;
         itr->second.groups.erase(player->GetGUID().GetCounter());  // one piece again
     }
+}
+
+// A green ring under the piece chosen in the Placed list, as wide as the piece (the rune model
+// is about 3.4 yards across at size 1), so it's clear which of several alike it is. One per
+// player; it goes when another is chosen, the list closes, the piece moves or the player
+// leaves.
+void PlayerHousingMgr::HighlightPlacement(Player* player, uint32 placementId)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto ownerItr = _playerOwnerByGuid.find(player->GetGUID());
+    auto sessionItr = ownerItr != _playerOwnerByGuid.end() ? _sessionsByOwner.find(ownerItr->second) : _sessionsByOwner.end();
+    if (sessionItr == _sessionsByOwner.end())
+        return;
+    Session& session = sessionItr->second;
+    Map* map = player->GetMap();
+    ObjectGuid::LowType self = player->GetGUID().GetCounter();
+    RemoveHighlight(session, map, self);
+
+    auto placementItr = session.placements.find(placementId);
+    PieceDefinition const* piece = placementItr != session.placements.end() ? GetPiece(placementItr->second.itemEntry) : nullptr;
+    if (!piece)
+        return;
+    Placement const& placement = placementItr->second;
+    float scale = std::clamp(piece->footprint * (piece->scale > 0.0f ? placement.scale / piece->scale : 1.0f) / 1.5f, 0.3f, 12.0f);
+    GameObject* ring = new GameObject();
+    if (!ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), HIGHLIGHT_RING_GO, map, PHASEMASK_NORMAL,
+            placement.x, placement.y, placement.z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
+    {
+        delete ring;
+        return;
+    }
+    ring->SetObjectScale(scale);
+    ring->SetRespawnTime(0);
+    ring->SetSpawnedByDefault(false);
+    if (!map->AddToMap(ring))
+    {
+        delete ring;
+        return;
+    }
+    ring->SetPhaseMask(session.phaseMask, true);
+    ring->EnableCollision(false);
+    session.highlights[self] = Highlight{ placementId, ring->GetGUID() };
+}
+
+void PlayerHousingMgr::RemoveHighlight(Session& session, Map* map, ObjectGuid::LowType player)
+{
+    auto itr = session.highlights.find(player);
+    if (itr == session.highlights.end())
+        return;
+    if (map)
+        if (GameObject* ring = map->GetGameObject(itr->second.ring))
+            ring->AddObjectToRemoveList();
+    session.highlights.erase(itr);
+}
+
+void PlayerHousingMgr::RemoveHighlightsOf(Session& session, Map* map, uint32 placementId)
+{
+    std::vector<ObjectGuid::LowType> players;
+    for (auto const& [player, highlight] : session.highlights)
+        if (highlight.placementId == placementId)
+            players.push_back(player);
+    for (ObjectGuid::LowType player : players)
+        RemoveHighlight(session, map, player);
 }
 
 ObjectGuid PlayerHousingMgr::GetObjectForPlacement(Player const* player, uint32 placementId) const

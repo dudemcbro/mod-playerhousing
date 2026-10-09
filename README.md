@@ -22,7 +22,9 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
   (`-DTOOLS_BUILD=maps-only`, for `mmaps_generator`) on the server, and a client patch
   for every player, built with `smpq` and Python 3 from a 3.3.5a client (see
   [tools/gm-island-cleared](tools/gm-island-cleared/README.md)).
-- Optional: the [client addon](#optional-client-addon).
+- For every player: the [client addon](#client-addon) (required: it is the housing
+  window), and [PlayerHousing.dll](client-dll/README.md) (recommended: pieces follow the
+  mouse).
 
 ## Installation
 
@@ -59,9 +61,10 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
    the hall instead, set `PlayerHousing.Layout = "guildhouse"`; players then build the
    patch with `--icons-only`.
 5. Restart the worldserver.
-6. Optional, for each player: [PlayerHousing.dll](client-dll/README.md) (copy two files next
-   to Wow.exe and start the game with the launcher) lets a piece being placed follow the
-   mouse, and a click set it down.
+6. For each player: the [client addon](#client-addon) (required), and
+   [PlayerHousing.dll](client-dll/README.md) (copy two files next to Wow.exe and start the
+   game with the launcher), which lets a piece being placed follow the mouse and a click set
+   it down. Without the DLL a held piece floats ahead of the player instead.
 
 ## Configuration
 
@@ -91,13 +94,15 @@ Every setting can also come from an environment variable, for example
 
 ### Getting started
 
-- On your first login you get a **House Key**; a chair, table and lantern wait in the shared Collection.
-- Right-click the House Key (or type `.house`) for the housing window. **Go home** takes you to
-  your island. A fallen cart and a shredded tent are waiting, and Krook the steward says
-  hello.
-- Lost the key? Krook stands beside the innkeeper in every capital (Stormwind, Ironforge,
-  Darnassus, the Exodar, Orgrimmar, Thunder Bluff, the Undercity, Silvermoon, Shattrath
-  and Dalaran), or type `.house key`.
+- Find **Krook** beside the innkeeper in any capital (Stormwind, Ironforge, Darnassus, the
+  Exodar, Orgrimmar, Thunder Bluff, the Undercity, Silvermoon, Shattrath and Dalaran) and
+  ask for a house: he gives you a **House Key**. The first key on an account comes with a
+  chair, table and lantern in the shared Collection; your other characters ask him for
+  their own key and share the same island.
+- Right-click the House Key (or type `.house`, or `/housing`) for the housing window. **Go
+  home** takes you to your island (it needs the key). A fallen cart and a shredded tent are
+  waiting.
+- Lost the key? Krook has another, at any innkeeper or on your island.
 
 ### Krook's welcome tour
 
@@ -110,64 +115,48 @@ quests that walk you through housing, each done the moment you do the thing:
 4. **Nothing Is Ever Lost**: undo a change.
 5. **Open House**: invite a guest, or open your island to friends or everyone.
 
-Each gives a little silver; the last unlocks **Krook's Picnic Basket**. The quests show
-above Krook's menu, so skipping them costs nothing.
+Each gives a little silver; the last unlocks **Krook's Picnic Basket**. Skipping them costs
+nothing. Once the tour is done, Krook leaves your island; **Call Krook** (Island tab) brings
+him back.
 
 ### Placing things
 
-With the client addon (below), click a piece in the Collection: a see-through ghost of its
-actual model appears. M2 buildings work the same way; world-model buildings use their real,
-solid and collisionless model while held. With
-[PlayerHousing.dll](client-dll/README.md) the ghost follows your mouse over the world: on the
-floor, on a table top, or on a wall facing out, and a click sets it down there (Shift-click:
-then another of the same). Without the DLL the game can't say where the mouse points, so the
-ghost follows you instead, a couple of yards ahead: walk it where it goes, and the arrow keys
-push it farther or nearer and to the sides. Either way the mouse wheel turns it, Ctrl+wheel
-(or Page Up and Page Down) raises and lowers it, G sets it down (Shift+G: then another), and
-Escape puts it back. Nothing is used until it is set down: it uses a copy already in the
-Collection, or buys a new unlocked copy at that point. The held panel names which way the
-front points relative to you.
+Click a piece in the Collection tab and it goes on your mouse: a see-through copy of its
+model (world-model buildings show as their real, solid object). With
+[PlayerHousing.dll](client-dll/README.md) it follows the mouse over the world: on the
+floor, on a table top, on a wall facing out, or hanging under a ceiling. A left-click sets
+it down (Shift-click: then another of the same), a right-click or Escape puts it back.
+Without the DLL the game can't say where the mouse points, so it floats a couple of yards
+ahead of you: walk it where it goes, the arrow keys push it about, and G sets it down. While
+you hold a piece the housing window steps aside; it comes back when you set the piece down
+or put it back.
 
-Placing says nothing in chat (the piece is there to see) unless the island is nearly full.
-Change your mind with Undo. If you'd like a piece's menu to open by itself after placing
-(Keep it here, Take it back, turn or nudge it), Island settings (or `.house adjust`) turns
-that on for buildings or for everything.
+Everything about the held piece is the mouse wheel with a modifier (the plain wheel still
+zooms the camera): see [the table below](#client-addon). Nothing is used until it is set
+down: it takes a copy you own, or buys a new unlocked copy at that moment.
 
-That's the whole flow. You can place anywhere on your island, indoors or out, up to the
-beach. The only rules: it has to be on your island, you have to be able to see the spot,
-and each island holds up to 200 furnishings and 10 buildings (both set in the config).
-Swim too far out and you're brought back to the beach.
+You can place anywhere on your island, indoors or out, up to the beach. The only rules: it
+has to be on your island, and each island holds up to 200 furnishings and 10 buildings
+(both set in the config). Swim too far out and you're brought back to the beach.
 
 ### Changing things
 
-- With the housing window open, **right-click any furnishing or building** to put it on the
-  mouse. Ctrl-right-click selects several; right-click one selected piece to move them all.
-  The Placed tab is another way to find and move something.
-- **Move**: the piece follows you (or your mouse) as a ghost, starting where it stands, and
-  a click or G sets it down in its new spot (the same keys as placing). Whatever stands on
-  it (a lantern on a table, all the furniture in a building) goes along, and one undo puts
-  it all back. `.house move` does it with a targeting circle instead.
-- While it is held, Shift+wheel turns it, Ctrl+wheel raises or lowers it, Alt+wheel tilts it,
-  Alt+Shift+wheel rolls it, and Ctrl+Alt+wheel resizes it. Tilt is previewed using the real
-  object when a translucent creature model cannot lean. The server defaults to half-to-double
-  size and a full 180-degree tilt; mannequins and figurines remain upright.
-- **Place another like this**: a ghost of one more of the same piece follows you, with the
-  first one's turn, size and tilt (one you own, or a new copy bought from the Collection): handy for rows of fence posts or matching chairs.
-- **Grid** (Island settings, or `.house grid 1`): new pieces land on a grid and face
-  straight or diagonal, moves land on it too, and nudges go one square at a time. Pieces
-  put on a table top aren't squared up, so they stay on the table.
-- Tables, crates and shelves grow a blue rune while decorating. Click the rune to put a
-  small piece (a lantern, a candle, a book) right on top.
-- **Done decorating** puts everything back to normal: chairs can be sat on, mailboxes and
+- With the housing window open, **right-click any furnishing or building** to put it back
+  on the mouse, where it can be moved, turned, tilted and resized like a new piece. What
+  stands on it (a lantern on a table, the furniture in a building) comes along, and one
+  undo puts it all back.
+- **Several at once**: Ctrl-right-click pieces to select them, then right-click one of them
+  to pick them all up together. **Save as a set** keeps them, to set down anywhere later.
+- **The Placed tab** lists every piece, nearest first. Click one and it gets a green ring
+  on the island, so you know which of several alike it is; Move, Go (walk to it) and Put
+  away are beside it.
+- **Grid** (Shift+middle-click while holding, or `.house grid 1`): pieces land on a grid.
+- **Undo** and **Redo** are at the top of the window; their tooltips say what they'd undo,
+  and right-clicking Undo lists the recent changes to undo back to any of them.
+- Shift-right-click a held piece to put it away in the Collection.
+- **Pack up all** (Island tab) returns every piece at once, and can be undone too.
+- Closing the window puts everything back to normal: chairs can be sat on, mailboxes and
   crafting stations work.
-- **Undo** and **Redo** are at the top of the Home menu, with the change they'd undo
-  spelled out ("Undo: placed Westfall Chair"). Undo remembers your last 30 changes while
-  you're on the island.
-- Shift-right-click a held, previously placed piece to put it back in the Collection.
-- A building's menu has both: pick up the building only, or the building and everything
-  inside. Nothing asks "are you sure": Undo puts it back.
-- **Pack up everything** (while decorating) returns every piece at once, and can be undone
-  too.
 
 ### Figurines
 
@@ -182,12 +171,11 @@ is.
 
 Unlocked at level 20 (or by buying 7 bank slots). Place it anywhere, and click it when
 you're not decorating: your own bank opens, right there. It works the way a banker does:
-only near the chest, for a few minutes after you open it. Visitors find it locked. (House
-Storage is on the Home menu and in the window.)
+only near the chest, for a few minutes after you open it. Visitors find it locked.
 
 ### Weather, time of day and music
 
-Island settings, Island ambience. Each island keeps its own:
+The Island tab. Each island keeps its own:
 
 - **Weather**: clear, fog, light rain, rain, thunderstorm, light snow, snow, blizzard or
   sandstorm.
@@ -200,51 +188,56 @@ Leaving puts back the real clock and the weather where you land.
 
 ### Saved layouts
 
-Home menu, Saved layouts (or `.house layout`). Save your island as it is, try something
-new, and set the old one back out whenever you like. Each character keeps up to 5.
+The Layouts tab (or `.house layout`). Save your island as it is, try something new, and set
+the old one back out whenever you like. Each island keeps up to 5 (set in the config).
 
 - **Set it out** packs up the island and places the layout: every piece where it stood,
   turned, sized and tilted the same, lanterns back on their tables. It uses your own
-  pieces (from the island and the Collection's counts); ones you don't have are left
-  out, and the message says which. One undo puts the island back as it was.
-- A layout's page counts what's missing and gets the ones you've unlocked in one click
-  ("Get the 3 missing pieces"), and says how many are still locked.
-- **Send a copy** to someone in your party or guild, or a friend who has you on their
-  list. **Visitors may copy my layout** (Island settings) lets anyone visiting save a
-  copy from the Home menu. Layouts hold no items: whoever sets one out places their own.
+  pieces; ones you don't have are left out, and the message says which. One undo puts the
+  island back as it was.
+- A layout counts what's missing and gets the ones you've unlocked in one click, and says
+  how many are still locked.
+- **Send a copy** to someone in your party or guild, or a friend who has you on their list.
+  With **Visitors may copy my layout** ticked, anyone visiting can save a copy (Visit tab,
+  Copy). Layouts hold no items: whoever sets one out places their own.
 - Mannequins come back bare: their gear goes to your bags when the island is packed up.
 
 ### Mannequins: show off your gear
 
 The Mannequin (in everyone's starter set) is a stand for armor and weapons. Place it like
-any piece, then click it:
+any piece, then right-click it for its character sheet:
 
-- **Put gear on...** lists the armor, weapons, shields, shirts and tabards in your bags.
-  Pick one and the mannequin wears it; the item leaves your bags while it's on display,
-  enchants and gems included. Putting something on an occupied slot swaps them.
-- **Take off** puts an item back in your bags (Krook mails it to you if your bags are
-  full). Picking up the mannequin returns it with everything it wears.
-- **Figure** changes the body: every playable race, man or woman. A new mannequin takes
-  after you.
-- Every change can be undone, and undo gives back the very same item.
+- **Drag gear** from your bags onto it (or onto a slot) to put it on; the item leaves your
+  bags while it's on display, enchants and gems included. Putting something on an occupied
+  slot swaps them.
+- **Drag it off**, or right-click a slot, to take it back to your bags (Krook mails it to
+  you if your bags are full). **Take all off** empties it.
+- **Trade gear**: what the mannequin wears goes on you, and what you wear goes on it, in
+  one go. Anything you can't wear goes to your bags.
+- **Race**, **Man** or **Woman**, and **New look**: every playable race, with a random face,
+  skin and hair a character could be made with.
+- **Move** puts it on the mouse like any piece.
+- Mannequins stand still in a plain standing pose (poses are planned, see
+  [the roadmap](docs/ROADMAP.md)).
 - Visitors can click it to see what it's wearing, but can't change anything.
 
 Rings, necklaces, trinkets and relics don't show on a body, so they aren't offered.
 
 ### The Collection
 
-House Key, Collection. It lists every piece by category with your progress, for example
-"Buildings (6/49, 2 new)". Click an unlocked piece for its page: how many you have (in
-owned, placed), a click places one (it goes on your mouse at once; a new copy is
-paid for only when you set it down, so Never mind costs nothing), and Get one or Get 5
-(free with FreeMode, a small gold cost otherwise, shown on the option). A locked piece
+The Collection tab. It lists every piece by category with your progress, for example
+"Buildings (6/49, 2 new)". Click an unlocked piece and it goes on your mouse at once (a new
+copy is paid for only when you set it down, so putting it back costs nothing); its details
+show how many you own and have placed, with Get 1 and Get 5 (free with FreeMode, a small
+gold cost otherwise). A locked piece
 tells you how to earn it, with your progress so far
 ("Reach level 20 (you're level 15)", "Exalted with Stormwind (you're Revered)").
 
 - **Search by name** (or `.house collection lamp`) finds pieces in every category,
   locked ones included, so you can see what's out there.
-- Pieces you've unlocked but not looked at yet are marked **(new)**, and the Home menu
-  and the Collection count them. Seeing one in a list is enough to clear the mark.
+- Pieces you've unlocked but not looked at yet are marked **(new)**, and the Collection
+  counts them. Leaving the tab clears the marks.
+- **Sort** by the Collection's order, name, cost, how many you own, or what unlocks them.
 - **Showing all pieces / unlocked only**: hide what you haven't earned yet, for a shorter
   list of what you can place right now.
 - Unlocks happen the moment you earn them, with a message.
@@ -254,107 +247,85 @@ tells you how to earn it, with your progress so far
 
 ### Visitors
 
-House Key, Island settings:
+The Island and Guests tabs:
 
 - **Privacy**: Private (only you and your guests), Friends & guild, or Public.
 - **Guest list**: invite by name, your target, or your whole party. Guests can always
   visit, whatever the privacy setting. They're told when you invite them.
 - **Greeting**: a message every visitor sees when they arrive.
 
-Visit someone with House Key, Visit an island. It lists the islands of your party, guild
-and friends, the ones you're invited to, and public ones. Only islands you're allowed into
-are shown, so every entry works with one click. Visitors can use chairs and stations but
-can't change anything. The owner is told when someone arrives.
+The Visit tab lists the islands of your party, guild and friends, the ones you're invited
+to, public ones and the most liked; or visit someone by name. Only islands you're allowed
+into are shown, so every entry works with one click. Visitors can use chairs and stations
+but can't change anything. The owner is told when someone arrives.
 
 ### Likes and the visitor log
 
-- Visitors can **like** an island from the Home menu (one like per account, so alts don't
+- Visitors can **like** an island from the Visit tab (one like per account, so alts don't
   count twice), and take it back. The owner is told.
-- Visit an island, **Most liked islands** lists the islands you may enter, most liked
-  first, with their likes.
-- Island settings, **Visitor log**: the last visitors with the date and time, how many
+- The Visit tab's **Most liked** list shows the islands you may enter, most liked first.
+- The Island tab's **Visitor log**: the last visitors with the date and time, how many
   came this week, and your likes. Coming home, Krook says how many visits there were
   since you were last there.
-- **The guestbook**: visitors sign it from the Home menu (Sign the guestbook...) or with
-  `.house sign <note>`, once a day per island (and five notes an hour per account). Coming
-  home, Krook says how many new notes there are; Island settings, Guestbook lists them, and a
-  click throws one out. The last 100 notes are kept.
-- **The door**: Island settings, "make where you stand the door": visitors (roommates too)
+- **The guestbook**: visitors sign it from the Visit tab or with `.house sign <note>`, once
+  a day per island (and five notes an hour per account). Coming home, you're told how many
+  new notes there are; the Guests tab's second page lists them, and you can throw one out.
+  The last 100 notes are kept.
+- **The door**: Island tab, Door here: visitors (roommates too)
   arrive there, facing the way you faced, instead of at the landing spot, until you set it
   back.
 
 ### Roommates
 
-Island settings, Guests, click a guest: **Make them a roommate** (or `.house roommate
-<name>`). A roommate can decorate your island with you: place their own pieces, and move,
+The Guests tab: make a guest a **roommate** (or `.house roommate <name>`). A roommate can decorate your island with you: place their own pieces, and move,
 turn, resize or pick up yours, with their own undo. What they can't do: pack up the
 island, set out a layout, change your settings, or dress a mannequin that isn't theirs.
 
 Every piece remembers who placed it and goes back to them when picked up: a roommate's
-piece you pick up lands in their House Storage (and undo takes it back out), and yours
-land in yours. Gear on a roommate's mannequin goes back to them by mail. "Make them a
+piece you pick up goes back to their Collection (and undo takes it back out), and yours
+to yours. Gear on a roommate's mannequin goes back to them by mail. "Make them a
 guest only" (or `.house unroommate <name>`) ends it; their pieces stay where they are.
 
 ### Commands
 
-Everything is also in the menus; these are shortcuts. `.krook` works the same as `.house`.
+The window does all of this; these are shortcuts. `.krook` works the same as `.house`.
 
 | Command | What it does |
 | --- | --- |
-| `.house` | Opens the Home menu |
-| `.house home`, `leave`, `unstuck`, `key` | Go home, leave the island, back to the landing spot, a new House Key |
-| `.house decorate [on\|off]` | Start or stop decorating |
-| `.house edit [on\|off]` | Edit mode (the addon's keys): decorating, and a click on a piece only selects it |
-| `.house shift <forward> <left> <up> <degrees> [id]` | Move and turn a piece in one go, relative to your facing; quick runs on one piece are one undo step |
+| `.house` | Opens the housing window (the addon is needed) |
+| `.house home`, `leave`, `unstuck` | Go home (needs the House Key), leave the island, back to the landing spot |
+| `.house krook` | Krook comes over to you on your island |
+| `.house decorate [on\|off]` | Start or stop decorating (the window does this when it opens and closes) |
 | `.house undo [steps]`, `redo` | Undo the last change (or that many, up to 20), or redo |
-| `.house select [id\|next\|previous]` | Select a piece by number, the nearest one, or the next one out by distance |
-| `.house list` | The pieces within 40 yards, with their numbers |
-| `.house rotate <degrees> [id]` | Turn a piece (positive is left) |
-| `.house face [id]`, `here [id]` | Face you, move to where you stand |
-| `.house nudge <forward\|back\|left\|right\|up\|down> [yards] [id]` | Nudge a piece, relative to where you're facing |
-| `.house up`, `down` | Raise or lower a tenth of a yard |
-| `.house move [id]` | Move a piece: it goes on your mouse (what's on it comes along) |
-| `.house ghost <item>` | A new piece goes on your mouse (or follows you): one you own, or a new copy from the Collection |
-| `.house ghost move [id]` | The piece (or the selection) follows you as a ghost, what's on it too |
-| `.house ghost adjust <forward> <left> <up> <degrees>` | Push the ghost farther, to the side, up, or turn it |
-| `.house ghost at <x> <y> <z> [<nx> <ny> <nz>]` | Show the ghost at that point (where the mouse points; the addon sends it with PlayerHousing.dll) |
-| `.house ghost place [another]`, `ghost cancel` | Set it down (then another of the same), or never mind |
-| `.house size <bigger\|smaller\|normal\|percent> [id]` | Resize a piece, within the server's limits |
-| `.house tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Tilt a piece (5 degrees unless given); left and right are its own |
-| `.house another [id]` | A ghost of one more of this piece, with its turn, size and tilt |
-| `.house row <count> [yards] [right\|left\|forward\|back] [id]` | Copies of a piece in a straight row beside it (spacing: its own length unless given), turned the same, one undo step |
-| `.house group [add\|remove <id> \| clear]` | Several pieces selected at once (Ctrl-click them with the addon): they slide, turn about their middle, move with the circle and get picked up together |
-| `.house match <height\|turn\|line\|space>` | The selected pieces take the first one's height or turn, line up across your view, or spread out evenly |
-| `.house set [save <name> \| place <name> \| delete <name> \| list]` | Saved sets: the selected pieces (and what stands on them), set down anywhere with the circle, facing you |
-| `.house goto <id>` | Walk over to a piece on the island and select it |
-| `.house layout [save <name>\|load <name>\|delete <name>\|send <name> <player>\|list]` | Saved layouts; without more, the menu |
+| `.house select [id\|next\|previous]`, `list` | Select a piece by number, the nearest, or the next out; list those within 40 yards |
+| `.house move [id]`, `goto <id>`, `highlight <id\|0>` | Put a piece on the mouse; walk to it; a green ring under it (0: none) |
+| `.house rotate <degrees> [id]`, `face [id]`, `here [id]`, `nudge <direction> [yards] [id]` | Turn a piece, face you, move it to you, nudge it |
+| `.house ghost <item>`, `ghost move [id]`, `ghost place [another]`, `ghost cancel` | A new piece on the mouse, a placed one, set it down, never mind |
+| `.house size <bigger\|smaller\|normal\|percent> [id]`, `tilt <forward\|back\|left\|right\|straight> [degrees] [id]` | Resize or tilt a piece, within the server's limits |
+| `.house another [id]` | One more of this piece on the mouse, with its turn, size and tilt |
+| `.house row <count> [yards] [right\|left\|forward\|back] [id]` | Copies of a piece in a straight row, one undo step |
+| `.house group [add\|remove <id> \| clear]`, `match <height\|turn\|line\|space>` | Several pieces at once; line them up |
+| `.house set [save <name> \| place <name> \| delete <name> \| list]` | Saved sets |
+| `.house layout [save <name>\|load <name>\|delete <name>\|send <name> <player>\|copy\|list]` | Saved layouts |
 | `.house grid <off\|yards>` | Snap to a grid of 0.25 to 4 yards |
-| `.house pickup [id] [inside]` | Pick up a piece; `inside` also takes what's in a building |
-| `.house packup` | Pick up everything (undoable) |
-| `.house collection [search]`, `storage`, `visit [name]` | Open those menus, search the Collection, or visit someone by name |
-| `.house get <item> [count]` | A copy (or up to 20) of an unlocked piece, paid for unless FreeMode |
-| `.house take <item\|all> [count]` | Take a piece (all of it, or that many), or everything that fits, out of House Storage |
+| `.house pickup [id] [inside]`, `packup` | Put a piece away (`inside`: with what's in a building); put everything away (undoable) |
+| `.house stand <dress <item>\|undress <slot\|all>\|look <race> <male\|female>\|trade> [id]` | A mannequin's gear and look |
+| `.house collection [search]`, `get <item> [count]`, `visit [name]` | Search the Collection, get copies of an unlocked piece, visit someone |
 | `.house weather <name>`, `time <name>`, `music <sound id\|off>` | The island's weather, time of day and music |
-| `.house data <kind>`, `addon`, `seen` | Quiet ones for the addon's window: its lists, that it's there, new unlocks seen |
-| `.house invite <name\|target\|party>`, `uninvite <name>` | Manage your guest list |
-| `.house roommate <name>`, `unroommate <name>` | Let a guest decorate, or stop |
-| `.house like`, `visitors` | Like the island you're visiting (or take it back); your visitor log |
-| `.house privacy <private\|friends\|public>` | Who can visit |
-| `.house greeting <text\|clear>` | The message visitors see |
-| `.house door [here\|reset]` | Where visitors arrive: where you stand, facing your way, or the landing spot again |
-| `.house sign <note>`, `guestbook [delete <id>]` | Sign the guestbook of the island you're visiting (once a day); read yours, or throw a note out |
-| `.house adjust <all\|buildings\|off>` | When a piece's menu opens by itself after placing |
+| `.house invite <name\|target\|party>`, `uninvite <name>`, `roommate <name>`, `unroommate <name>` | Guests and roommates |
+| `.house privacy <private\|friends\|public>`, `greeting <text\|clear>`, `door [here\|reset]` | Who can visit, what they see, where they arrive |
+| `.house like`, `visitors`, `sign <note>`, `guestbook [delete <id>]`, `report <text>` | Like an island, your visitor log, the guestbook, report an island to the GMs |
+| `.house data <kind>`, `addon`, `seen`, `state` | Quiet ones for the addon |
 
-Without an id, commands act on the selected piece (the one you last clicked).
+Without an id, commands act on the selected piece.
 
-GMs also have `.house unlock <item|name|all> [player]`, `.house relock ...`,
-`.house unlocks [player]`, `.house add` (Krook next to you for ten minutes) and
-`.house phototour <start|next|stop|item>` (see Pictures of buildings, below).
+GMs also have `.house key` (a House Key), `.house unlock <item|name|all> [player]`,
+`.house relock ...`, `.house unlocks [player]`, `.house add` (Krook next to you for ten
+minutes) and `.house phototour <start|next|stop|item>` (see Pictures of buildings, below).
 
 ### Moderation
 
-Players report an island from its Home menu (Report this island to a GM...) or with
-`.house report <what's wrong>`: once per account per island while the report is open.
+Players report an island with `.house report <what's wrong>`: once per account per island while the report is open.
 Online GMs are told at once. GM commands:
 
 | Command | What it does |
@@ -364,81 +335,59 @@ Online GMs are told at once. GM commands:
 | `.house inspect <player>` | Go to anyone's island, whatever its privacy |
 | `.house hide <player>`, `unhide <player>` | Close an island to all but its guest list, and take it off the public and most liked lists |
 | `.house cleargreeting <player>` | Clear an island's greeting |
-| `.house gmpackup <player>` | Pack up an island: every piece goes to the House Storage of whoever placed it, and mannequin gear is mailed back |
+| `.house gmpackup <player>` | Pack up an island: every piece goes back to the Collection of whoever placed it, and mannequin gear is mailed back |
 
 GM actions are logged to the server log (module logger).
 
-## Optional client addon
+## Client addon
 
 `client-addon/PlayerHousing` is the housing window, and the server needs it: the House Key,
 Krook and `.house` open it, and pieces are placed and moved with the mouse.
 
 The addon sends its commands over AzerothCore's addon command channel (on unless the server
-sets `AddonChannel = 0`): chat's flood limit doesn't count them, so holding a key or moving
-a piece with the mouse never gets anyone muted, and they don't fill the chat box. It checks
-the channel answers when you log in, and sends them as chat otherwise. What it does shows in
-the window and its banner, so the server keeps chat for errors and news: nothing asks "are
-you sure" before something Undo can put back (picking up a building, several pieces, the
-Delete key); only saving over or deleting a layout or a set, and throwing out a guestbook
-note, still ask.
+sets `AddonChannel = 0`): chat's flood limit doesn't count them, so moving a piece with the
+mouse never gets anyone muted, and they don't fill the chat box. It checks the channel
+answers when you log in, and sends them as chat otherwise. Nothing asks "are you sure"
+before something Undo can put back; only saving over or deleting a layout or a set, and
+throwing out a guestbook note, still ask.
 
-The window has a toolbar (go home or leave, Edit, Undo and Redo, whose tooltips say what
-they'd undo, and the full menu; right-click Undo for the last 15 changes, to undo back to any
-of them) and seven tabs:
+The window has a toolbar (Go home or Leave, Undo, Redo and Help; right-click Undo for the
+recent changes) and six tabs. Escape closes it.
 
 - **Collection**: every piece there is, unlocked ones in color and locked ones grey, with
-  how many you own on each icon. Show all of them, your favorites, the ones
-  you placed last, or a category; only unlocked ones, or only the ones you own; by name;
-  sorted as the Collection lists them, by name, by cost, or bags first. A click keeps the
-  piece in the preview next to the window with its details and buttons (Place, Get 1,
-  Get 5 and Take from storage), and on your island a ghost of any unlocked piece follows
-  you (or your mouse) at once, to set down with a click or G; a new copy is paid for only
-  when it's set down. Hover an icon to preview the piece: its
-  model, slowly turning and centered in the frame, and its size. Buildings made of world
-  models can't be drawn in a window, so they show a picture (see Pictures of buildings). Right-click a piece to star it as a
-  favorite; drag one from your bags to an action bar to keep it handy. New unlocks are
-  marked until you leave the tab.
-- **Storage**: House Storage: take a piece out, place one straight from there (a ghost of
-  it follows you), or take everything back to the bags.
-- **Placed**: the pieces on the island, nearest first, and a search: go to one (you walk
-  over and it's selected), select it, add it to the selection, bring it to where you
-  stand, or pick it up.
-- **Layouts**: save the island under a name, set a layout out again, send it to someone,
-  delete it. Its second page has sets: a few pieces saved together (select them, name the
-  set, Save selection), set down anywhere with the targeting circle, facing you.
-- **Guests**: invite by name, your target or your party; make a guest a roommate (who
-  can decorate) or remove them. Its second page is the guestbook: the notes visitors left
-  (hover one to read it all), newest first, to throw out if you like.
+  how many you own on each icon. All, favorites, recently placed, or a category; only
+  unlocked ones, or only the ones you own; search by name; sort by the Collection's order,
+  name, cost, owned or unlock type. A click puts an unlocked piece on the mouse and keeps it
+  in the preview beside the window with its details and Get 1 and Get 5. Hover an icon to
+  preview the piece: its model, turning slowly, framed to fit. Buildings made of world
+  models can't be drawn in a window, so they show a picture (see Pictures of buildings).
+  Right-click a piece to star it as a favorite.
+- **Placed**: the pieces on the island, nearest first, and a search. Click one for a green
+  ring under it on the island; Move, Go and Put away.
+- **Layouts**: save the island under a name, set a layout out again, send it, delete it.
+  Its second page has sets: pieces saved together, set down anywhere from the mouse.
+- **Guests**: invite by name, your target or your party; make a guest a roommate or
+  remove them. Its second page is the guestbook.
 - **Visit**: the islands of your party, guild and friends, the ones you're invited to,
-  public ones and the most liked; or visit someone by name. On someone's island, like it
-  and sign its guestbook.
-- **Island**: who can visit, the greeting, the island's weather, time of day and music
-  (with a Music Box placed), where visitors arrive (stand there and click Door here, or
-  back to the landing spot), and the guestbook with its new notes.
+  public ones and the most liked; or visit someone by name. On someone's island: Like, Copy
+  their layout (when they allow it) and sign the guestbook.
+- **Island**: privacy, greeting, weather, time of day and music (with a Music Box placed),
+  the door, the visitor log, Pack up all, Unstuck and Call Krook.
 
 In the preview, drag the model to turn it, use the mouse wheel to bring it nearer or farther
 and right-drag to move it up or down; Reset puts it back. `/housing preview` says which model
 it asked for and which the game loaded (for bug reports).
 
-The piece you're holding is changed with the mouse only: Shift+wheel turns it, Ctrl+wheel
-raises or lowers it, Ctrl+Shift+wheel turns it finely, Alt+wheel tilts it forward or back,
-Alt+Shift+wheel tilts it to its side, Ctrl+Alt+wheel resizes it; middle-click stands it
-straight, Ctrl+middle-click gives its normal size, Shift+middle-click steps the grid. The plain
-wheel zooms the camera as ever. The window lists all of it while you hold a piece.
-
-**Several pieces at once**: with the window open, Ctrl-right-click pieces to select them
-(again to take one out). Right-click one of them and they all go on the mouse together, each
-with what stands on it, as one undo step; Save as a set keeps them to set down anywhere.
-
 **Holding a piece**: a piece being placed or moved follows your mouse (with
 [PlayerHousing.dll](client-dll/README.md)) or, without the DLL, floats ahead of you. Furniture
 and buildings with ordinary models are see-through copies of themselves; world-model buildings
 (towers, farmhouses) and tilted pieces show as the real object, so their lean shows. What stands
-on a piece, or is inside a building, comes along.
+on a piece, or is inside a building, comes along. Turning your character turns the held piece
+with you.
 
 | Mouse or key | Does |
 | --- | --- |
-| Move the mouse (with the DLL) | It follows the cursor: floor, table top, or a wall, facing out |
+| Move the mouse (with the DLL) | It follows the cursor: floor, table top, a wall (facing out), under a ceiling |
 | Left-click, Shift-click | Set it down; Shift: then another of the same |
 | Right-click, Escape | Never mind: a new piece stays in your Collection, a moved one where it was |
 | Shift+right-click | Put a moved piece away in your Collection |
@@ -450,19 +399,21 @@ on a piece, or is inside a building, comes along.
 | Middle-click, Ctrl+middle-click, Shift+middle-click | Stand it straight; normal size; step the grid |
 | Arrows, G, Shift+G (without the DLL) | Push it farther, nearer, sideways; set it down; and another |
 
-The window shows what you're holding, its size and tilt, which way its front points, and all of
-the above. The keys are bound only while you hold a piece, so the usual ones come back
-afterwards; bindings can't change in combat, so they wait for it to end.
+While you hold a piece the window steps aside and a small panel at the bottom of the screen
+shows what you're holding, its size and tilt, which way its front points, and the keys above.
+The keys are bound only while you hold a piece, so the usual ones come back afterwards;
+bindings can't change in combat, so they wait for it to end.
 
 It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over
-(held higher, it floats). A building always stands on the ground, wherever the mouse is. The see-through ghosts and blocks need the client patch (see [Installation](#installation)) from this
+(held higher, it floats). A building always stands on the ground, wherever the mouse is. The
+see-through ghosts need the client patch (see [Installation](#installation)) from this
 version: without it they can't be seen, and `PlayerHousing.Ghosts = 0` carries every piece as
 it is instead.
 
 The window opens by itself when you arrive home (`/housing auto` turns that off).
 `/housing` shows or hides it, and `/housing <command>` runs any `.house` command. A button
-on the minimap's edge opens the window; drag it around the edge,
-or `/housing minimap` to hide it. Key bindings: Key Bindings, Player Housing.
+on the minimap's edge opens the window; drag it around the edge, or `/housing minimap` to
+hide it. Key bindings: Key Bindings, Player Housing.
 
 Install: copy the `PlayerHousing` folder into `World of Warcraft/Interface/AddOns/`. The
 window can't open or close, or change tabs, in combat (a WoW rule for windows with item
@@ -508,8 +459,7 @@ the script again (it only needs a moment) to use yours.
 
 The pieces, their models and what unlocks them are written as a Python list in
 `tools/content/pieces.py`. `tools/content/build_content.py` turns it into
-`sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces, rules and
-the targeting circle spells), `docs/UNLOCKS.md`, the addon's model list
+`sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces and rules), `docs/UNLOCKS.md`, the addon's model list
 (`client-addon/PlayerHousing/PieceModels.lua`) and the items the client patch adds
 (`tools/gm-island-cleared/client_items.tsv`). Each item's bag icon is picked from its name
 by `tools/content/icons.py` (a piece's `icon` field overrides it). It reads the world
@@ -538,31 +488,32 @@ fits, since players already see and track those.
 
 ## How it works
 
-- **One island per character.** GM Island (Kalimdor) is shared by everyone, and phasing
-  gives each owner a private copy. A house phase has bit 31 set and bit 0 clear, and the
+- **One island per account.** Every character on an account shares it
+  (`mod_playerhousing_account` names the character it's kept under). GM Island (Kalimdor) is
+  shared by everyone, and phasing gives each account a private copy. A house phase has bit 31 set and bit 0 clear, and the
   module turns off the core's "any shared bit" phase matching for it
   (`GLOBALHOOK_ON_BEFORE_WORLDOBJECT_SET_PHASEMASK`), so each phase value is its own ID.
   The owner's guests share the owner's phase.
 - An island's pieces are spawned when the first person arrives and removed when the last
   one leaves. Anyone found on the island without going through the House Key (other than
-  GMs) is sent back where they came from, and logging out on an island brings you back
-  where you came from.
-- **Pieces.** Each piece is an item (901100 to 901199 and 902001 to 902999; the House Key
-  is 902000) and a gameobject: `910000 + (item - 900000)` normally, and
-  `920000 + (item - 900000)` while decorating, a clickable copy of chairs and stations that
-  opens the piece menu instead of working. Buildings stay visible from farther away.
+  GMs) is sent back where they came from. Logging out on your own island logs you back in
+  there; logging out on someone else's brings you back where you came from.
+- **Pieces.** Each piece has an item entry (901100 to 901199 and 902001 to 902999; the House
+  Key is 902000) for its name and icon, but what a player owns is a count in the Collection
+  (`mod_playerhousing_storage`), not a bag item. Its object is `910000 + (item - 900000)`
+  normally, and `920000 + (item - 900000)` while decorating: a clickable copy of chairs and
+  stations, so a right-click picks the piece up instead of using it (world-model buildings
+  have none and are picked up from the Placed tab). Buildings stay visible from farther away.
   Housing objects have server-side collision turned off.
 - **Sizes and outlines** come from the game data: small models from
   `GameObjectDisplayInfo.dbc`, buildings made of world models from the server's collision
   data (`vmaps/GameObjectModels.dtree`). A building's outline, turned the way it faces, is
   what counts as inside it when picking it up with what's inside.
-- **Placement** uses a targeting circle: each piece's item carries a ground-target spell
-  whose circle matches the piece's size (nine spells, 1 to 20 yards, listed in
-  `tools/content/build_content.py`). They're unused creature and quest spells with no
-  description, so the item's tooltip has no misleading "Use:" line. The spell is caught
-  before it casts, so there's no cast bar, sound or cooldown. The core has already checked
-  range and line of sight to the clicked spot by then. Players who have old copies of the items cached see the old
-  circle size until they clear their `WDB` folder.
+- **Placement** follows the mouse: with PlayerHousing.dll the addon asks the game where the
+  mouse points and which way the surface there faces, and sends it to the server
+  (`.house ghost at x y z [nx ny nz]`). The server decides where the piece goes (a table
+  top, a wall, a ceiling, the ground under a building) and tells the addon, which moves the
+  ghost itself between the server's updates.
 - **Ghosts** (`src/HousingGhosts.cpp`) follow the player's position, guessed ahead of their
   last movement packet (the client reports only every half second when running straight),
   and are redrawn every tenth of a second. Furniture's ghost is a creature (entry 900203)
@@ -587,12 +538,13 @@ fits, since players already see and track those.
   redo replay them exactly, handing items back or taking them as needed. Each player has
   their own list, in memory, cleared when they leave the island. A step only applies to
   the very pieces it was written for (see Safety and limits).
-- **Mannequins** are creatures (entry 900201) with the mirror image flag, the way the
+- **Mannequins** are creatures (entry 900201) with the mirror image flag, frozen still, the way the
   Mirror Image spell works: the client asks what the figure wears and the module answers
   (a `ServerScript` catching `CMSG_GET_MIRRORIMAGE_DATA`), while weapons are virtual items.
   Gear on a stand leaves the inventory but stays in `item_instance`, the way mail keeps
   items, with a row in `mod_playerhousing_placement_gear`; so enchants, gems and the item's
-  guid survive, and undo returns the same item. Deleting a character for good deletes
+  guid survive, and undo returns the same item. Race, gender and features (skin, face,
+  hair, hair color, facial hair) are packed into the placement's `look`. Deleting a character for good deletes
   its own stand gear; gear roommates left on its island is mailed back to them first.
   The characters rollback mails any gear still on stands back to its owners.
 
@@ -600,17 +552,17 @@ fits, since players already see and track those.
 
 Nothing on an island can be duplicated or lost:
 
-- Every piece placed takes its item, and every piece picked up gives one back. The item a
-  piece is placed with is taken before anything else the player sends is handled, so
-  moving it to the bank, the mail or a trade in the same moment doesn't keep it.
+- Every piece placed takes one from the Collection's count, and every piece picked up gives
+  one back.
 - An undo or redo step only applies to the pieces it was written for. If someone else has
   since picked one up or replaced it, the step is dropped with a message. Placement ids
   are never handed out twice while anyone is on the island, and a GM packing up an island
   or its owner being deleted clears every undo list that points at it.
 - Gear on a mannequin is only ever changed by the player it belongs to; anyone else's undo
   moves the stand and leaves what it wears alone.
-- When a character is deleted, pieces roommates placed on its island go to the roommates'
-  House Storage and their mannequin gear comes by mail. The island itself stays until the
+- When a character is deleted, pieces roommates placed on its island go back to the
+  roommates' Collections and their mannequin gear comes by mail. If it was the character
+  the account's island was kept under, the island moves to another character on the account. The island itself stays until the
   character is gone for good, so a GM can still restore it; it goes when the core removes
   the character (also when the core purges old deleted characters), and anything left by
   characters removed while the module was off is cleaned up at the next start. Deleted
@@ -698,10 +650,10 @@ down on busy servers.
 
 [tools/test-server](tools/test-server/README.md) has a prebuilt server image, a fast
 development container and an end-to-end test that plays the whole thing through with
-headless clients (302 checks: placing, undo, decorating, edit mode, several pieces at once, ghosts, the mouse,
-sets, the addon's window, storage, the Collection, buildings, mannequins, layouts,
-ambience, visitors, the guestbook, roommates, moderation, working furniture, addon
-messages, relogging, and the safety rules above), and a load test.
+headless clients (`collection_smoke.py`, 96 checks: House Keys from Krook, the Collection,
+placing on the mouse, walls and ceilings, undo, several pieces at once, sets, buildings,
+mannequins and trading gear, layouts, the Placed ring, visitors, one island per account,
+relogging), the addon harness, and a load test.
 
 ## Updating
 
@@ -723,10 +675,9 @@ discards local commits).
 
 Older versions had house styles, stages, a vendor catalog and furniture unlocks. Applying
 the world SQL removes those tables. At the next startup the module converts what players
-had: placed furniture gets its item (so it picks up into your bags), catalog unlocks become
-Collection unlocks plus one copy in House Storage, and with the cleared island, anything
-that stood inside the old guild hall goes to its owner's House Storage with a message on
-their next visit. Gold spent on stages isn't refunded.
+had: placed furniture and catalog unlocks become Collection unlocks and counts, and with the
+cleared island, anything that stood inside the old guild hall goes back to its owner's
+Collection with a message on their next visit. Gold spent on stages isn't refunded.
 
 ## Uninstall
 
