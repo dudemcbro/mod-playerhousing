@@ -84,8 +84,9 @@ PlayerHousing.Tilt.Max = 180
 
 ###############################################################################
 # PlayerHousing.SavedLayouts
-#    How many layouts each character can save (snapshots of where everything
-#    stands, to set out again or send to a friend). 0 turns them off. Up to 20.
+#    How many layouts each island (one per account) can keep: snapshots of
+#    where everything stands, to set out again or send to a friend. 0 turns
+#    them off. Up to 20.
 #    Default: 5
 ###############################################################################
 PlayerHousing.SavedLayouts = 5
@@ -103,9 +104,9 @@ PlayerHousing.Catalog = "curated"
 
 ###############################################################################
 # PlayerHousing.Ghosts
-#    1  a piece being placed or moved follows its player (or, with
-#       PlayerHousing.dll, the mouse) as a see-through ghost; a building as a
-#       see-through block its size. Players need the client patch from
+#    1  a piece being placed or moved follows the mouse (with PlayerHousing.dll)
+#       or its player as a see-through copy of itself; world-model buildings
+#       show as their real, solid object. Players need the client patch from
 #       tools/gm-island-cleared built with this version: it adds the ghosts'
 #       models, and without it the ghost can't be seen.
 #    0  every piece is carried as it is (no see-through ghosts); for clients

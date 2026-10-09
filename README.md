@@ -75,7 +75,7 @@ work as well as the playerbots fork it is developed on (see
 | `PlayerHousing.MaxBuildings` | 10 | Buildings per island |
 | `PlayerHousing.Size.Min`, `Size.Max` | 0.5, 2 | How small and big pieces can be made (times normal size); 1 and 1 turn resizing off |
 | `PlayerHousing.Tilt.Max` | 180 | How far pieces tilt each way, in degrees; 180 is all the way round (upside down and on), 0 turns tilting off |
-| `PlayerHousing.SavedLayouts` | 5 | Layouts each character can save (0 turns them off, 20 at most) |
+| `PlayerHousing.SavedLayouts` | 5 | Layouts each island can keep (0 turns them off, 20 at most) |
 | `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
 | `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
 | `PlayerHousing.HouseKey.DelaySeconds` | 0 | How long "Go home" takes (0: at once); moving or combat cancels |
@@ -84,6 +84,8 @@ work as well as the playerbots fork it is developed on (see
 
 Every setting can also come from an environment variable, for example
 `AC_PLAYER_HOUSING_FREE_MODE=1` (the core's usual `AC_` naming).
+Ranges, ready-made setups and what else can be tuned are in
+[docs/SERVER_SETUP.md](docs/SERVER_SETUP.md#knobs-and-dials).
 
 ## For players
 

@@ -45,18 +45,9 @@ cd <server>/etc/modules
 cp mod_playerhousing.conf.dist mod_playerhousing.conf
 ```
 
-The defaults suit a live server. The ones worth a look (all listed in the
-[README](../README.md#configuration)):
-
-| Setting | Default | Change it when |
-| --- | --- | --- |
-| `PlayerHousing.MaxFurnishings`, `MaxBuildings` | 200, 10 | You want smaller or bigger islands (lower is lighter on a busy server) |
-| `PlayerHousing.DefaultPrivacy` | private | New islands should start open to friends or everyone |
-| `PlayerHousing.FreeMode`, `UnlockAll` | 0, 0 | Only on a test server: everything free and unlocked |
-| `PlayerHousing.Layout` | cleared | You'd rather keep GM Island's guild hall (`guildhouse`; skip step 4's server data) |
-
-Also check that `worldserver.conf` doesn't set `AddonChannel = 0`: the addon talks to the
-server over it.
+The defaults suit a live server; [Knobs and dials](#knobs-and-dials), below, lists everything
+you can change. Also check that `worldserver.conf` doesn't set `AddonChannel = 0`: the addon
+talks to the server over it.
 
 ## 3. Apply the SQL
 
@@ -121,6 +112,91 @@ Install the zip on your own client ([PLAYER_SETUP.md](PLAYER_SETUP.md)), log in,
 1. Talk to Krook beside any capital's innkeeper and ask for a house: you get a House Key.
 2. Right-click the key, **Go home**: you land on the cleared island.
 3. Click a piece in the Collection: it follows the mouse, a click sets it down.
+
+## Knobs and dials
+
+Everything in `mod_playerhousing.conf` is read when the worldserver starts: change it, then
+restart (`.reload config` doesn't pick it up). Any setting can also come from an environment
+variable, the core's usual way: `PlayerHousing.MaxFurnishings` is
+`AC_PLAYER_HOUSING_MAX_FURNISHINGS`, `PlayerHousing.FreeMode` is
+`AC_PLAYER_HOUSING_FREE_MODE`, and so on. Values outside a setting's range are pulled to the
+nearest end of it.
+
+### The island
+
+| Setting | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `PlayerHousing.Enable` | 1 | 0, 1 | The whole module. Off: housing stops working, and every island, piece and unlock stays in the database for when it's back on. |
+| `PlayerHousing.Layout` | cleared | cleared, guildhouse | `cleared`: GM Island without its guild hall (needs step 4 and the client patch). `guildhouse`: the island as it ships, landing in the hall. Switching to `cleared` sends anything placed inside the old hall back to its owner's Collection. |
+| `PlayerHousing.MaxFurnishings` | 200 | 1 to 5000 | Furnishings one island can hold. |
+| `PlayerHousing.MaxBuildings` | 10 | 0 to 200 | Buildings one island can hold. 0: no buildings at all. |
+| `PlayerHousing.SavedLayouts` | 5 | 0 to 20 | Layouts each island can keep. 0 turns layouts off. |
+
+Every open island shares the same map cells on Kalimdor, so the piece limits are also how you
+keep a busy server quick: about 6,000 pieces out across 100 occupied islands is comfortable;
+past a few hundred busy islands, lower `MaxFurnishings` (see "Thousands of players" in the
+[README](../README.md#thousands-of-players)).
+
+### Placing
+
+| Setting | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `PlayerHousing.Size.Min` | 0.5 | 0.1 to 1 | How small a piece can be made, as a multiple of its normal size. |
+| `PlayerHousing.Size.Max` | 2 | 1 to 10 | How big a piece can be made. `Size.Min = 1` and `Size.Max = 1` turn resizing off. |
+| `PlayerHousing.Tilt.Max` | 180 | 0 to 180 | How far a piece tilts each way, in degrees. 180: all the way round. 0 turns tilting off. Mannequins and figurines always stand upright. |
+| `PlayerHousing.Ghosts` | 1 | 0, 1 | 1: a held piece is a see-through copy of itself (needs this version's client patch). 0: pieces are carried as they are, for players on an older patch. |
+
+### Getting there and visitors
+
+| Setting | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `PlayerHousing.HouseKey.DelaySeconds` | 0 | 0 to 60 | How long Go home takes, like a hearthstone cast: moving or combat cancels it. 0 is instant. GMs and FreeMode always go at once. |
+| `PlayerHousing.DefaultPrivacy` | private | private, friends, public | Who may visit a new island: its owner's guest list, friends and guild too, or anyone. Players change their own afterwards. |
+| `PlayerHousing.GmBypassPrivate` | 0 | 0, 1 | GMs in GM mode can visit any island. (`.house inspect <player>` goes to any island regardless.) |
+
+### What players own
+
+| Setting | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `PlayerHousing.Catalog` | curated | curated, everything | `curated`: the ~340 pieces earned by playing. `everything`: also about 2,000 more, every other object model in the game, which everyone has from the start (a sandbox; needs the catalog SQL, which `apply_sql.sh` applies). |
+| `PlayerHousing.FreeMode` | 0 | 0, 1 | Test servers: extra copies cost nothing and Go home is instant. |
+| `PlayerHousing.UnlockAll` | 0 | 0, 1 | Test servers: every piece is unlocked for everyone, with "one of everything". |
+
+### Krook
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry. Change it only if 900200 clashes with another module. |
+| `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a wolvar orphan). Any creature display id works. |
+
+### Ready-made setups
+
+- **A test or showcase server:** `FreeMode = 1`, `UnlockAll = 1`, `GmBypassPrivate = 1`;
+  `Catalog = "everything"` for a sandbox with every model in the game.
+- **A busy live server:** `MaxFurnishings = 100`, `MaxBuildings = 5`,
+  `HouseKey.DelaySeconds = 10`.
+- **Grand islands on a small server:** `MaxFurnishings = 500`, `MaxBuildings = 25`,
+  `Size.Max = 4`, `SavedLayouts = 10`.
+- **No tilting or resizing:** `Tilt.Max = 0`, `Size.Min = 1`, `Size.Max = 1`.
+- **Housing paused:** `Enable = 0` keeps every island, piece and unlock in the database.
+
+### Beyond the config file
+
+- **Prices and unlocks:** what each piece costs as an extra copy, and what unlocks it, come
+  from `tools/content/pieces.py`. Edit it, then run `tools/content/build_content.py` (see
+  [Content](../README.md#content)) and apply the SQL again. Editing the tables
+  directly works until the next `apply_sql.sh`, which rewrites them.
+- **Where players land and where Krook stands** on the island: the
+  `mod_playerhousing_layout` table (landing point, Krook's offset from it, the island's
+  center and radius), set in `sql/db_world/base/mod_playerhousing_world.sql`.
+- **Fixed limits**, the same on every server: 15 housing commands in any 3 seconds per player
+  (GMs exempt), 3 seconds between heavy actions (pack up, set out a layout), 30 undo steps,
+  the last 100 guestbook notes, five reports an hour per account.
+- **GM tools** for running it: `.house unlock <item|name|all> [player]` and `relock`,
+  `.house unlocks [player]`, `.house key` (a House Key for yourself), `.house add` (Krook
+  beside you for ten minutes), and moderation: `.house reports`, `close`, `inspect`, `hide`,
+  `unhide`, `cleargreeting`, `gmpackup` (all in the
+  [README](../README.md#moderation)).
 
 ## Updating
 
