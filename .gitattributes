@@ -1,0 +1,21 @@
+# Text files with LF endings everywhere (the server builds on Linux; the client reads either).
+* text=auto eol=lf
+
+# Windows-only files keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries: never touched.
+*.png binary
+*.tga binary
+*.blp binary
+*.jpg binary
+*.dll binary
+*.exe binary
+*.mpq binary
+*.MPQ binary
+*.m2 binary
+*.skin binary
+*.adt binary
+*.dbc binary
+*.zip binary

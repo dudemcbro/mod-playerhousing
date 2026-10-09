@@ -1,4 +1,9 @@
-# mod-playerhousing
+# Player Housing (mod-playerhousing)
+
+<img src="icon.png" alt="" width="64" align="right">
+
+**Author:** [dudemcbro](https://github.com/dudemcbro) | **License:** GNU AGPL v3.0 |
+**Works with:** AzerothCore WotLK (3.3.5a)
 
 Player housing for AzerothCore (WotLK 3.3.5a), modeled on Lord of the Rings Online and Final
 Fantasy XIV without the neighborhoods. Every account gets one private copy of GM Island,
@@ -9,8 +14,32 @@ What you can own grows as you play: exploring, dungeons, raids, reputation, prof
 holidays all add pieces to your Collection, and buildings climb from a broken cart and a
 shredded tent at level 1 to faction halls at Exalted.
 
+<p>
+  <img src="docs/images/island-camp.jpg" alt="A camp on the island: tent, rug, campfire, and the housing window with a lantern's preview" width="100%">
+</p>
+<p>
+  <img src="docs/images/westfall-shed.jpg" alt="A Westfall Shed placed on the island, with the green ring the Placed list shows" width="43%">
+  <img src="docs/images/collection-window.jpg" alt="The Collection: every piece with its preview" width="55%">
+</p>
+
+**Features:** a private island per account; 2,350+ furnishings, buildings and figurines
+unlocked by playing; placing, turning, tilting and resizing with the mouse, on floors, table
+tops, walls and ceilings; undo for everything; saved layouts and sets; mannequins that wear
+your real gear; weather, time of day and music per island; visitors, likes, a guestbook and
+roommates; GM moderation tools.
+
 The design and the reasoning behind it are in [docs/UX_PLAN.md](docs/UX_PLAN.md). Every
-piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md).
+piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md). Troubleshooting: for servers in
+[docs/SERVER_SETUP.md](docs/SERVER_SETUP.md#when-somethings-wrong), for players in
+[docs/PLAYER_SETUP.md](docs/PLAYER_SETUP.md#if-somethings-not-right).
+
+## Future features
+
+- More player housing islands and areas
+- Improved object controls
+- Progression and people: more collectibles
+- Mannequins: poses, weapons drawn or sheathed, mount and pet stands
+- Guild islands
 
 ## Setting it up
 
@@ -184,7 +213,7 @@ any piece, then right-click it for its character sheet:
   skin and hair a character could be made with.
 - **Move** puts it on the mouse like any piece.
 - Mannequins stand still in a plain standing pose (poses are planned, see
-  [the roadmap](docs/ROADMAP.md)).
+  [Future features](#future-features)).
 - Visitors can click it to see what it's wearing, but can't change anything.
 
 Rings, necklaces, trinkets and relics don't show on a body, so they aren't offered.
@@ -673,6 +702,15 @@ against `main`. Commit messages follow
 Content changes go in `tools/content/pieces.py`; regenerate the SQL, `docs/UNLOCKS.md`
 and the addon lists with `tools/content/build_content.py` rather than editing them by hand.
 
+## How this was made
+
+Player Housing is designed and directed by [dudemcbro](https://github.com/dudemcbro) and
+written largely with AI coding assistants: Anthropic's Claude, through Claude Code. Commits
+made with it carry a `Co-Authored-By` line naming the model. Every change is checked by
+the end-to-end test and the addon harness in this repository, and the module runs on a live
+server where it is played and tried in the game.
+
 ## License
 
-GNU General Public License v3.0: see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0: see [LICENSE](LICENSE). The bundled
+[MinHook](client-dll/minhook/LICENSE.txt) sources keep their own BSD license.
