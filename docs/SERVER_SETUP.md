@@ -8,10 +8,15 @@ server with the module in a container, no setup needed.
 
 ## What you need
 
-- An AzerothCore WotLK (3.3.5a) server you build yourself. The module uses only standard
-  script hooks, so no core patches; it is developed on
-  [azerothcore-wotlk-playerbots-custom](https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom)
-  and works alongside mod-playerbots (bots never get housing).
+- An AzerothCore WotLK (3.3.5a) server you build yourself. Stock
+  [AzerothCore](https://github.com/azerothcore/azerothcore-wotlk) should work: the module
+  needs no core patches, and every hook and core function it uses is part of AzerothCore
+  itself (the script hooks it relies on came with AzerothCore's 2024 script rework). It is
+  developed and tested on
+  [azerothcore-wotlk-playerbots-custom](https://github.com/dudemcbro/azerothcore-wotlk-playerbots-custom),
+  a playerbots fork, and works alongside mod-playerbots (bots never get housing). It
+  hasn't been built against stock AzerothCore yet; if it doesn't build there, please open
+  an issue.
 - The core's map tools (`mmaps_generator`), built with `-DTOOLS_BUILD=maps-only` or `all`.
 - A 3.3.5a client, to build the client patch your players install. Use a client like
   theirs: plain 3.3.5a, plus any custom patches your server hands out.

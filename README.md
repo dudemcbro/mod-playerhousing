@@ -28,7 +28,9 @@ In short, a server needs AzerothCore WotLK (3.3.5a) built with the module and it
 every player needs the [client addon](#client-addon) (required: it is the housing window),
 the client patch (icons, see-through ghosts, the cleared island) and, recommended,
 [PlayerHousing.dll](client-dll/README.md) (pieces follow the mouse). The module uses only
-standard script hooks; no core patches.
+standard AzerothCore script hooks and needs no core patches, so stock AzerothCore should
+work as well as the playerbots fork it is developed on (see
+[docs/SERVER_SETUP.md](docs/SERVER_SETUP.md#what-you-need)).
 
 ## Configuration
 
