@@ -41,7 +41,7 @@ CREATE TABLE `mod_playerhousing_layout` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landing_y`, `landing_z`, `landing_o`, `steward_offset_x`, `steward_offset_y`, `center_x`, `center_y`, `radius`, `description`) VALUES
-('cleared',    1, 16240.0, 16296.0, 12.92, 1.5708, 5.0, 3.0, 16250.0, 16334.0, 230.0, 'GM Island with the guild hall removed: land on the plateau where it stood'),
+('cleared',    1, 16240.0, 16296.0, 12.92, 1.5708, 2.0, 12.0, 16250.0, 16334.0, 230.0, 'GM Island with the guild hall removed: land on the plateau where it stood'),
 ('guildhouse', 1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5, 16250.0, 16334.0, 230.0, 'GM Island with its guild hall: land in the hall''s entry room');
 
 -- Everything a player can place: one row per item.
@@ -199,10 +199,8 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 -- with the menus: pieces go on a table where the mouse points.
 DELETE FROM `gameobject_template` WHERE `entry` = @MARKER;
 
--- Edit mode: the green rune under the selected piece (scaled to the piece when spawned).
+-- The green rune that marked selected pieces is retired.
 DELETE FROM `gameobject_template` WHERE `entry` = @RING;
-INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
-(@RING, 5, 674, 'Selected', '', '', '', 1, '', 0);
 
 -- Krook's welcome tour: five short quests that walk through housing. Each completes the
 -- moment the player does the thing (the module reports it as an event), and Krook anywhere,
@@ -266,4 +264,5 @@ INSERT INTO `conditions` (`SourceTypeOrReferenceId`, `SourceGroup`, `SourceEntry
 -- Krook's greeting above his quests (the menus' other texts went with the menus).
 DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;
 INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
-(900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone. The housing window has it all: your Collection, your island, and islands to visit.', '', 1);
+(900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone. The housing window has it all: your Collection, your island, and islands to visit.', '', 1),
+(900301, 'Krook, at your service. Every adventurer deserves somewhere to come home to: an island of your own, shared by all your characters, to build and furnish as you please. All it takes is a House Key, and I keep one for everyone. Lose yours, and come back to me for another.', '', 1);

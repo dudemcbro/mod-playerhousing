@@ -59,14 +59,17 @@ local function CursorFraction()
     return (cursorX / scale - left) / width, (cursorY / scale - bottom) / height
 end
 
--- The held piece itself, where it's shown now: a tilted one is the real object, which the mouse
--- can hit. A point on it would pull the piece toward the camera, a little more each time
--- (each new point on its near side), so such a point is taken where the mouse's ray meets the
--- floor the piece stands on instead (PlayerHousing.dll 3), or not at all.
+-- The held piece itself, where it's shown now: a tilted one (or a building) is the real object,
+-- which the mouse can hit. A point on it would pull the piece toward the camera, a little more
+-- each time (each new point on its near side), so such a point is taken where the mouse's ray
+-- meets the floor the piece stands on instead (PlayerHousing.dll 3), or not at all. An upright
+-- piece is a figure the mouse goes through: a point near it is the wall or ceiling it's on.
 local function OnHeldPiece(x, y, z)
+    local state = API.state
     local pose = ghost.pose
-    local data = pose and PlayerHousing_Models and PlayerHousing_Models[API.state.ghostItem]
-    if not data then
+    local data = pose and PlayerHousing_Models and PlayerHousing_Models[state.ghostItem]
+    local real = buildings[state.ghostItem] or (state.ghostPitch or 0) ~= 0 or (state.ghostRoll or 0) ~= 0
+    if not data or not real then
         return false
     end
     local size = (API.state.ghostSize or 100) / 100

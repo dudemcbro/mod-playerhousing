@@ -118,84 +118,181 @@ StaticPopupDialogs["PLAYERHOUSING_SAVE_SET"] = {
 }
 
 ---------------------------------------------------------------------------------------------
--- A mannequin's dress list: what it wears (take it off), what in your bags it could wear (put
--- it on), and its figure. The server's list (.house data stand <id>) comes again after each.
+-- A mannequin's character sheet (a right-click on it): its gear in slots like the game's own,
+-- dragged on from the bags and off again (or right-clicked off); its race, man or woman and a
+-- new look; trading gear with it; and Move. The server's list (.house data stand <id>) comes
+-- again after each change.
 
-local DRESS_ROWS = 12
-local dress, dressTitle, dressFigure, dressRows, dressEmpty, dressAllOff
-local dressing = 0      -- the mannequin the list is for
+local MANNEQUIN_NAME = "Mannequin"
+local RACES = { { 1, "Human" }, { 3, "Dwarf" }, { 4, "Night Elf" }, { 7, "Gnome" }, { 11, "Draenei" },
+                { 2, "Orc" }, { 5, "Undead" }, { 6, "Tauren" }, { 8, "Troll" }, { 10, "Blood Elf" } }
+-- The game's slot names (for their empty-slot pictures) and the server's slots (0-based).
+local LEFT_SLOTS = { "HeadSlot", "ShoulderSlot", "BackSlot", "ChestSlot", "ShirtSlot", "TabardSlot", "WristSlot" }
+local RIGHT_SLOTS = { "HandsSlot", "WaistSlot", "LegsSlot", "FeetSlot" }
+local WEAPON_SLOTS = { "MainHandSlot", "SecondaryHandSlot", "RangedSlot" }
+
+local dress, dressFigure, dressHint, dressModel, raceButton
+local slotButtons = {}      -- server slot -> button
+local dressing = 0          -- the mannequin the sheet is for
+local current = { race = 1, gender = 0 }
+local raceMenu = CreateFrame("Frame", "PlayerHousingDressRaceMenu", UIParent, "UIDropDownMenuTemplate")
 
 local function DressCommand(command)
     API.Command(command)
     API.RequestData("stand", dressing)
 end
 
+local function RaceName(race)
+    for _, entry in ipairs(RACES) do
+        if entry[1] == race then
+            return entry[2]
+        end
+    end
+    return "Human"
+end
+
+-- An item on the cursor (picked up from the bags) goes on; the server finds its slot.
+local function DropOn()
+    local kind, itemId = GetCursorInfo()
+    if kind == "item" and itemId then
+        ClearCursor()
+        DressCommand(("stand dress %d %d"):format(itemId, dressing))
+        return true
+    end
+    return false
+end
+
+local function SlotButton(name, x, y)
+    local slotId, empty = GetInventorySlotInfo(name)
+    local button = CreateFrame("Button", "PlayerHousingDress" .. name, dress)
+    button:SetWidth(37)
+    button:SetHeight(37)
+    button:SetPoint("TOPLEFT", x, y)
+    button.slot = slotId - 1
+    button.empty = empty
+    button.entry = false
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetAllPoints()
+    button.icon:SetTexture(empty)
+    button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:RegisterForDrag("LeftButton")
+    button:SetScript("OnReceiveDrag", DropOn)
+    button:SetScript("OnClick", function(self, mouseButton)
+        if DropOn() then
+            return
+        end
+        if self.entry and mouseButton == "RightButton" then
+            DressCommand(("stand undress %d %d"):format(self.slot, dressing))
+        end
+    end)
+    -- Dragging what it wears off the sheet takes it off, back to the bags.
+    button:SetScript("OnDragStart", function(self)
+        if self.entry then
+            DressCommand(("stand undress %d %d"):format(self.slot, dressing))
+        end
+    end)
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.entry then
+            GameTooltip:SetHyperlink("item:" .. self.entry)
+            GameTooltip:AddLine("Right-click or drag it off: back to your bags.", 0.4, 1, 0.4, true)
+        else
+            GameTooltip:SetText(_G[name:upper()] or name)
+            GameTooltip:AddLine("Drag gear here from your bags.", 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    slotButtons[button.slot] = button
+    return button
+end
+
+local function ShowLook()
+    raceButton:SetText(RaceName(current.race))
+end
+
 local function CreateDress()
     dress = CreateFrame("Frame", "PlayerHousingDress", UIParent)
-    dress:SetWidth(320)
-    dress:SetHeight(76 + DRESS_ROWS * 20)
-    dress:SetPoint("CENTER", 0, 60)
+    dress:SetWidth(330)
+    dress:SetHeight(440)
+    dress:SetPoint("CENTER", 0, 40)
     dress:SetFrameStrata("DIALOG")
     dress:EnableMouse(true)
     dress:SetMovable(true)
     dress:RegisterForDrag("LeftButton")
     dress:SetScript("OnDragStart", dress.StartMoving)
     dress:SetScript("OnDragStop", dress.StopMovingOrSizing)
+    dress:SetScript("OnReceiveDrag", DropOn)
     dress:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         tile = true, tileSize = 32, edgeSize = 16,
         insets = { left = 4, right = 4, top = 4, bottom = 4 },
     })
-    dressTitle = dress:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    dressTitle:SetPoint("TOPLEFT", 12, -10)
-    dressTitle:SetText("Dress the mannequin")
+    local title = dress:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 12, -10)
+    title:SetText("Mannequin")
     local close = CreateFrame("Button", "PlayerHousingDressClose", dress, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", 2, 2)
-
     dressFigure = dress:CreateFontString("PlayerHousingDressFigure", "OVERLAY", "GameFontHighlightSmall")
-    dressFigure:SetPoint("TOPLEFT", 12, -32)
-    local figureButton = API.MakeButton(dress, "Change", 64, function() DressCommand("stand figure " .. dressing) end,
-        "Change its figure", "Another race and gender to wear the gear.")
-    figureButton:SetHeight(18)
-    figureButton:SetPoint("TOPRIGHT", -12, -28)
-    dressAllOff = API.MakeButton(dress, "Take all off", 90, function() DressCommand("stand undress all " .. dressing) end,
-        "Take everything off", "Back to your bags (by mail when they're full).")
-    dressAllOff:SetHeight(18)
-    dressAllOff:SetPoint("RIGHT", figureButton, "LEFT", -4, 0)
+    dressFigure:SetPoint("TOP", 0, -12)
 
-    dressEmpty = dress:CreateFontString("PlayerHousingDressEmpty", "OVERLAY", "GameFontDisableSmall")
-    dressEmpty:SetPoint("TOPLEFT", 12, -56)
-    dressEmpty:SetWidth(296)
-    dressEmpty:SetJustifyH("LEFT")
-    dressRows = {}
-    for index = 1, DRESS_ROWS do
-        local row = CreateFrame("Frame", "PlayerHousingDressRow" .. index, dress)
-        row:SetWidth(296)
-        row:SetHeight(20)
-        row:SetPoint("TOPLEFT", 12, -54 - (index - 1) * 20)
-        row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetWidth(18)
-        row.icon:SetHeight(18)
-        row.icon:SetPoint("LEFT", 0, 0)
-        row.text = row:CreateFontString("PlayerHousingDressRow" .. index .. "Text", "OVERLAY", "GameFontHighlightSmall")
-        row.text:SetPoint("LEFT", 22, 0)
-        row.text:SetWidth(200)
-        row.text:SetJustifyH("LEFT")
-        row.button = API.MakeButton(row, "", 68, function()
-            local item = row.item
-            if item and item.kind == "worn" then
-                DressCommand(("stand undress %d %d"):format(item.slot, dressing))
-            elseif item then
-                DressCommand(("stand dress %d %d"):format(item.entry, dressing))
-            end
-        end)
-        row.button:SetHeight(18)
-        row.button:SetPoint("RIGHT", 0, 0)
-        row:Hide()
-        dressRows[index] = row
+    for index, name in ipairs(LEFT_SLOTS) do
+        SlotButton(name, 12, -36 - (index - 1) * 41)
     end
+    for index, name in ipairs(RIGHT_SLOTS) do
+        SlotButton(name, 330 - 12 - 37, -36 - (index - 1) * 41)
+    end
+    for index, name in ipairs(WEAPON_SLOTS) do
+        SlotButton(name, 330 / 2 - 60 + (index - 1) * 41, -330)
+    end
+
+    -- The mannequin itself, when it's the target (a right-click targets it).
+    dressModel = CreateFrame("PlayerModel", "PlayerHousingDressModel", dress)
+    dressModel:SetPoint("TOPLEFT", 56, -36)
+    dressModel:SetWidth(330 - 112)
+    dressModel:SetHeight(280)
+    dressHint = dress:CreateFontString("PlayerHousingDressHint", "OVERLAY", "GameFontDisableSmall")
+    dressHint:SetPoint("BOTTOM", dressModel, "BOTTOM", 0, 6)
+    dressHint:SetWidth(200)
+    dressHint:SetText("Drag gear from your bags onto it.")
+
+    raceButton = API.MakeButton(dress, "Human", 90, function(self)
+        local menu = {}
+        for _, entry in ipairs(RACES) do
+            menu[#menu + 1] = { text = entry[2], checked = entry[1] == current.race, func = function()
+                DressCommand(("stand look %d %s %d"):format(entry[1], current.gender == 1 and "female" or "male", dressing))
+            end }
+        end
+        EasyMenu(menu, raceMenu, self, 0, 0, "MENU")
+    end, "Race", "Its race; a new look comes with it.")
+    raceButton:SetPoint("TOPLEFT", 12, -376)
+    local male = API.MakeButton(dress, "Man", 50, function() DressCommand(("stand look %d male %d"):format(current.race, dressing)) end,
+        "A man", "Of the same race, with a new look.")
+    male:SetPoint("LEFT", raceButton, "RIGHT", 4, 0)
+    local female = API.MakeButton(dress, "Woman", 60, function() DressCommand(("stand look %d female %d"):format(current.race, dressing)) end,
+        "A woman", "Of the same race, with a new look.")
+    female:SetPoint("LEFT", male, "RIGHT", 4, 0)
+    local newLook = API.MakeButton(dress, "New look", 86, function()
+        DressCommand(("stand look %d %s %d"):format(current.race, current.gender == 1 and "female" or "male", dressing))
+    end, "A new look", "Another face, skin, hair and hair color, all ones a character could be made with.")
+    newLook:SetPoint("LEFT", female, "RIGHT", 4, 0)
+
+    local trade = API.MakeButton(dress, "Trade gear", 86, function() DressCommand(("stand trade %d"):format(dressing)) end,
+        "Trade gear", "What it wears goes on you, and what you wear goes on it. What you can't wear goes to your bags.")
+    trade:SetPoint("TOPLEFT", 12, -402)
+    local allOff = API.MakeButton(dress, "Take all off", 86, function() DressCommand(("stand undress all %d"):format(dressing)) end,
+        "Take everything off", "Back to your bags (by mail when they're full).")
+    allOff:SetPoint("LEFT", trade, "RIGHT", 4, 0)
+    local move = API.MakeButton(dress, "Move", 70, function()
+        API.Command("select " .. dressing)
+        API.Command("ghost move " .. dressing)
+        dress:Hide()
+    end, "Move it", "It goes on your mouse, like any piece: a click sets it down.")
+    move:SetPoint("LEFT", allOff, "RIGHT", 4, 0)
     dress:Hide()
+    tinsert(UISpecialFrames, "PlayerHousingDress")
 end
 
 API.ShowDress = function(placementId)
@@ -207,51 +304,57 @@ API.ShowDress = function(placementId)
     end
     dressing = placementId
     dressFigure:SetText("")
-    dressEmpty:SetText("Asking the server...")
-    for _, row in ipairs(dressRows) do
-        row:Hide()
+    for _, button in pairs(slotButtons) do
+        button.entry = false
+        button.icon:SetTexture(button.empty)
+    end
+    if UnitExists("target") and not UnitIsPlayer("target") and UnitName("target") == MANNEQUIN_NAME then
+        dressModel:SetUnit("target")
+        dressModel:Show()
+    else
+        dressModel:Hide()
     end
     dress:Show()
     API.RequestData("stand", placementId)
 end
 
+-- The server opens it (a right-click on a mannequin).
+API.OnMessage("dress", function(fields)
+    API.ShowDress(tonumber(fields[2] or ""))
+end)
+
 API.OnData("stand", function(list)
     if not dress or tonumber(list.arg or "") ~= dressing then
         return
     end
-    local items, worn = {}, 0
+    for _, button in pairs(slotButtons) do
+        button.entry = false
+        button.icon:SetTexture(button.empty)
+    end
+    local figure = ""
     for _, row in ipairs(list.rows) do
         if row[1] == "figure" then
-            dressFigure:SetText("Figure: " .. (row[2] or ""))
+            figure = row[2] or ""
+        elseif row[1] == "look" then
+            local look = tonumber(row[2] or "") or 0
+            current.race = look % 16
+            current.gender = math.floor(look / 256) % 2
         elseif row[1] == "worn" then
-            worn = worn + 1
-            table.insert(items, worn, { kind = "worn", slot = tonumber(row[2]), slotName = row[3], entry = tonumber(row[4]), name = row[5] })
-        elseif row[1] == "wear" then
-            items[#items + 1] = { kind = "wear", entry = tonumber(row[2]), name = row[3], slotName = row[4] }
+            local button = slotButtons[tonumber(row[2] or "")]
+            if button then
+                button.entry = tonumber(row[4])
+                button.icon:SetTexture(GetItemIcon(button.entry) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            end
         end
     end
-    if worn > 1 then dressAllOff:Show() else dressAllOff:Hide() end
-    dressEmpty:SetText(#items == 0 and "Nothing to show: armor you can see, weapons, shields, shirts and tabards in your bags can go on it." or "")
-    for index, row in ipairs(dressRows) do
-        local item = items[index]
-        row.item = item
-        if item then
-            row.icon:SetTexture(GetItemIcon(item.entry) or "Interface\\Icons\\INV_Misc_QuestionMark")
-            if item.kind == "worn" then
-                row.text:SetText(("%s |cffa0a0a0(%s)|r"):format(item.name, item.slotName))
-                row.button:SetText("Take off")
-            else
-                row.text:SetText(("|cffd0d0d0%s|r |cffa0a0a0%s|r"):format(item.name, item.slotName ~= "" and ("(" .. item.slotName .. ")") or ""))
-                row.button:SetText("Put on")
-            end
-            row:Show()
-        else
-            row:Hide()
-        end
+    dressFigure:SetText(figure)
+    ShowLook()
+    if dressModel:IsShown() then
+        dressModel:RefreshUnit()
     end
 end)
 
--- The window closes the list when the mannequin is no longer selected.
+-- The sheet closes when the mannequin is no longer selected.
 API.OnState(function(state)
     if dress and dress:IsShown() and state.selected ~= dressing then
         dress:Hide()

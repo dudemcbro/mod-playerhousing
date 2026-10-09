@@ -41,6 +41,23 @@ def ghost_pieces(wc, mark):
     return [pieces[i] for i in range(1, count + 1) if i in pieces]
 
 
+# Beside Krook by the innkeeper in Stormwind, where characters get their House Key.
+KROOK_SW = (-8862.90, 672.10, 98.00)
+
+
+def key_from_krook(wc, option):
+    """Talk to the Krook in sight and take the House Key option; returns (menu, messages, after)."""
+    wait_for(lambda: wc.nearest(STEWARD, TYPEID_UNIT) is not None, 10, wc)
+    krook = wc.nearest(STEWARD, TYPEID_UNIT)
+    if not krook:
+        return None, [], []
+    menu, msgs = wc.gossip_hello(krook.guid)
+    if not menu or not any(i["text"].startswith(option) for i in menu["items"]):
+        return menu, msgs, []
+    _, after = wc.gossip_select(option)
+    return menu, msgs, after
+
+
 def last_pose(wc, mark):
     """The last ghost pose since mark: dict(x, y, z, o, lift, turn, wall_turn, zfix, on_wall)."""
     poses = addon_since(wc, mark, "HOUSING\tgpose\t")
@@ -112,14 +129,24 @@ def main():
     db("REPLACE INTO character_reputation (guid, faction, standing, flags) VALUES (%d, %d, 42999, 1)" % (owner_guid, STORMWIND))
     db("UPDATE characters SET map=0, position_x=-8949.95, position_y=-132.49, position_z=83.53, orientation=0 "
        "WHERE guid IN (%s, %d)" % (ids, admin_char["guid"] & 0xFFFFFFFF))
+    db("UPDATE characters SET position_x=%.2f, position_y=%.2f, position_z=%.2f WHERE guid=%d" % (KROOK_SW + (owner_guid,)))
 
     # ------------------------------------------------------------- first login
     log("== first login: pieces are counts, not items")
     owner.login(owner_char["guid"])
+    owner.pump(2.0)
+    check("first login: no House Key yet", owner.count_item(HOUSE_KEY) == 0, str(owner.backpack()))
+    msgs = owner.command(".house home")
+    check("no key, no way home: Krook has one", has(msgs, "Krook") and owner.map_id == 0, joined(msgs))
+    msgs = owner.command(".house key")
+    check(".house key sends players to Krook", has(msgs, "Krook") and owner.count_item(HOUSE_KEY) == 0, joined(msgs))
+    menu, hello, msgs = key_from_krook(owner, "I'd like a house")
+    check("Krook by the Stormwind innkeeper offers a house", menu is not None and msgs is not None and any(
+        i["text"].startswith("I'd like a house") for i in menu["items"]), str(menu))
     wait_for(lambda: owner.count_item(HOUSE_KEY) == 1, 10, owner)
     owner.pump(1.0)
     msgs = owner.messages_since(0)
-    check("first login: told about the house and the window", has(msgs, "You have a house") and has(msgs, "housing window"), joined(msgs))
+    check("Krook gives the key: told about the house and the window", has(msgs, "You have a house") and has(msgs, "housing window"), joined(msgs))
     check("first login: the House Key is the one housing item in the bags",
           owner.count_item(HOUSE_KEY) == 1 and not any(owner.count_item(i) for i in (CHAIR, TABLE, LANTERN)), str(owner.backpack()))
     have = storage(owner_guid)
@@ -141,6 +168,17 @@ def main():
     check("the House Key opens the window too, no menu", addon_since(owner, mark, "HOUSING\topen") and owner.last_gossip is None,
           joined(msgs) + str(owner.addon_messages[mark:]))
     check("the House Key stays in the bags", owner.count_item(HOUSE_KEY) == 1)
+
+    # A lost key: Krook has another (and no second set of first pieces).
+    krook_sw = owner.nearest(STEWARD, TYPEID_UNIT)
+    menu, _ = owner.gossip_hello(krook_sw.guid) if krook_sw else (None, None)
+    check("with a key, Krook offers no other", krook_sw is not None and not (menu and any("House Key" in i["text"] for i in menu["items"])), str(menu))
+    owned = storage(owner_guid)
+    owner.destroy_item(HOUSE_KEY)
+    wait_for(lambda: owner.count_item(HOUSE_KEY) == 0, 5, owner)
+    menu, _, msgs = key_from_krook(owner, "I've lost my House Key")
+    wait_for(lambda: owner.count_item(HOUSE_KEY) == 1, 5, owner)
+    check("a lost key: Krook gives another", owner.count_item(HOUSE_KEY) == 1 and storage(owner_guid) == owned, "%s %s" % (menu, joined(msgs)))
 
     # ------------------------------------------------------------- old items join the counts
     log("== furnishing items from before")
@@ -305,6 +343,20 @@ def main():
     check("a click sets it down where the client showed it", table is not None and math.dist((table["x"], table["y"]), (x, y)) < 0.05
           and storage(owner_guid).get(TABLE) == before - 1, "%s %s" % (table, storage(owner_guid)))
 
+    # A lantern on a wall faces out from it; under a ceiling it hangs, its top at the point.
+    lantern_height = float(db("SELECT height * 1 FROM mod_playerhousing_piece WHERE item_entry = %d" % LANTERN, "acore_world")[0][0])
+    mark = len(owner.addon_messages)
+    owner.addon_command("house ghost %d" % LANTERN, name, wait=1.0)
+    owner.addon_command("house ghost at %.2f %.2f %.2f 1 0 0" % (x + 1, y + 1, z + 2), name, echo=23, wait=0.6)
+    pose = last_pose(owner, mark)
+    check("a lantern on a wall faces out from it", pose is not None and pose["on_wall"] and abs(pose["z"] - (z + 2)) < 0.05
+          and abs(pose["o"]) < 0.05, str(pose))
+    owner.addon_command("house ghost at %.2f %.2f %.2f 0 0 -1" % (x + 1, y + 1, z + 3), name, echo=24, wait=0.6)
+    pose = last_pose(owner, mark)
+    check("under a ceiling it hangs from it", pose is not None and not pose["on_wall"]
+          and abs(pose["z"] - (z + 3 - lantern_height)) < 0.05, "%s height %.2f" % (pose, lantern_height))
+    owner.addon_command("house ghost cancel", name, wait=0.5)
+
     # A client without the local flag gets the server's moves, as before.
     owner.addon_command("house addon 2 mouse", name, wait=0.5)
     mark = len(owner.addon_messages)
@@ -329,6 +381,7 @@ def main():
     check("decorating, a click picks the piece up onto the mouse and opens the window, no menu",
           chair and state and int(state[4]) == chair["id"] and state[21] == str(CHAIR) and state[22] == "move" and menu is None
           and addon_since(owner, mark, "HOUSING\topen"), "%s %s" % (state, menu))
+    check("no green ring under the picked piece (retired)", owner.nearest(903991, TYPEID_GAMEOBJECT) is None)
     # Held: size and tilt go on it, and are set with it.
     owner.command(".house size bigger")
     owner.command(".house tilt forward 90")
@@ -401,8 +454,7 @@ def main():
     wait_for(lambda: owner.count_item(SWORD) == 1, 3, owner)
     owner.addon_command("house data stand %d" % (stand["id"] if stand else 0), name, wait=1.0)
     rows = addon_list(owner, "stand") or []
-    check("the dress list has the figure and the sword in the bags",
-          any(r[0] == "figure" for r in rows) and any(r[0] == "wear" and r[1] == str(SWORD) for r in rows), str(rows))
+    check("the sheet has the figure and its look", any(r[0] == "figure" for r in rows) and any(r[0] == "look" for r in rows), str(rows))
     msgs = owner.command(".house stand dress %d %d" % (SWORD, stand["id"] if stand else 0))
     wait_for(lambda: owner.count_item(SWORD) == 0, 3, owner)
     check("dressing it takes the sword from the bags", stand and gear_of(owner_guid, stand["id"]).get(SLOT_MAIN_HAND, (0, 0))[1] == SWORD
@@ -411,6 +463,39 @@ def main():
     wait_for(lambda: owner.count_item(SWORD) == 1, 3, owner)
     check("undressing gives it back", owner.count_item(SWORD) == 1 and stand and not gear_of(owner_guid, stand["id"]), joined(msgs))
     owner.command(".house stand dress %d %d" % (SWORD, stand["id"] if stand else 0))
+
+    # Its race, man or woman (a random look a character could have).
+    stand_id = stand["id"] if stand else 0
+    look_of = lambda: int((db("SELECT look FROM mod_playerhousing_placement WHERE owner_guid = %d AND placement_id = %d" % (owner_guid, stand_id)) or [["0"]])[0][0])
+    msgs = owner.command(".house stand look 11 female %d" % stand_id)
+    check("a Draenei woman", look_of() & 0x10F == 0x10B, "%x %s" % (look_of(), joined(msgs)))
+    looks = set()
+    for _ in range(4):
+        owner.command(".house stand look 11 female %d" % stand_id, wait=0.3)
+        looks.add(look_of() >> 9)
+    check("each new look is drawn again", len(looks) > 1 and look_of() & 0x10F == 0x10B, str(looks))
+    owner.addon_command("house data stand %d" % stand_id, name, wait=1.0)
+    rows = addon_list(owner, "stand") or []
+    check("the sheet hears its look", any(r[0] == "look" and r[1] == str(look_of()) for r in rows), str(rows))
+    msgs = owner.command(".house stand pose next %d" % stand_id)
+    check("no poses for now: it stands", has(msgs, "Usage") and (look_of() >> 4) & 0xF == 0, joined(msgs))
+
+    # Trading gear: the mannequin's onto the character, the character's onto it; again, back.
+    worn = lambda: {int(r[0]): int(r[1]) for r in db("SELECT ci.slot, ii.itemEntry FROM character_inventory ci JOIN item_instance ii "
+                                                    "ON ii.guid = ci.item WHERE ci.guid = %d AND ci.bag = 0 AND ci.slot < 19" % owner_guid)}
+    char_before, stand_before = worn(), {s: g[1] for s, g in gear_of(owner_guid, stand_id).items()}
+    msgs = owner.command(".house stand trade %d" % stand_id)
+    stand_after = {s: g[1] for s, g in gear_of(owner_guid, stand_id).items()}
+    char_after = worn()
+    shown = {k: v for k, v in char_before.items() if k in (0, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 17, 18)}
+    check("trading puts the character's gear on the mannequin", stand_after == shown, "%s -> %s %s" % (char_before, stand_after, joined(msgs)))
+    check("and the mannequin's on the character (or in the bags)", all(char_after.get(s) == e or owner.count_item(e) for s, e in stand_before.items())
+          and not any(char_after.get(s) == e for s, e in shown.items() if s not in stand_before), "%s %s" % (char_after, joined(msgs)))
+    owner.command(".house stand trade %d" % stand_id)
+    check("trading back puts it all back", worn() == char_before and {s: g[1] for s, g in gear_of(owner_guid, stand_id).items()} == stand_before
+          or owner.count_item(SWORD) == 1, "%s %s" % (worn(), gear_of(owner_guid, stand_id)))
+    if owner.count_item(SWORD) == 1:
+        owner.command(".house stand dress %d %d" % (SWORD, stand_id))
 
     # ------------------------------------------------------------- sets follow like a piece
     log("== sets")
@@ -511,12 +596,16 @@ def main():
     owner.logout_to_characters()
     alt_char = get_or_create_char(owner, "Krookalt")
     alt_guid = alt_char["guid"] & 0xFFFFFFFF
-    db("UPDATE characters SET map=0, position_x=-8949.95, position_y=-132.49, position_z=83.53 WHERE guid=%d" % alt_guid)
+    db("UPDATE characters SET map=0, position_x=%.2f, position_y=%.2f, position_z=%.2f WHERE guid=%d" % (KROOK_SW + (alt_guid,)))
     with owner.objects_lock:
         owner.objects.clear()
     owner.login(alt_char["guid"])
     owner.pump(1.0)
     check("a second character gets no island of its own", db("SELECT COUNT(*) FROM mod_playerhousing_house WHERE owner_guid=%d" % alt_guid) == [["0"]])
+    menu, _, msgs = key_from_krook(owner, "I'd like a house")
+    wait_for(lambda: owner.count_item(HOUSE_KEY) == 1, 5, owner)
+    check("its House Key from Krook: the account's island", owner.count_item(HOUSE_KEY) == 1 and has(owner.messages_since(0), "shared"),
+          "%s %d %s" % (menu, owner.count_item(HOUSE_KEY), joined(owner.messages_since(0))))
     check("and no second set of first pieces", storage(owner_guid) == owned_before and not storage(alt_guid), "%s %s" % (owned_before, storage(alt_guid)))
     owner.command(".house home")
     wait_for_map(owner, HOUSING_MAP)
@@ -536,6 +625,49 @@ def main():
     guest.pump(1.0)
     gstate = addon_state(guest)
     check("visiting any of the account's characters goes to its island", gstate and gstate[11] == args.owner_char, str(gstate))
+
+    # ------------------------------------------------------------- turning turns what you hold
+    log("== turning")
+    owner.addon_command("house addon 2 mouse local", "Krookalt", wait=0.5)
+    owner.command(".house ghost %d" % LANTERN)
+    x, y, z, o = owner.pos
+    mark = len(owner.addon_messages)
+    owner.addon_command("house ghost at %.2f %.2f %.2f" % (x + 3.0, y, L["ground"]), "Krookalt", wait=0.5)
+    owner.pump(0.5)
+    before = last_pose(owner, mark)
+    mark = len(owner.addon_messages)
+    move(owner, x, y, z, o + 0.3)
+    owner.pump(0.6)
+    after = last_pose(owner, mark)
+    turned = before and after and abs(math.remainder(after["turn"] - before["turn"] - 0.3, 2 * math.pi)) < 0.02
+    check("turning on the spot turns the held piece as much", turned, "%s -> %s" % (before, after))
+    owner.command(".house ghost cancel")
+
+    # ------------------------------------------------------------- Krook
+    log("== Krook")
+    owner.command(".house krook")
+    owner.pump(1.0)
+    krook = owner.nearest(STEWARD, TYPEID_UNIT)
+    near_owner = krook and math.dist((krook.x, krook.y), owner.pos[:2]) < 5.0
+    check("Call Krook brings him over", near_owner, str(krook and (krook.x, krook.y)) + " " + str(owner.pos))
+    # The tour done (by any character of the account): next visit he stays away.
+    db("REPLACE INTO character_queststatus_rewarded (guid, quest, active) VALUES (%d, 900404, 1)" % owner_guid)
+    guest.command(".house leave")
+    owner.command(".house leave")
+    wait_for(lambda: owner.map_id != HOUSING_MAP or owner.pos[0] < 15000, 12, owner)
+    owner.pump(2.0)
+    with owner.objects_lock:
+        owner.objects.clear()
+    owner.command(".house home")
+    wait_for_map(owner, HOUSING_MAP)
+    owner.pump(3.0)
+    krook = owner.nearest(STEWARD, TYPEID_UNIT)
+    check("after the tour, Krook isn't on the island until called", krook is None or math.dist((krook.x, krook.y), owner.pos[:2]) > 60,
+          str(krook and (krook.x, krook.y)))
+    owner.command(".house krook")
+    owner.pump(1.0)
+    check("and comes when called", owner.nearest(STEWARD, TYPEID_UNIT) is not None)
+    db("DELETE FROM character_queststatus_rewarded WHERE guid=%d AND quest=900404" % owner_guid)
 
     owner.close()
     guest.close()

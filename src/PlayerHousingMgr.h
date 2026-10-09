@@ -63,7 +63,6 @@ namespace Housing
     // Items, objects and texts owned by the module (see sql/db_world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
-    constexpr uint32 SELECTION_RING_GO = 903991;  // decorating: under the selected pieces
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
@@ -84,6 +83,7 @@ namespace Housing
     constexpr uint32 MOVER_ITEM_LAST = 901199;
 
     constexpr uint32 TEXT_HOME = 900300;  // Krook's greeting above his quests
+    constexpr uint32 TEXT_NO_KEY = 900301; // Krook's greeting to someone without a House Key
 
     enum PieceKind : uint8
     {
@@ -240,7 +240,7 @@ namespace Housing
         float scale{1.0f};
         float pitch{0.0f};                // tilt, radians: + tips its front down
         float roll{0.0f};                 // tilt, radians: + leans it to its right
-        uint32 look{0};                   // stands: race | gender << 8
+        uint64 look{0};                   // stands: race, pose, gender and looks (HousingStands.cpp)
         uint32 parent{0};                 // the surface it stands on: it moves with it
         uint32 placedBy{0};               // a roommate who placed it (0: the island's owner); it goes back to them
         std::map<uint8, GearItem> gear;   // stands: equipment slot -> item
@@ -353,7 +353,13 @@ public:
     bool RequestGoHome(Player* player, std::string& reason);
     bool LeaveHouse(Player* player, std::string& reason);
     bool Unstuck(Player* player, std::string& reason);
+    // Krook comes over to the player (the window's Call Krook), on their island.
+    bool CallSteward(Player* player, std::string& reason);
     bool GiveHouseKey(Player* player, std::string& reason);
+    // Whether Krook (or the old login gift) ever gave this character a House Key.
+    bool HadHouseKey(Player const* player) const;
+    // Krook hands over a House Key: the first on the account comes with its first pieces.
+    void GiveKeyFromKrook(Player* player);
 
     // Where the player stands: 0 when not on anyone's island.
     ObjectGuid::LowType GetIslandOwner(Player const* player) const;
@@ -549,7 +555,7 @@ public:
     static int8 StandSlotFor(ItemTemplate const* proto, std::map<uint8, Housing::GearItem> const& worn);
     static char const* StandSlotName(uint8 slot);
     static std::string StandItemName(uint32 itemEntry);
-    static std::string LookName(uint32 look);
+    static std::string LookName(uint64 look);
     std::vector<Item*> GetWearableItems(Player* player) const;
     bool PutOnStand(Player* player, uint32 placementId, uint32 itemGuid, std::string& reason);
     // The first wearable one of that item in the bags (the addon only knows items by entry).
@@ -558,6 +564,10 @@ public:
     std::string DescribeStand(Player const* player, uint32 placementId) const;
     bool TakeOffStand(Player* player, uint32 placementId, int32 slot, std::string& reason);
     bool ChangeStandFigure(Player* player, uint32 placementId, std::string& reason);
+    // A race and gender, with a random look one could be made with.
+    bool SetStandLook(Player* player, uint32 placementId, uint8 race, uint8 gender, std::string& reason);
+    // What the mannequin wears onto the character, and what the character wears onto it.
+    bool TradeStandGear(Player* player, uint32 placementId, std::string& reason);
     bool SendMannequinLook(WorldSession* session, ObjectGuid const& guid) const;
 
     // ---- collection (HousingCollection.cpp)
@@ -668,16 +678,6 @@ private:
         bool editCopy{false};
     };
 
-    // Decorating: a ring under each of a player's selected pieces, and where it was put.
-    struct SelectionRing
-    {
-        ObjectGuid guid;
-        float x{0.0f};
-        float y{0.0f};
-        float z{0.0f};
-        float scale{0.0f};
-    };
-
     // One per occupied island. Islands share the spot on an open-world map and are kept apart
     // by giving each owner an exact phase of their own (see IsHousingPhase).
     struct Session
@@ -694,7 +694,6 @@ private:
         std::unordered_set<ObjectGuid> occupants;
         std::map<uint32, Housing::Placement> placements;
         std::unordered_map<uint32, SpawnedPiece> spawned;
-        std::unordered_map<ObjectGuid::LowType, std::map<uint32, SelectionRing>> rings;  // per player: placement -> ring
         ObjectGuid photoGuid;  // the photo tour's building
         ObjectGuid stewardGuid;
     };
@@ -723,6 +722,11 @@ private:
         uint32 displayId{0};
         uint8 race{1};
         uint8 gender{0};
+        uint8 skin{0};
+        uint8 face{0};
+        uint8 hair{0};
+        uint8 hairColor{0};
+        uint8 facial{0};
         std::array<uint32, 11> displays{};
     };
 
@@ -756,7 +760,6 @@ private:
     bool IsOnIslandGround(float x, float y) const;
     Map* GetHousingMap() const;
     void OnArrived(Player* player, ObjectGuid::LowType ownerGuid);
-    void GiveFirstLoginItems(Player* player);
     uint32 GetCharacterFlags(ObjectGuid::LowType guid, uint32* tips = nullptr) const;
     void SetCharacterFlag(ObjectGuid::LowType guid, uint32 flag, bool tip) const;
     void ClearCharacterFlag(ObjectGuid::LowType guid, uint32 flag) const;
@@ -780,9 +783,10 @@ private:
     void RemoveSpawned(Map* map, ObjectGuid const& guid);
     void DespawnPlacement(Session& session, Map* map, uint32 placementId);
     void RespawnPlacement(Session& session, Map* map, uint32 placementId);
-    // Each update: rings under the selected pieces while decorating.
-    void UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid);
     void SpawnSteward(Session& session, Map* map);
+    void SpawnStewardAt(Session& session, Map* map, Position const& position);
+    // Krook's welcome tour done by any character of the island's account: he stays away.
+    bool TourDone(ObjectGuid::LowType ownerGuid) const;
     void PlaceStarterWreckage(Session& session, Map* map);
     bool CheckLimit(Session const& session, Housing::PieceDefinition const& piece, std::string& reason) const;
     bool IsSpotOnIsland(float x, float y, float z) const;
@@ -822,6 +826,8 @@ private:
     void ReturnGear(Player* player, ObjectGuid::LowType islandOwner, ObjectGuid::LowType gearOwner, uint32 placementId, uint8 slot,
         Housing::GearItem const& gear);
     void LoadGear(ObjectGuid::LowType ownerGuid, std::map<uint32, Housing::Placement>& placements) const;
+    // A stand's item, loaded from item_instance (not in anyone's inventory), or null.
+    Item* LoadGearItem(ObjectGuid::LowType ownerGuid, Housing::GearItem const& gear) const;
     void SavePlacement(ObjectGuid::LowType ownerGuid, Housing::Placement const& placement, uint32 mapId) const;
     void DeletePlacement(ObjectGuid::LowType ownerGuid, uint32 placementId) const;
     std::string PieceName(uint32 itemEntry) const;
@@ -875,7 +881,7 @@ private:
         float scale{1.0f};
         float pitch{0.0f};
         float roll{0.0f};
-        uint32 look{0};
+        uint64 look{0};
         ObjectGuid shown;       // the ghost creature, or the carried building
         float x{0.0f};          // where it's shown
         float y{0.0f};
@@ -912,11 +918,14 @@ private:
         float pointZ{0.0f};
         float rawZ{0.0f};       // the height the client gave with the point, before the rules
         bool onWall{false};     // the point is on a wall: the piece faces out from it
+        bool onCeiling{false};  // the point is on a ceiling: the piece hangs from it
         float wallO{0.0f};
         float wallTurn{0.0f};   // the player's own turn, on top of the wall's
         std::string note;       // why the last point wasn't taken (for the addon), or empty
         bool local{false};      // the player's own client moves it (see SetAddonClient)
         std::string piecesSent; // the ghost's pieces as last told to the addon
+        float playerO{0.0f};    // the player's facing as last seen: turning turns the piece too
+        bool playerOKnown{false};
     };
     // Which way the lead faces now: its own turn, or out from the wall it's on.
     static float GhostFacing(Ghost const& ghost);

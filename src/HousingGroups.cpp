@@ -78,7 +78,7 @@ namespace
         float scale{1.0f};
         float pitch{0.0f};
         float roll{0.0f};
-        uint32 look{0};
+        uint64 look{0};
         int32 parent{-1};  // index of the piece it stands on in the set
     };
 
@@ -101,7 +101,7 @@ namespace
                 piece.scale = fields[5].Get<float>();
                 piece.pitch = fields[6].Get<float>();
                 piece.roll = fields[7].Get<float>();
-                piece.look = fields[8].Get<uint32>();
+                piece.look = fields[8].Get<uint64>();
                 piece.parent = int32(fields[9].Get<uint32>()) - 1;
                 pieces.push_back(piece);
             } while (result->NextRow());

@@ -10,7 +10,30 @@ local GRID_COLUMNS, GRID_ROWS, SLOT = 9, 4, 40
 local VISIT_LISTS = { "Party", "Guild", "Friends", "Invited", "Public", "Most liked" }
 local PRIVACY = { "Private", "Friends", "Public" }   -- friends and guild, on the server
 local FAVORITES, RECENT = "favorites", "recent"      -- the category picker's own entries, after All
-local SORTS = { { "order", "Sort: collection" }, { "name", "Sort: name" }, { "cost", "Sort: cost" }, { "owned", "Sort: owned" } }
+local SORTS = { { "order", "Sort: collection" }, { "name", "Sort: name" }, { "cost", "Sort: cost" }, { "owned", "Sort: owned" },
+    { "unlock", "Sort: unlock" } }
+
+-- Sort: unlock puts pieces with the same unlock together, by kind (levels, reputations,
+-- exploring, dungeons and raids, professions, achievements and holidays, the rest), then by
+-- the unlock itself (numbers by value: level 10 before level 20), and the ones everyone has
+-- last.
+local UNLOCK_KINDS = { { "^Reach level", 1 }, { "^Reach %a+ with", 2 }, { "^Explore", 3 }, { "^Complete", 4 }, { "^Defeat", 4 },
+    { "^Reach %d+ in", 5 }, { "^Earn", 6 } }
+local function UnlockKey(info)
+    local hint = info[7] or ""
+    if hint == "" then
+        return "9"
+    end
+    local kind = 7
+    for _, rule in ipairs(UNLOCK_KINDS) do
+        if hint:find(rule[1]) then
+            kind = rule[2]
+            break
+        end
+    end
+    -- Numbers padded, so they sort by value.
+    return kind .. hint:lower():gsub("%d+", function(n) return ("%08d"):format(tonumber(n)) end)
+end
 
 local frame
 local tabButtons, panels = {}, {}
@@ -354,6 +377,15 @@ local function CollectionPieces()
         table.sort(list, function(left, right)
             if left[5] ~= right[5] then return left[5] < right[5] end
             return pieceOrder[left[1]] < pieceOrder[right[1]]
+        end)
+    elseif sort == "unlock" then
+        local keys = {}
+        for _, info in ipairs(list) do
+            keys[info[1]] = UnlockKey(info)
+        end
+        table.sort(list, function(left, right)
+            if keys[left[1]] ~= keys[right[1]] then return keys[left[1]] < keys[right[1]] end
+            return left[2] < right[2]
         end)
     elseif sort == "owned" then
         table.sort(list, function(left, right)
@@ -1168,8 +1200,8 @@ local function CreateIsland()
         "Pack up everything", "Every piece back into your Collection (mannequins' gear to your bags). Undo puts it all back."):SetPoint("TOPLEFT", 12, -214)
     SmallButton(panel, "PlayerHousingUnstuck", "Unstuck", 70, function() API.Command("unstuck") end,
         "Unstuck", "Back to the island's landing spot."):SetPoint("TOPLEFT", 106, -214)
-    SmallButton(panel, "PlayerHousingNewKey", "New House Key", 110, function() API.Command("key") end,
-        "A new House Key", "If yours is gone. Only one at a time."):SetPoint("TOPRIGHT", -12, -214)
+    SmallButton(panel, "PlayerHousingCallKrook", "Call Krook", 80, function() API.Command("krook") end,
+        "Call Krook", "Krook, the housing steward, comes over to you. After his welcome tour he only comes when called."):SetPoint("TOPLEFT", 180, -214)
 end
 
 API.OnData("island", function(list)

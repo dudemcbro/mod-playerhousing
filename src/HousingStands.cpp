@@ -17,6 +17,7 @@
 #include "WorldSession.h"
 
 #include <cctype>
+#include <functional>
 #include <iterator>
 
 using namespace Housing;
@@ -29,6 +30,7 @@ using namespace Housing;
 namespace
 {
     // The slots a mirror image shows, in the order of SMSG_MIRRORIMAGE_DATA.
+
     constexpr uint8 MIRROR_SLOTS[] =
     {
         EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_SHOULDERS, EQUIPMENT_SLOT_BODY, EQUIPMENT_SLOT_CHEST,
@@ -40,16 +42,75 @@ namespace
     constexpr uint8 RACES[] = { RACE_HUMAN, RACE_DWARF, RACE_NIGHTELF, RACE_GNOME, RACE_DRAENEI,
                                 RACE_ORC, RACE_UNDEAD_PLAYER, RACE_TAUREN, RACE_TROLL, RACE_BLOODELF };
 
-    uint8 LookRace(uint32 look)
+    // A stand's look, in one number (older ones have only race and gender, the rest 0):
+    //   bits 0-3 race, 4-7 pose, 8 gender, 9-13 skin, 14-18 face, 19-23 hair, 24-27 hair
+    //   color, 28-31 facial hair, 32-35 the pose's high bits (poses past the first 16).
+    uint8 LookRace(uint64 look)
     {
-        uint8 race = uint8(look & 0xFF);
+        uint8 race = uint8(look & 0x0F);
         for (uint8 known : RACES)
             if (known == race)
                 return race;
         return RACE_HUMAN;
     }
 
-    uint8 LookGender(uint32 look) { return ((look >> 8) & 0xFF) == GENDER_FEMALE ? GENDER_FEMALE : GENDER_MALE; }
+    uint8 LookGender(uint64 look) { return (look >> 8) & 1 ? GENDER_FEMALE : GENDER_MALE; }
+
+    struct Features
+    {
+        uint8 skin{0};
+        uint8 face{0};
+        uint8 hair{0};
+        uint8 hairColor{0};
+        uint8 facial{0};
+    };
+
+    Features LookFeatures(uint64 look)
+    {
+        return Features{ uint8((look >> 9) & 0x1F), uint8((look >> 14) & 0x1F), uint8((look >> 19) & 0x1F),
+                         uint8((look >> 24) & 0x0F), uint8((look >> 28) & 0x0F) };
+    }
+
+    // Poses are for version 2 (only some animations hold still the same for every viewer):
+    // every stand stands. Its pose's bits in the look are kept as stored, unused for now.
+    uint64 MakeLook(uint8 race, uint8 gender, uint8 pose, Features const& f)
+    {
+        return uint64(race & 0x0F) | (uint64(pose & 0x0F) << 4) | (uint64(gender & 1) << 8) | (uint64(f.skin & 0x1F) << 9)
+            | (uint64(f.face & 0x1F) << 14) | (uint64(f.hair & 0x1F) << 19) | (uint64(f.hairColor & 0x0F) << 24)
+            | (uint64(f.facial & 0x0F) << 28) | (uint64((pose >> 4) & 0x0F) << 32);
+    }
+
+    // A random look a character of that race and gender could have at creation: skin, then a
+    // face for that skin, a hairstyle and a color it comes in, facial hair in that color.
+    Features RandomFeatures(uint8 race, uint8 gender)
+    {
+        std::vector<CharSectionsEntry const*> sections;
+        for (uint32 i = 0; i < sCharSectionsStore.GetNumRows(); ++i)
+            if (CharSectionsEntry const* entry = sCharSectionsStore.LookupEntry(i))
+                if (entry->Race == race && entry->Gender == gender && (entry->Flags & SECTION_FLAG_PLAYER) && !(entry->Flags & SECTION_FLAG_DEATH_KNIGHT))
+                    sections.push_back(entry);
+        auto pick = [&](uint32 genType, std::function<bool(CharSectionsEntry const*)> fits, bool type) -> int32
+        {
+            std::vector<uint32> values;
+            for (CharSectionsEntry const* entry : sections)
+                if (entry->GenType == genType && fits(entry))
+                    values.push_back(type ? entry->Type : entry->Color);
+            return values.empty() ? -1 : int32(values[urand(0, uint32(values.size()) - 1)]);
+        };
+        auto any = [](CharSectionsEntry const*) { return true; };
+        Features f;
+        int32 skin = pick(0, any, false);
+        f.skin = uint8(std::max(skin, 0));
+        int32 face = pick(1, [&](CharSectionsEntry const* e) { return int32(e->Color) == skin; }, true);
+        f.face = uint8(std::max(face >= 0 ? face : pick(1, any, true), 0));
+        int32 hair = pick(3, any, true);
+        f.hair = uint8(std::max(hair, 0));
+        int32 hairColor = pick(3, [&](CharSectionsEntry const* e) { return int32(e->Type) == hair; }, false);
+        f.hairColor = uint8(std::max(hairColor, 0));
+        int32 facial = pick(2, [&](CharSectionsEntry const* e) { return int32(e->Color) == hairColor; }, true);
+        f.facial = uint8(std::max(facial, 0));
+        return f;
+    }
 
     char const* RaceName(uint8 race)
     {
@@ -146,7 +207,7 @@ char const* PlayerHousingMgr::StandSlotName(uint8 slot)
     }
 }
 
-std::string PlayerHousingMgr::LookName(uint32 look)
+std::string PlayerHousingMgr::LookName(uint64 look)
 {
     return Acore::StringFormat("{} {}", RaceName(LookRace(look)), LookGender(look) == GENDER_FEMALE ? "woman" : "man");
 }
@@ -194,6 +255,21 @@ bool PlayerHousingMgr::MoveGearToStand(Player* player, ObjectGuid::LowType owner
     return true;
 }
 
+Item* PlayerHousingMgr::LoadGearItem(ObjectGuid::LowType ownerGuid, GearItem const& gear) const
+{
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(gear.itemEntry);
+    QueryResult result = proto ? CharacterDatabase.Query(
+        "SELECT creatorGuid, giftCreatorGuid, count, duration, charges, flags, enchantments, randomPropertyId, durability, playedTime, text, "
+        "guid, itemEntry, owner_guid FROM item_instance WHERE guid={}", gear.itemGuid) : QueryResult();
+    Item* item = proto ? NewItemOrBag(proto) : nullptr;
+    if (!result || !item || !item->LoadFromDB(gear.itemGuid, ObjectGuid::Create<HighGuid::Player>(ownerGuid), result->Fetch(), gear.itemEntry))
+    {
+        delete item;
+        return nullptr;
+    }
+    return item;
+}
+
 void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType islandOwner, ObjectGuid::LowType gearOwner, uint32 placementId, uint8 slot,
     GearItem const& gear)
 {
@@ -205,14 +281,10 @@ void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType islandOwne
         player = nullptr;
 
     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(gear.itemEntry);
-    QueryResult result = proto ? CharacterDatabase.Query(
-        "SELECT creatorGuid, giftCreatorGuid, count, duration, charges, flags, enchantments, randomPropertyId, durability, playedTime, text, "
-        "guid, itemEntry, owner_guid FROM item_instance WHERE guid={}", gear.itemGuid) : QueryResult();
-    Item* item = proto ? NewItemOrBag(proto) : nullptr;
-    if (!result || !item || !item->LoadFromDB(gear.itemGuid, ObjectGuid::Create<HighGuid::Player>(ownerGuid), result->Fetch(), gear.itemEntry))
+    Item* item = LoadGearItem(ownerGuid, gear);
+    if (!item)
     {
         LOG_ERROR("module", "mod-playerhousing: Item {} (entry {}) on stand {} of {} is gone from item_instance.", gear.itemGuid, gear.itemEntry, placementId, ownerGuid);
-        delete item;
         CharacterDatabase.DirectExecute(deleteRow);
         return;
     }
@@ -286,6 +358,8 @@ bool PlayerHousingMgr::SpawnStand(Session& session, Map* map, Placement const& p
     figure->SetUnitFlag2(UNIT_FLAG2_MIRROR_IMAGE);
     figure->SetReactState(REACT_PASSIVE);
     figure->SetControlled(true, UNIT_STATE_ROOT);
+    // Held still like the figurines: no shifting weight or looking around.
+    figure->AddAura(SPELL_FREEZE_ANIM, figure);
     uint8 virtualSlot = 0;
     for (uint8 slot : { EQUIPMENT_SLOT_MAINHAND, EQUIPMENT_SLOT_OFFHAND, EQUIPMENT_SLOT_RANGED })
     {
@@ -298,6 +372,12 @@ bool PlayerHousingMgr::SpawnStand(Session& session, Map* map, Placement const& p
     look.displayId = displayId;
     look.race = race;
     look.gender = gender;
+    Features features = LookFeatures(placement.look);
+    look.skin = features.skin;
+    look.face = features.face;
+    look.hair = features.hair;
+    look.hairColor = features.hairColor;
+    look.facial = features.facial;
     for (size_t i = 0; i < std::size(MIRROR_SLOTS); ++i)
     {
         auto itr = placement.gear.find(MIRROR_SLOTS[i]);
@@ -377,11 +457,11 @@ bool PlayerHousingMgr::SendMannequinLook(WorldSession* session, ObjectGuid const
     data << uint8(look.race);
     data << uint8(look.gender);
     data << uint8(CLASS_WARRIOR);
-    data << uint8(0);   // skin
-    data << uint8(0);   // face
-    data << uint8(0);   // hair
-    data << uint8(0);   // hair color
-    data << uint8(0);   // facial hair
+    data << uint8(look.skin);
+    data << uint8(look.face);
+    data << uint8(look.hair);
+    data << uint8(look.hairColor);
+    data << uint8(look.facial);
     data << uint32(0);  // guild
     for (uint32 display : look.displays)
         data << uint32(display);
@@ -558,6 +638,160 @@ bool PlayerHousingMgr::ChangeStandFigure(Player* player, uint32 placementId, std
     }
 
     Placement after = itr->second;
-    after.look = uint32(race) | (uint32(gender) << 8);
+    after.look = MakeLook(race, gender, 0, RandomFeatures(race, gender));
     return ChangeStand(player, placementId, after, Acore::StringFormat("made the {} a {}", piece->name, LookName(after.look)), reason);
+}
+
+bool PlayerHousingMgr::SetStandLook(Player* player, uint32 placementId, uint8 race, uint8 gender, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece || !piece->HasFlag(PIECE_FLAG_STAND))
+    {
+        reason = "That isn't a mannequin.";
+        return false;
+    }
+    if (LookRace(race) != race || race == 0)
+    {
+        reason = "Mannequins come in the playable races only.";
+        return false;
+    }
+    gender = gender == GENDER_FEMALE ? GENDER_FEMALE : GENDER_MALE;
+    Placement after = itr->second;
+    after.look = MakeLook(race, gender, 0, RandomFeatures(race, gender));
+    return ChangeStand(player, placementId, after, Acore::StringFormat("made the {} a {}", piece->name, LookName(after.look)), reason);
+}
+
+// Trading gear: what the mannequin wears goes on the character, and what the character wears
+// (that a mannequin shows) goes on the mannequin, in one go. What the character can't wear
+// goes to the bags (or by mail when they're full). One transaction, so nothing is ever in
+// neither place.
+bool PlayerHousingMgr::TradeStandGear(Player* player, uint32 placementId, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+    auto itr = session->placements.find(placementId);
+    PieceDefinition const* piece = itr != session->placements.end() ? GetPiece(itr->second.itemEntry) : nullptr;
+    if (!piece || !piece->HasFlag(PIECE_FLAG_STAND))
+    {
+        reason = "That isn't a mannequin.";
+        return false;
+    }
+    if (ItemOwnerOf(*session, itr->second) != HomeOf(player))
+    {
+        reason = Acore::StringFormat("Only {} can dress this mannequin: it holds their gear.", NameOf(ItemOwnerOf(*session, itr->second)));
+        return false;
+    }
+    if (!player->IsAlive() || player->IsInCombat())
+    {
+        reason = "Not now: trading gear waits until you're alive and out of combat.";
+        return false;
+    }
+
+    // What the character wears that shows on a mannequin (rings, trinkets and relics stay).
+    std::map<uint8, GearItem> none;
+    std::vector<Item*> fromCharacter;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item* worn = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!worn || worn->IsInTrade() || StandSlotFor(worn->GetTemplate(), none) < 0)
+            continue;
+        if (player->CanUnequipItem(uint16(INVENTORY_SLOT_BAG_0) << 8 | slot, false) != EQUIP_ERR_OK)
+            continue;
+        fromCharacter.push_back(worn);
+    }
+    Placement before = itr->second;
+    if (fromCharacter.empty() && before.gear.empty())
+    {
+        reason = Acore::StringFormat("Neither you nor the {} is wearing anything to trade.", piece->name);
+        return false;
+    }
+
+    // The mannequin's gear, out of its rows.
+    std::vector<std::pair<uint8, Item*>> fromStand;
+    std::vector<std::string> missing;
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    trans->Append("DELETE FROM mod_playerhousing_placement_gear WHERE owner_guid={} AND placement_id={}", session->ownerGuid, placementId);
+    for (auto const& [slot, gear] : before.gear)
+    {
+        if (Item* item = LoadGearItem(HomeOf(player), gear))
+            fromStand.emplace_back(slot, item);
+        else
+            missing.push_back(StandItemName(gear.itemEntry));
+    }
+
+    // The character's gear onto the mannequin, in the slot it was worn in.
+    Placement after = before;
+    after.gear.clear();
+    for (Item* worn : fromCharacter)
+    {
+        uint8 slot = worn->GetSlot();
+        uint32 itemGuid = worn->GetGUID().GetCounter();
+        uint32 entry = worn->GetEntry();
+        player->MoveItemFromInventory(INVENTORY_SLOT_BAG_0, slot, true);
+        worn->DeleteFromInventoryDB(trans);
+        worn->SetState(ITEM_CHANGED);
+        worn->SaveToDB(trans);
+        trans->Append("REPLACE INTO mod_playerhousing_placement_gear (owner_guid, placement_id, slot, item_guid, item_entry) VALUES ({}, {}, {}, {}, {})",
+            session->ownerGuid, placementId, uint32(slot), itemGuid, entry);
+        after.gear[slot] = GearItem{ itemGuid, entry };
+        delete worn;
+    }
+    player->AutoUnequipOffhandIfNeed();
+
+    // The mannequin's gear onto the character: the slot it had, else any it fits, else the
+    // bags, else the mail.
+    uint32 toBags = 0;
+    uint32 mailed = 0;
+    for (auto const& [slot, item] : fromStand)
+    {
+        item->SetOwnerGUID(player->GetGUID());
+        uint16 dest = 0;
+        if (player->CanEquipItem(slot, dest, item, false) == EQUIP_ERR_OK
+            || player->CanEquipItem(NULL_SLOT, dest, item, false) == EQUIP_ERR_OK)
+        {
+            item->SetState(ITEM_UNCHANGED);
+            item->SetState(ITEM_NEW, player);  // a new row in the character's inventory
+            player->EquipItem(dest, item, true);
+            continue;
+        }
+        ItemPosCountVec bagDest;
+        if (player->CanStoreItem(NULL_BAG, NULL_SLOT, bagDest, item, false) == EQUIP_ERR_OK)
+        {
+            item->SetState(ITEM_UNCHANGED);
+            player->MoveItemToInventory(bagDest, item, true);
+            ++toBags;
+            continue;
+        }
+        ItemTemplate const* proto = item->GetTemplate();
+        MailDraft(Acore::StringFormat("Your {}", proto->Name1),
+                  "This came off your mannequin while your bags were full, so I sent it on. Krook")
+            .AddItem(item)
+            .SendMailTo(trans, MailReceiver(player, player->GetGUID().GetCounter()), MailSender(MAIL_CREATURE, _stewardEntry));
+        ++mailed;
+    }
+    player->AutoUnequipOffhandIfNeed();
+    player->SaveInventoryAndGoldToDB(trans);
+    CharacterDatabase.CommitTransaction(trans);
+
+    itr->second = after;
+    SavePlacement(session->ownerGuid, after, session->mapId);
+    RespawnPlacement(*session, player->GetMap(), placementId);
+    session->selected[player->GetGUID().GetCounter()] = placementId;
+
+    reason = Acore::StringFormat("Traded gear with the {}.", piece->name);
+    if (toBags)
+        reason += Acore::StringFormat(" {} you can't wear went to your bags.", toBags == 1 ? "One piece" : Acore::StringFormat("{} pieces", toBags));
+    if (mailed)
+        reason += Acore::StringFormat(" {} went by mail (your bags are full).", mailed == 1 ? "One piece" : Acore::StringFormat("{} pieces", mailed));
+    for (std::string const& name : missing)
+        reason += Acore::StringFormat(" {} was missing.", name);
+    SendAddonState(player);
+    return true;
 }

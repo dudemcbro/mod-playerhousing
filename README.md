@@ -152,8 +152,7 @@ Swim too far out and you're brought back to the beach.
   object when a translucent creature model cannot lean. The server defaults to half-to-double
   size and a full 180-degree tilt; mannequins and figurines remain upright.
 - **Place another like this**: a ghost of one more of the same piece follows you, with the
-  first one's turn, size and tilt (from your bags, House Storage, or a new copy from the
-  Collection): handy for rows of fence posts or matching chairs.
+  first one's turn, size and tilt (one you own, or a new copy bought from the Collection): handy for rows of fence posts or matching chairs.
 - **Grid** (Island settings, or `.house grid 1`): new pieces land on a grid and face
   straight or diagonal, moves land on it too, and nudges go one square at a time. Pieces
   put on a table top aren't squared up, so they stay on the table.
@@ -206,7 +205,7 @@ new, and set the old one back out whenever you like. Each character keeps up to 
 
 - **Set it out** packs up the island and places the layout: every piece where it stood,
   turned, sized and tilted the same, lanterns back on their tables. It uses your own
-  pieces (from the island, your bags and House Storage); ones you don't have are left
+  pieces (from the island and the Collection's counts); ones you don't have are left
   out, and the message says which. One undo puts the island back as it was.
 - A layout's page counts what's missing and gets the ones you've unlocked in one click
   ("Get the 3 missing pieces"), and says how many are still locked.
@@ -236,7 +235,7 @@ Rings, necklaces, trinkets and relics don't show on a body, so they aren't offer
 
 House Key, Collection. It lists every piece by category with your progress, for example
 "Buildings (6/49, 2 new)". Click an unlocked piece for its page: how many you have (in
-your bags, in storage, placed), **Place one** (its ghost follows you at once; a new copy is
+owned, placed), a click places one (it goes on your mouse at once; a new copy is
 paid for only when you set it down, so Never mind costs nothing), and Get one or Get 5
 (free with FreeMode, a small gold cost otherwise, shown on the option). A locked piece
 tells you how to earn it, with your progress so far
@@ -314,8 +313,8 @@ Everything is also in the menus; these are shortcuts. `.krook` works the same as
 | `.house face [id]`, `here [id]` | Face you, move to where you stand |
 | `.house nudge <forward\|back\|left\|right\|up\|down> [yards] [id]` | Nudge a piece, relative to where you're facing |
 | `.house up`, `down` | Raise or lower a tenth of a yard |
-| `.house move [id]` | Move a piece with a targeting circle (what's on it comes along) |
-| `.house ghost <item>` | A new piece follows you as a ghost, from your bags, House Storage or the Collection |
+| `.house move [id]` | Move a piece: it goes on your mouse (what's on it comes along) |
+| `.house ghost <item>` | A new piece goes on your mouse (or follows you): one you own, or a new copy from the Collection |
 | `.house ghost move [id]` | The piece (or the selection) follows you as a ghost, what's on it too |
 | `.house ghost adjust <forward> <left> <up> <degrees>` | Push the ghost farther, to the side, up, or turn it |
 | `.house ghost at <x> <y> <z> [<nx> <ny> <nz>]` | Show the ghost at that point (where the mouse points; the addon sends it with PlayerHousing.dll) |
@@ -371,10 +370,8 @@ GM actions are logged to the server log (module logger).
 
 ## Optional client addon
 
-`client-addon/PlayerHousing` is a housing window for players who'd rather click than use
-menus, plus an edit mode that moves pieces with the keyboard and mouse. It's optional: the
-House Key menus do everything without it. With the addon, the House Key opens the window
-(`/housing key` switches back to the menu, which the window's Menu button also opens).
+`client-addon/PlayerHousing` is the housing window, and the server needs it: the House Key,
+Krook and `.house` open it, and pieces are placed and moved with the mouse.
 
 The addon sends its commands over AzerothCore's addon command channel (on unless the server
 sets `AddonChannel = 0`): chat's flood limit doesn't count them, so holding a key or moving
@@ -390,8 +387,8 @@ they'd undo, and the full menu; right-click Undo for the last 15 changes, to und
 of them) and seven tabs:
 
 - **Collection**: every piece there is, unlocked ones in color and locked ones grey, with
-  how many you have in your bags on each icon. Show all of them, your favorites, the ones
-  you placed last, or a category; only unlocked ones, or only the ones in your bags; by name;
+  how many you own on each icon. Show all of them, your favorites, the ones
+  you placed last, or a category; only unlocked ones, or only the ones you own; by name;
   sorted as the Collection lists them, by name, by cost, or bags first. A click keeps the
   piece in the preview next to the window with its details and buttons (Place, Get 1,
   Get 5 and Take from storage), and on your island a ghost of any unlocked piece follows
@@ -419,72 +416,43 @@ of them) and seven tabs:
   (with a Music Box placed), where visitors arrive (stand there and click Door here, or
   back to the landing spot), and the guestbook with its new notes.
 
-In the preview, drag the model to turn it, use the mouse wheel to zoom and right-drag to move
-it up or down. If previews sit too high or too low on your client, `/housing framing`
-tries the other way of centering them.
+In the preview, drag the model to turn it, use the mouse wheel to bring it nearer or farther
+and right-drag to move it up or down; Reset puts it back. `/housing preview` says which model
+it asked for and which the game loaded (for bug reports).
 
-For the selected piece, a panel below the tabs has turn (Shift-click for 5 degrees,
-Ctrl-click for 90, or the mouse wheel over the window), face me, move here, nudge, bigger
-and smaller, tilt, pick up, Move and Another. Move and Another send a ghost after you, to
-set down with G. Row... places copies in a straight
-row: how many, how far apart (its own length unless you say), and toward your right, left,
-front or back.
+The piece you're holding is changed with the mouse only: Shift+wheel turns it, Ctrl+wheel
+raises or lowers it, Ctrl+Shift+wheel turns it finely, Alt+wheel tilts it forward or back,
+Alt+Shift+wheel tilts it to its side, Ctrl+Alt+wheel resizes it; middle-click stands it
+straight, Ctrl+middle-click gives its normal size, Shift+middle-click steps the grid. The plain
+wheel zooms the camera as ever. The window lists all of it while you hold a piece.
 
-**Several pieces at once**: while decorating (or in edit mode), Ctrl-click more pieces to
-add them to the selection (Ctrl-click again takes one out), or use + on the Placed tab.
-The window's buttons and edit mode's keys slide them and turn them about their middle, G
-has them all follow you as ghosts, and they get picked up together, each with what stands on
-it; each change is one undo step (size and tilt stay one piece at a time). The panel (and edit mode's
-banner) then has Height and Turn (the others take the first piece's), Line up (a straight
-row across your view, through the first piece), Space (evenly between the two at the ends)
-and Save set. Every selected piece has a ring under it.
+**Several pieces at once**: with the window open, Ctrl-right-click pieces to select them
+(again to take one out). Right-click one of them and they all go on the mouse together, each
+with what stands on it, as one undo step; Save as a set keeps them to set down anywhere.
 
-**Edit mode** (the Edit button, a key binding, or `/housing edit`): right-click a piece (or
-press Tab for the next one nearby), then:
+**Holding a piece**: a piece being placed or moved follows your mouse (with
+[PlayerHousing.dll](client-dll/README.md)) or, without the DLL, floats ahead of you. Furniture
+and buildings with ordinary models are see-through copies of themselves; world-model buildings
+(towers, farmhouses) and tilted pieces show as the real object, so their lean shows. What stands
+on a piece, or is inside a building, comes along.
 
-| Key | Does |
-| --- | --- |
-| Arrow keys | Slide it, the way you face (hold to keep going) |
-| Mouse wheel | Turn it (after R: raise and lower it) |
-| Page Up, Page Down, Ctrl+wheel | Raise, lower |
-| R | Switch what the plain mouse wheel does |
-| Shift with any of those | Finer steps |
-| Tab, Shift+Tab | Next or previous piece nearby |
-| G | Pick it up: it follows you as a ghost (below); G again sets it down |
-| Delete | Pick it up (several: after asking) |
-| Ctrl-click a piece | Add it to the selection, or take it out |
-| Ctrl+Z, Ctrl+Y | Undo, redo |
-| Alt+wheel | Zoom the camera |
-| Escape | Put a ghost back, cancel a targeting circle, or leave edit mode |
-
-A banner at the top of the screen names the selected piece, lists the keys, says what the
-last key did (so a key that does the wrong thing shows itself) and has Grid, Wheel, Undo
-(right-click: the history), Redo and Done buttons, and Row, Height, Turn, Line up, Space
-and Save set for the selection. With the grid on, arrows move a square at a time. A quick run of key presses on one piece is a single
-undo step. The keys are only bound in edit mode, so the usual ones come back afterwards;
-bindings can't change in combat, so they wait for it to end. The client can't slide a game
-object, so each step redraws the piece.
-
-**Ghosts**: a piece being placed or moved follows you (or your mouse, with
-[PlayerHousing.dll](client-dll/README.md)), in or out of edit mode, until you set it down.
-Furniture is a see-through copy of itself that glides along; a building is a see-through
-block its size (the client can't draw a building see-through), with whatever is inside it
-coming along as ghosts too. The banner says Placing or Moving and has Set it down, And
-another and Never mind buttons.
-
-| Key | Does |
+| Mouse or key | Does |
 | --- | --- |
 | Move the mouse (with the DLL) | It follows the cursor: floor, table top, or a wall, facing out |
-| Click, Shift-click (with the DLL) | Set it down there; Shift: then another of the same |
-| Walk, turn (without the DLL) | It comes along, the same distance ahead |
-| Up, Down arrows | Farther, nearer (with the DLL: nudge it from where the mouse put it) |
-| Left, Right arrows | To the side |
-| Mouse wheel | Turn it |
-| Page Up, Page Down, Ctrl+wheel | Raise, lower (on a wall, under a roof) |
-| Shift with any of those | Finer steps |
-| G | Set it down |
-| Shift+G | Set it down, then another of the same follows |
-| Escape | Never mind: a new piece stays in your bags, a moved one where it was |
+| Left-click, Shift-click | Set it down; Shift: then another of the same |
+| Right-click, Escape | Never mind: a new piece stays in your Collection, a moved one where it was |
+| Shift+right-click | Put a moved piece away in your Collection |
+| Wheel | Zoom the camera, as ever |
+| Shift+wheel, Ctrl+Shift+wheel | Turn it; finely (1 degree) |
+| Ctrl+wheel | Raise, lower |
+| Alt+wheel, Alt+Shift+wheel | Tilt it forward or back; to its side |
+| Ctrl+Alt+wheel | Bigger, smaller |
+| Middle-click, Ctrl+middle-click, Shift+middle-click | Stand it straight; normal size; step the grid |
+| Arrows, G, Shift+G (without the DLL) | Push it farther, nearer, sideways; set it down; and another |
+
+The window shows what you're holding, its size and tilt, which way its front points, and all of
+the above. The keys are bound only while you hold a piece, so the usual ones come back
+afterwards; bindings can't change in combat, so they wait for it to end.
 
 It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over
 (held higher, it floats). A building always stands on the ground, wherever the mouse is. The see-through ghosts and blocks need the client patch (see [Installation](#installation)) from this
@@ -493,7 +461,7 @@ it is instead.
 
 The window opens by itself when you arrive home (`/housing auto` turns that off).
 `/housing` shows or hides it, and `/housing <command>` runs any `.house` command. A button
-on the minimap's edge opens the window (right-click: edit mode); drag it around the edge,
+on the minimap's edge opens the window; drag it around the edge,
 or `/housing minimap` to hide it. Key bindings: Key Bindings, Player Housing.
 
 Install: copy the `PlayerHousing` folder into `World of Warcraft/Interface/AddOns/`. The

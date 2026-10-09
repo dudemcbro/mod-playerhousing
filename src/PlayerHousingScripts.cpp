@@ -70,12 +70,36 @@ public:
             return true;
 
         ClearGossipMenuFor(player);
+        // No House Key (never had one, or lost it): Krook has one.
+        if (!player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
+        {
+            bool hadOne = sPlayerHousingMgr->HadHouseKey(player);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, hadOne ? "I've lost my House Key." : "I'd like a house of my own.",
+                GOSSIP_SENDER_MAIN, ACTION_KEY);
+            SendGossipMenuFor(player, TEXT_NO_KEY, creature->GetGUID());
+            return true;
+        }
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
         SendGossipMenuFor(player, TEXT_HOME, creature->GetGUID());
         sPlayerHousingMgr->OpenWindow(player);
         return true;
     }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        CloseGossipMenuFor(player);
+        if (action == ACTION_KEY && !player->GetSession()->IsBot())
+        {
+            sPlayerHousingMgr->GiveKeyFromKrook(player);
+            // Now with the key: his quests (the welcome tour starts here).
+            OnGossipHello(player, creature);
+        }
+        return true;
+    }
+
+private:
+    static constexpr uint32 ACTION_KEY = 1;
 
     // Taking "Home Sweet Island" from Krook on the island itself: already there.
     bool OnQuestAccept(Player* player, Creature* /*creature*/, Quest const* quest) override
@@ -116,8 +140,8 @@ namespace
     }
 }
 
-// A stand's figure. The owner (and roommates) select it, to dress it in the window; guests
-// hear what it's wearing.
+// A stand's figure. A right-click opens its character sheet for the owner (and roommates):
+// gear dragged on and off, race and looks, trading gear, and Move; guests hear what it's wearing.
 class npc_playerhousing_mannequin : public CreatureScript
 {
 public:
@@ -130,7 +154,14 @@ public:
             return true;
 
         if (sPlayerHousingMgr->CanDecorate(player))
-            PickUpFromClick(player, placementId);
+        {
+            if (!sPlayerHousingMgr->IsCarrying(player))
+            {
+                sPlayerHousingMgr->SelectPlacement(player, placementId);
+                sPlayerHousingMgr->SendAddonState(player);
+                sPlayerHousingMgr->SendAddon(player, Acore::StringFormat("dress\t{}", placementId));
+            }
+        }
         else
             Reply(player, sPlayerHousingMgr->DescribeStand(player, placementId));
         CloseGossipMenuFor(player);
@@ -462,10 +493,18 @@ public:
             mgr->RequestGoHome(player, reason);
         else if (sub == "leave")
             mgr->LeaveHouse(player, reason);
+        else if (sub == "krook")
+            mgr->CallSteward(player, reason);
         else if (sub == "unstuck")
             mgr->Unstuck(player, reason);
         else if (sub == "key")
-            mgr->GiveHouseKey(player, reason);
+        {
+            // Krook hands out keys (beside every capital's innkeeper); a GM can make one.
+            if (player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
+                mgr->GiveHouseKey(player, reason);
+            else
+                reason = "Krook, beside the innkeeper in every capital city, has House Keys: ask him for yours.";
+        }
         else if (sub == "decorate")
         {
             std::string mode = tokens.size() > 1 ? Lower(tokens[1]) : "";
@@ -520,7 +559,7 @@ public:
         else if (sub == "stand")
         {
             // A mannequin (the selected piece, or the id last): dress <item entry>, undress
-            // <slot|all>, figure.
+            // <slot|all>, figure, look, trade (its gear for the character's).
             std::string what = tokens.size() > 1 ? Lower(tokens[1]) : "";
             if (what == "dress")
                 mgr->PutOnStandByEntry(player, mgr->ResolvePlacementArgument(player, number(3)), number(2), reason);
@@ -531,8 +570,16 @@ public:
             }
             else if (what == "figure")
                 mgr->ChangeStandFigure(player, mgr->ResolvePlacementArgument(player, number(2)), reason);
+            else if (what == "look")
+            {
+                // A race (its number) and male or female, with a random look.
+                bool female = tokens.size() > 3 && Lower(tokens[3]).rfind("f", 0) == 0;
+                mgr->SetStandLook(player, mgr->ResolvePlacementArgument(player, number(4)), uint8(number(2)), female ? GENDER_FEMALE : GENDER_MALE, reason);
+            }
+            else if (what == "trade")
+                mgr->TradeStandGear(player, mgr->ResolvePlacementArgument(player, number(2)), reason);
             else
-                reason = "Usage: .house stand <dress <item entry> | undress <slot|all> | figure> [id]";
+                reason = "Usage: .house stand <dress <item entry> | undress <slot|all> | figure | look <race> <male|female> | trade> [id]";
             mgr->SendAddonState(player);
         }
         else if (sub == "weather" || sub == "time")
@@ -973,7 +1020,7 @@ public:
             }
             if (id && mgr->GetPlacement(player, id))
             {
-                // Quiet: the ring under it (and the addon) show it.
+                // Quiet: the addon shows it.
                 mgr->SelectPlacement(player, id);
                 mgr->SendAddonState(player);
             }

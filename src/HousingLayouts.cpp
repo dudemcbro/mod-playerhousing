@@ -126,7 +126,7 @@ std::vector<Placement> PlayerHousingMgr::LoadSavedPieces(ObjectGuid::LowType own
             placement.scale = std::max(0.05f, fields[6].Get<float>());
             placement.pitch = fields[7].Get<float>();
             placement.roll = fields[8].Get<float>();
-            placement.look = fields[9].Get<uint32>();
+            placement.look = fields[9].Get<uint64>();
             placement.parent = fields[10].Get<uint32>();
             pieces.push_back(placement);
         } while (result->NextRow());

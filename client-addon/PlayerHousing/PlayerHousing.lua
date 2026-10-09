@@ -52,6 +52,13 @@ local db                    -- PlayerHousingDB, once loaded
 local known = false         -- the server has housing: it sent us a state
 local layoutPending = false
 local autoShown = false
+local asideForPiece = false -- the window went out of the way for a held piece
+local HELD_BACKDROP = {
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 32, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+}
 -- Moves waiting to go: yards forward, left and up (the player's way), and degrees of turn.
 local pending = { forward = 0, left = 0, up = 0, turn = 0 }
 local sinceSend = 0
@@ -60,7 +67,14 @@ local lists = {}            -- lists from the server for the window's tabs, by k
 local registered = false    -- told the server this session that the addon is here
 
 local frame, statusText, selectedPanel
-local preview, previewModel, previewName, previewSize, previewNote
+-- Two model frames on the same spot: previewModel for objects and figurines' creatures, as it
+-- always was, and previewUnit for the player alone (a mannequin's preview). A frame that has
+-- shown a unit keeps drawing that unit whatever model it's given later, so the objects' frame
+-- never shows one.
+local preview, previewModel, previewUnit, previewName, previewSize, previewNote
+local previewReset, tourBlack  -- the Reset button; the preview tour's black backdrop (PreviewTour.lua)
+local savedCamera             -- the measured camera, set aside while the tour shoots
+local lastLoad              -- the last object model asked for, and what the frame says it has (/housing preview)
 local plan, planRect, planBorder, planYou, planYouLabel, picture
 local UpdateDetails         -- the pinned piece's details, next to the window (defined there)
 local homeButton, undoButton, redoButton
@@ -259,6 +273,23 @@ local function UpdateButtons()
         if several then button:Show() else button:Hide() end
         if state.groupSize >= GROUP_NEEDS[index] then button:Enable() else button:Disable() end
     end
+    -- Holding a piece, the window steps out of the way: only the held panel stays, at the
+    -- bottom of the screen. Back in the window once nothing is held.
+    local docked = holding and not frame:IsShown()
+    if docked ~= (selectedPanel:GetParent() == UIParent) then
+        selectedPanel:ClearAllPoints()
+        if docked then
+            selectedPanel:SetParent(UIParent)
+            selectedPanel:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 130)
+            selectedPanel:SetHeight(SELECTED_HEIGHT + 16)
+            selectedPanel:SetBackdrop(HELD_BACKDROP)
+        else
+            selectedPanel:SetParent(frame)
+            selectedPanel:SetPoint("TOPLEFT", 0, -BASE_HEIGHT + 12)
+            selectedPanel:SetHeight(SELECTED_HEIGHT)
+            selectedPanel:SetBackdrop(nil)
+        end
+    end
     if showSelected then selectedPanel:Show() else selectedPanel:Hide() end
 
     -- Resizing a window that holds secure buttons also waits for the end of combat.
@@ -343,6 +374,17 @@ local function OnState(fields)
     -- The window comes up by itself on arriving home, and goes again on leaving.
     if not frame then
         return
+    end
+    -- A piece picked up with the window open: the window goes (the held panel stays). Set down
+    -- or put back (Escape): the window comes back.
+    local holding = state.ghostItem > 0 and CanEdit()
+    if holding and frame:IsShown() and not asideForPiece then
+        asideForPiece = SetShown(false)
+    elseif not holding and asideForPiece then
+        asideForPiece = false
+        if CanEdit() then
+            SetShown(true)
+        end
     end
     if state.own and not wasOwn and db and db.autoShow and not frame:IsShown() then
         autoShown = SetShown(true)
@@ -439,7 +481,17 @@ end
 
 local PREVIEW_HEIGHT, PINNED_HEIGHT = 268, 360
 local view = { facing = 0, zoom = 1, lift = 0, spin = true }
+
 local shownPiece, pinned        -- { id = item, name = text }
+-- How near and how high a piece's preview was set by hand (wheel, right-drag), kept per piece
+-- until Reset, so a piece the usual framing gets wrong stays right once fixed.
+local DefaultView
+local function SaveView()
+    if db and shownPiece then
+        db.previewViews = db.previewViews or {}
+        db.previewViews[shownPiece.id] = { zoom = view.zoom, lift = view.lift }
+    end
+end
 local dragging, dragX, dragY
 local detailsText, detailsCounts, detailsHint, getOneButton, getFiveButton
 
@@ -450,32 +502,57 @@ local function Yards(value)
     return ("%d yd"):format(math.floor(value + 0.5))
 end
 
--- Model frames draw the model from its base; this turns it about its middle and fits its
--- longest side to the frame. The builder measured both from the model's bounds.
+-- An object is shown at its own size and moved back from the frame's camera to fit, about its
+-- middle: on this client a preview model made smaller than its own size isn't drawn at all.
+-- The camera looks slightly down, so the middle goes a little above the frame's center line.
+-- (Measured in game: twice its longest side back, raised a quarter of it, frames a chest and
+-- a shed alike.) The wheel moves it nearer or farther, right-drag up or down.
 local function FrameModel()
     local data = shownPiece and PlayerHousing_Models and PlayerHousing_Models[shownPiece.id]
     local model = data and data[1]
     if type(model) ~= "string" then
         return
     end
-    previewModel:SetFacing(view.facing)
     if model == "player" or model:find("^creature:") then
         -- These fit themselves; the wheel and right-drag move them nearer and up or down.
-        previewModel:SetPosition(math.max(-1, math.min(1.5, (view.zoom - 1) * 0.8)), 0, view.lift)
+        local frame = model == "player" and previewUnit or previewModel
+        frame:SetFacing(view.facing)
+        frame:SetPosition(math.max(-1, math.min(1.5, (view.zoom - 1) * 0.8)), 0, view.lift)
         return
     end
-    local fit, midX, midY, midZ = data[5] or 0, data[6] or 0, data[7] or 0, data[8] or 0
-    local scale
-    if fit > 0 then
-        scale = math.min(3, 2.2 / fit) * view.zoom
-    else
-        scale = math.min(1.5, 2.5 / math.max(data[2], data[3], data[4], 0.5)) * view.zoom
-    end
-    -- db.framing "model": offsets in the model's own units (for clients that scale them).
-    local offset = (db and db.framing == "model") and 1 or scale
+    -- In the model's own units (the frame draws the model, not the object, which can be bigger).
+    local size = math.max((data[5] or 0) > 0 and data[5] or math.max(data[2] or 0, data[3] or 0, data[4] or 0), 0.5)
+    local midX, midY, midZ = data[6] or 0, data[7] or 0, data[8] or 0
+    local liftUnit = math.max(1, size / 3)
     local c, s = math.cos(view.facing), math.sin(view.facing)
-    previewModel:SetModelScale(scale)
-    previewModel:SetPosition(-(midX * c - midY * s) * offset, -(midX * s + midY * c) * offset, -midZ * offset + view.lift)
+    local cam = PlayerHousing_PreviewCamera
+    if not cam then
+        -- No measurements: back twice its size, raised a quarter of it.
+        local away = math.max(2, 2 * size) / view.zoom
+        previewModel:SetFacing(view.facing)
+        previewModel:SetModelScale(1)
+        previewModel:SetPosition(-(midX * c - midY * s) - away, -(midX * s + midY * c), -midZ + 0.25 * size + view.lift * liftUnit)
+        return
+    end
+    -- The frame's camera as measured from screenshots (PreviewFix.lua): the distance that shows
+    -- the piece at its share of the area, and the height that puts its middle on the area's
+    -- middle there. Measured per piece where the tour saw it, else from the formula.
+    local fix = PlayerHousing_PreviewFix and PlayerHousing_PreviewFix[shownPiece.id]
+    local distance, middle
+    if fix then
+        distance, middle = fix[1], fix[2]
+        midX, midY = midX + (fix[3] or 0), midY + (fix[4] or 0)
+    else
+        distance = math.max(cam.distance + 0.5, cam.focal * cam.size * size / (cam.target * 190))
+        local f = cam.middle
+        middle = f[1] + f[2] * size + f[3] * midZ + f[4] * distance - cam.aim * distance / cam.focal
+    end
+    -- Nearer or farther (the wheel): the middle follows the camera's aim; then the hand's lift.
+    local seen = cam.distance + (distance - cam.distance) / view.zoom
+    middle = middle - cam.aim * (seen - distance) / cam.focal + view.lift * liftUnit
+    previewModel:SetFacing(view.facing)
+    previewModel:SetModelScale(1)
+    previewModel:SetPosition(-(midX * c - midY * s) - (seen - cam.distance), -(midX * s + midY * c), -midZ + middle)
 end
 
 -- The building seen from above, as big as fits, with you next to it for scale.
@@ -536,9 +613,20 @@ local function SetPreviewHeight()
     preview:SetHeight(pinned and PINNED_HEIGHT or PREVIEW_HEIGHT)
 end
 
+-- How near and high a piece starts, on top of its framing: as set by hand for it (kept until
+-- Reset), else as framed.
+DefaultView = function(id)
+    local saved = db and db.previewViews and db.previewViews[id]
+    if saved then
+        return saved.zoom or 1, saved.lift or 0
+    end
+    return 1, 0  -- the measured framing itself is FrameModel's (PreviewFix.lua)
+end
+
 local function ShowPiece(piece)
     if not shownPiece or shownPiece.id ~= piece.id then
-        view.facing, view.zoom, view.lift, view.spin = 0, 1, 0, true
+        local zoom, lift = DefaultView(piece.id)
+        view.facing, view.zoom, view.lift, view.spin = 0, zoom, lift, true
         dragging = nil
     end
     shownPiece = piece
@@ -553,18 +641,29 @@ local function ShowPiece(piece)
 
     local model = data and data[1]
     local creature = type(model) == "string" and tonumber(model:match("^creature:(%d+)$"))
+    previewUnit:Hide()
+    local loaded = false
+    if model and model ~= "player" and not creature then
+        previewModel:ClearModel()
+        previewModel:SetModel(model)
+        -- A model the frame can't show (it keeps no file, or another one) gets the picture or
+        -- floor plan instead of an empty view.
+        local got = previewModel.GetModel and previewModel:GetModel()
+        local function Name(path) return (path:lower():match("([^\\/]+)$") or ""):gsub("%.[^.]*$", "") end
+        loaded = not previewModel.GetModel or (type(got) == "string" and Name(got) == Name(model))
+        lastLoad = { model = model, got = got }
+    end
     if model == "player" then
-        previewModel:SetUnit("player")
-        previewModel:Show()
+        previewModel:Hide()
+        previewUnit:SetUnit("player")
+        previewUnit:Show()
     elseif creature then
         -- Figurines: the creature's model (drawn once the client has seen that creature).
         previewModel:ClearModel()
         previewModel:SetCreature(creature)
         previewModel:SetModelScale(1)
         previewModel:Show()
-    elseif model then
-        previewModel:ClearModel()
-        previewModel:SetModel(model)
+    elseif loaded then
         previewModel:Show()
     elseif data and PlayerHousing_Pictures and PlayerHousing_Pictures[piece.id] then
         -- A building with a picture (Pictures.lua).
@@ -589,6 +688,7 @@ local function ShowPiece(piece)
     detailsHint:SetText(pinned and not isPinned and "Click it to show it here instead." or "")
     SetPreviewHeight()
     preview:Show()
+    FrameModel()  -- again, once shown
 end
 
 -- Hovering: shows the piece until the mouse moves on.
@@ -692,12 +792,45 @@ local function CreatePreview()
         view.spin = false
     end)
     previewModel:SetScript("OnMouseUp", function()
+        if dragging == "RightButton" then
+            SaveView()
+        end
         dragging = nil
     end)
     previewModel:SetScript("OnMouseWheel", function(self, delta)
         view.zoom = math.min(4, math.max(0.3, view.zoom * (delta > 0 and 1.2 or 1 / 1.2)))
+        SaveView()
         FrameModel()
     end)
+    previewUnit = CreateFrame("PlayerModel", "PlayerHousingPreviewUnit", preview)
+    previewUnit:SetAllPoints(previewModel)
+    previewUnit:EnableMouse(true)
+    previewUnit:EnableMouseWheel(true)
+    for _, script in ipairs({ "OnMouseDown", "OnMouseUp", "OnMouseWheel" }) do
+        previewUnit:SetScript(script, previewModel:GetScript(script))
+    end
+    previewUnit:Hide()
+
+    -- Back to how it first showed: facing you, its whole size, turning slowly.
+    local reset = CreateFrame("Button", "PlayerHousingPreviewReset", preview, "UIPanelButtonTemplate")
+    previewReset = reset
+    reset:SetWidth(54)
+    reset:SetHeight(18)
+    reset:SetText("Reset")
+    reset:SetPoint("BOTTOMRIGHT", previewModel, "BOTTOMRIGHT", 0, 0)
+    reset:SetFrameLevel(previewUnit:GetFrameLevel() + 5)
+    reset:SetScript("OnClick", function()
+        if db and db.previewViews and shownPiece then
+            db.previewViews[shownPiece.id] = nil
+        end
+        local zoom, lift = DefaultView(shownPiece and shownPiece.id)
+        view.facing, view.zoom, view.lift, view.spin = 0, zoom, lift, true
+        dragging = nil
+        FrameModel()
+    end)
+    reset.tooltipTitle, reset.tooltipText = "Reset the view", "Drag to turn it, the wheel brings it nearer or farther, right-drag moves it up and down. Nearer and higher are kept for this piece until Reset."
+    reset:SetScript("OnEnter", ShowButtonTooltip)
+    reset:SetScript("OnLeave", GameTooltip_Hide)
 
     previewNote = preview:CreateFontString("PlayerHousingPreviewNote", "OVERLAY", "GameFontDisableSmall")
     previewNote:SetPoint("TOP", previewModel, "TOP", 0, -2)
@@ -797,6 +930,9 @@ local function CreateWindow()
     end)
     frame:HookScript("OnHide", function() SyncDecorating() end)
     frame:Hide()
+    -- Escape closes it, like the game's own windows (while a piece is held, Escape puts the
+    -- piece back instead: EditMode.lua).
+    tinsert(UISpecialFrames, "PlayerHousingFrame")
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -16)
@@ -929,7 +1065,7 @@ function PlayerHousing_Toggle()
         Print("the housing window can't open or close in combat.")
         return
     end
-    autoShown = false
+    autoShown, asideForPiece = false, false
     SetShown(not frame:IsShown())
 end
 
@@ -1059,6 +1195,48 @@ PlayerHousingAPI = {
     Shift = Shift,
     PickUp = PickUp,
     PickUpPlacement = PickUpPlacement,
+    -- The preview tour (PreviewTour.lua): the preview in the middle of the screen on black, and
+    -- a piece in it exactly as told (how near, how high, which way), for a screenshot.
+    PreviewTourMode = function(on)
+        if not preview then
+            return nil
+        end
+        if not tourBlack then
+            tourBlack = preview:CreateTexture("PlayerHousingPreviewTourBlack", "ARTWORK")
+            tourBlack:SetAllPoints(previewModel)
+            tourBlack:SetTexture(0, 0, 0, 1)
+        end
+        preview:ClearAllPoints()
+        -- Shots are measured against the framing without measurements: off while touring.
+        if on and PlayerHousing_PreviewCamera then
+            savedCamera, PlayerHousing_PreviewCamera = PlayerHousing_PreviewCamera, nil
+        elseif not on and savedCamera then
+            PlayerHousing_PreviewCamera, savedCamera = savedCamera, nil
+        end
+        if on then
+            preview:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            tourBlack:Show()
+            previewReset:Hide()
+        else
+            preview:SetPoint("TOPRIGHT", frame, "TOPLEFT", -4, 0)
+            tourBlack:Hide()
+            previewReset:Show()
+            pinned = nil
+            preview:Hide()
+        end
+        return preview
+    end,
+    PreviewShot = function(id, zoom, lift, facing)
+        if not preview then
+            return
+        end
+        pinned = nil
+        ShowPiece({ id = id, name = PlayerHousingAPI.PieceName(id) })
+        view.zoom, view.lift, view.facing, view.spin = zoom or 1, lift or 0, facing or 0, false
+        dragging = nil
+        FrameModel()
+        GameTooltip:Hide()
+    end,
     Print = Print,
     MakeButton = MakeButton,
     ShowPreview = ShowPreview,
@@ -1118,12 +1296,15 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
         PlayerHousing_ToggleMinimapButton()
     elseif message == "phototour" or message == "phototour stop" then
         PlayerHousing_PhotoTour(message == "phototour")
-    elseif message == "framing" then
-        -- Previews center each model from its measured middle. If they sit too high or low
-        -- on some client, this tries the other way of reading the model frame's offsets.
-        db.framing = db.framing ~= "model" and "model" or nil
-        FrameModel()
-        Print(db.framing and "previews use the second way of centering. /housing framing goes back." or "previews use the usual centering.")
+    elseif message == "previewtour" or message == "previewtour stop" then
+        if PlayerHousingAPI.PreviewTour then
+            PlayerHousingAPI.PreviewTour(message == "previewtour stop")
+        end
+    elseif message == "preview" then
+        -- What the preview last asked for and what the model frame says it loaded (bug reports).
+        local scale = PlayerHousingPreviewModel and PlayerHousingPreviewModel:GetModelScale()
+        Print(("preview: asked %s, frame has %s, scale %s, zoom %.2f, lift %.2f."):format(lastLoad and tostring(lastLoad.model) or "nothing",
+            lastLoad and tostring(lastLoad.got) or "-", tostring(scale), view.zoom, view.lift))
     elseif message == "help" then
         PlayerHousing_Help()
     elseif message == "localghost" then

@@ -8,9 +8,12 @@
 PieceModels.lua
 PieceInfo.lua
 Pictures.lua
+PreviewFix.lua
+PreviewTask.lua
 PlayerHousing.lua
 EditMode.lua
 Mouse.lua
 Window.lua
 Minimap.lua
 Extras.lua
+PreviewTour.lua

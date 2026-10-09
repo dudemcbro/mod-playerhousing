@@ -409,104 +409,6 @@ void PlayerHousingMgr::RespawnPlacement(Session& session, Map* map, uint32 place
     SpawnPlacement(session, map, itr->second);
 }
 
-void PlayerHousingMgr::UpdateEditHelpers(Player* player, ObjectGuid::LowType ownerGuid)
-{
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    auto sessionItr = _sessionsByOwner.find(ownerGuid);
-    if (sessionItr == _sessionsByOwner.end())
-        return;
-    Session& session = sessionItr->second;
-    Map* map = player->GetMap();
-    ObjectGuid::LowType self = player->GetGUID().GetCounter();
-
-    // Rings of players who have left go with them.
-    for (auto itr = session.rings.begin(); itr != session.rings.end();)
-    {
-        bool here = itr->first == self || std::any_of(session.occupants.begin(), session.occupants.end(),
-            [&](ObjectGuid const& occupant) { return occupant.GetCounter() == itr->first; });
-        if (here)
-        {
-            ++itr;
-            continue;
-        }
-        for (auto const& [id, ring] : itr->second)
-            if (GameObject* object = map->GetGameObject(ring.guid))
-                object->AddObjectToRemoveList();
-        itr = session.rings.erase(itr);
-    }
-
-    // While decorating, a ring under each selected piece: as wide as the piece (the rune
-    // model is about 3.4 yards across at size 1).
-    std::map<uint32, SelectionRing> wanted;
-    if (CanDecorate(player) && IsDecorating(player))
-    {
-        std::vector<uint32> members;
-        auto selectedItr = session.selected.find(self);
-        if (selectedItr != session.selected.end() && selectedItr->second)
-            members.push_back(selectedItr->second);
-        auto groupItr = session.groups.find(self);
-        if (groupItr != session.groups.end())
-            members.insert(members.end(), groupItr->second.begin(), groupItr->second.end());
-        for (uint32 id : members)
-        {
-            auto placementItr = session.placements.find(id);
-            PieceDefinition const* piece = placementItr != session.placements.end() ? GetPiece(placementItr->second.itemEntry) : nullptr;
-            if (!piece)
-                continue;
-            Placement const& placement = placementItr->second;
-            float scale = std::clamp(piece->footprint * (piece->scale > 0.0f ? placement.scale / piece->scale : 1.0f) / 1.5f, 0.3f, 12.0f);
-            wanted[id] = SelectionRing{ ObjectGuid::Empty, placement.x, placement.y, placement.z, scale };
-        }
-    }
-
-    // Only players with something selected, or rings still out, get an entry.
-    if (!wanted.empty() || session.rings.count(self))
-    {
-        std::map<uint32, SelectionRing>& rings = session.rings[self];
-        for (auto itr = rings.begin(); itr != rings.end();)
-        {
-            auto want = wanted.find(itr->first);
-            SelectionRing const& ring = itr->second;
-            if (want != wanted.end() && std::fabs(ring.x - want->second.x) < 0.001f && std::fabs(ring.y - want->second.y) < 0.001f
-                    && std::fabs(ring.z - want->second.z) < 0.001f && std::fabs(ring.scale - want->second.scale) < 0.001f)
-            {
-                wanted.erase(want);  // already there
-                ++itr;
-                continue;
-            }
-            if (GameObject* old = map->GetGameObject(ring.guid))
-                old->AddObjectToRemoveList();
-            itr = rings.erase(itr);
-        }
-        for (auto const& [id, want] : wanted)
-        {
-            GameObject* ring = new GameObject();
-            if (!ring->Create(map->GenerateLowGuid<HighGuid::GameObject>(), SELECTION_RING_GO, map, PHASEMASK_NORMAL,
-                    want.x, want.y, want.z + 0.03f, 0.0f, G3D::Quat(0.0f, 0.0f, 0.0f, 0.0f), 100, GO_STATE_READY))
-            {
-                delete ring;
-                continue;
-            }
-            ring->SetObjectScale(want.scale);
-            ring->SetRespawnTime(0);
-            ring->SetSpawnedByDefault(false);
-            if (!map->AddToMap(ring))
-            {
-                delete ring;
-                continue;
-            }
-            ring->SetPhaseMask(session.phaseMask, true);
-            ring->EnableCollision(false);
-            SelectionRing placed = want;
-            placed.guid = ring->GetGUID();
-            rings[id] = placed;
-        }
-        if (rings.empty())
-            session.rings.erase(self);
-    }
-
-}
-
 void PlayerHousingMgr::SpawnSteward(Session& session, Map* map)
 {
     Position const& landing = _layout.landing;
@@ -522,6 +424,11 @@ void PlayerHousingMgr::SpawnSteward(Session& session, Map* map)
 
     Position position;
     position.Relocate(x, y, z + 0.1f, o);
+    SpawnStewardAt(session, map, position);
+}
+
+void PlayerHousingMgr::SpawnStewardAt(Session& session, Map* map, Position const& position)
+{
     if (TempSummon* steward = map->SummonCreature(_stewardEntry, position))
     {
         steward->SetPhaseMask(session.phaseMask, true);

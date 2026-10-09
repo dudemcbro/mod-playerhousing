@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_placement` (
   `pos_y` float NOT NULL,
   `pos_z` float NOT NULL,
   `orientation` float NOT NULL,
-  `look` int unsigned NOT NULL DEFAULT 0,
+  `look` bigint unsigned NOT NULL DEFAULT 0,
   `parent_id` int unsigned NOT NULL DEFAULT 0,  -- the surface it stands on
   `pitch` float NOT NULL DEFAULT 0,             -- tilt, radians
   `roll` float NOT NULL DEFAULT 0,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_saved_piece` (
   `scale` float NOT NULL DEFAULT 1,
   `pitch` float NOT NULL DEFAULT 0,
   `roll` float NOT NULL DEFAULT 0,
-  `look` int unsigned NOT NULL DEFAULT 0,
+  `look` bigint unsigned NOT NULL DEFAULT 0,
   `parent_id` int unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_guid`,`layout_id`,`placement_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_set_piece` (
   `scale` float NOT NULL DEFAULT 1,
   `pitch` float NOT NULL DEFAULT 0,
   `roll` float NOT NULL DEFAULT 0,
-  `look` int unsigned NOT NULL DEFAULT 0,
+  `look` bigint unsigned NOT NULL DEFAULT 0,
   `parent_index` int unsigned NOT NULL DEFAULT 0,  -- 1 + index of the piece it stands on; 0: the ground
   PRIMARY KEY (`owner_guid`,`set_id`,`piece_index`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

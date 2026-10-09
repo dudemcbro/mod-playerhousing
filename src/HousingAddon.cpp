@@ -229,7 +229,7 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
 
     if (kind == "stand")
     {
-        // A mannequin on the island: what it wears, its figure, and what in the bags it could.
+        // A mannequin on the island: what it wears and its figure.
         uint32 placementId = Acore::StringTo<uint32>(argument).value_or(0);
         std::optional<Placement> placement = placementId ? GetPlacement(player, placementId) : std::nullopt;
         PieceDefinition const* piece = placement ? GetPiece(placement->itemEntry) : nullptr;
@@ -240,18 +240,11 @@ bool PlayerHousingMgr::SendAddonData(Player* player, std::string const& kind, st
         }
         SendAddon(player, Acore::StringFormat("begin\tstand\t{}", placementId));
         SendAddon(player, Acore::StringFormat("row\tstand\tfigure\t{}", Clean(LookName(placement->look))));
+        // Its race (bits 0-3) and gender (bit 8), for the sheet.
+        SendAddon(player, Acore::StringFormat("row\tstand\tlook\t{}", placement->look));
         for (auto const& [slot, gear] : placement->gear)
             SendAddon(player, Acore::StringFormat("row\tstand\tworn\t{}\t{}\t{}\t{}", uint32(slot), Clean(StandSlotName(slot)), gear.itemEntry,
                 Clean(StandItemName(gear.itemEntry))));
-        std::set<uint32> listed;
-        for (Item* item : GetWearableItems(player))
-        {
-            if (!listed.insert(item->GetEntry()).second || listed.size() > 60)
-                continue;
-            int8 slot = StandSlotFor(item->GetTemplate(), placement->gear);
-            SendAddon(player, Acore::StringFormat("row\tstand\twear\t{}\t{}\t{}", item->GetEntry(), Clean(item->GetTemplate()->Name1),
-                slot >= 0 ? Clean(StandSlotName(uint8(slot))) : std::string()));
-        }
         SendAddon(player, Acore::StringFormat("end\tstand\t{}", placementId));
         return true;
     }

@@ -57,7 +57,7 @@ DEALLOCATE PREPARE ph_stmt;
 
 SET @ph_stmt = (
   SELECT IF(COUNT(*) = 0,
-    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `look` int unsigned NOT NULL DEFAULT 0 AFTER `orientation`',
+    'ALTER TABLE `mod_playerhousing_placement` ADD COLUMN `look` bigint unsigned NOT NULL DEFAULT 0 AFTER `orientation`',
     'SELECT 1')
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_placement' AND column_name = 'look'
@@ -334,3 +334,8 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_account` (
   PRIMARY KEY (`account_id`),
   KEY `idx_mod_playerhousing_account_home` (`home_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- A mannequin's look grew past 32 bits (room for more poses).
+ALTER TABLE `mod_playerhousing_placement` MODIFY `look` bigint unsigned NOT NULL DEFAULT 0;
+ALTER TABLE `mod_playerhousing_saved_piece` MODIFY `look` bigint unsigned NOT NULL DEFAULT 0;
+ALTER TABLE `mod_playerhousing_set_piece` MODIFY `look` bigint unsigned NOT NULL DEFAULT 0;

@@ -219,7 +219,13 @@ void PlayerHousingMgr::PoseGhost(Player* player, Session const& session, Ghost& 
         if (!ghost.onWall)
         {
             SnapToGrid(player->GetGUID().GetCounter(), x, y);
-            if (!lead || !lead->IsBuilding())
+            if (ghost.onCeiling && lead)
+            {
+                // Under a ceiling: it hangs, its top at the point.
+                float scale = lead->scale > 0.0f ? ghost.pieces.front().scale / lead->scale : 1.0f;
+                floor -= lead->height * scale;
+            }
+            else if (!lead || !lead->IsBuilding())
             {
                 uint32 table = 0;
                 float top = GhostFloor(player, session, ghost, x, y, ghost.pointZ, false, table);
@@ -534,7 +540,7 @@ bool PlayerHousingMgr::StartGhostNew(Player* player, uint32 itemEntry, uint32 co
     if (source)
         lead.look = source->look;
     else if (piece->HasFlag(PIECE_FLAG_STAND))
-        lead.look = uint32(player->getRace()) | (uint32(player->getGender()) << 8);  // it takes after its owner
+        lead.look = uint64(player->getRace()) | (uint64(player->getGender()) << 8);  // it takes after its owner
     ghost.pieces.push_back(lead);
 
     // Far enough ahead to see all of it, facing the player (a copy: turned like the original).
@@ -897,11 +903,15 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
     ghost.pointZ = z;
     ghost.rawZ = rawZ;
     // A wall (the surface facing more sideways than up): the piece faces out from it.
+    // A ceiling (facing down as much): it hangs from it.
     bool wall = false;
+    bool ceiling = false;
     if (facing && !onOriginal && !building && std::isfinite(facing[0]) && std::isfinite(facing[1]) && std::isfinite(facing[2]))
     {
         float length = std::sqrt(facing[0] * facing[0] + facing[1] * facing[1] + facing[2] * facing[2]);
-        if (length > 0.5f && length < 1.5f && std::fabs(facing[2] / length) < WALL_STEEPNESS)
+        if (length > 0.5f && length < 1.5f && facing[2] / length < -WALL_STEEPNESS)
+            ceiling = true;
+        else if (length > 0.5f && length < 1.5f && std::fabs(facing[2] / length) < WALL_STEEPNESS)
         {
             wall = true;
             if (!ghost.onWall)
@@ -910,6 +920,7 @@ bool PlayerHousingMgr::GhostAt(Player* player, float x, float y, float z, float 
         }
     }
     ghost.onWall = wall;
+    ghost.onCeiling = ceiling;
     if (!ghost.note.empty())
     {
         ghost.note.clear();
@@ -1126,6 +1137,23 @@ void PlayerHousingMgr::UpdateGhost(Player* player)
     }
 
     Ghost& ghost = itr->second;
+    // The player turning turns the piece by as much (on a wall, about the wall): a finer turn
+    // than the wheel's, by turning on the spot.
+    float playerO = player->GetOrientation();
+    if (ghost.playerOKnown)
+    {
+        float delta = std::remainder(playerO - ghost.playerO, TWO_PI_F);
+        if (std::fabs(delta) > 0.0005f)
+        {
+            if (ghost.atPoint && ghost.onWall)
+                ghost.wallTurn = NormalizeAngle(ghost.wallTurn + delta);
+            else
+                ghost.o = NormalizeAngle(ghost.o + delta);
+        }
+    }
+    ghost.playerO = playerO;
+    ghost.playerOKnown = true;
+
     uint32 now = getMSTime();
     if (getMSTimeDiff(ghost.updatedMs, now) < GHOST_UPDATE_MS)
         return;

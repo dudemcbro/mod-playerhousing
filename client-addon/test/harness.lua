@@ -12,7 +12,7 @@ local combat = false
 local Widget = {}
 Widget.__index = function(t, k)
   if k == "protected" or k == "count" or k == "icon" or k == "piece" or k == "enabled" or k == "info" or k == "highlighted"
-    or k == "location" or k == "item" then return nil end
+    or k == "location" or k == "item" or k == "unit" or k == "alpha" then return nil end
   local v = rawget(Widget, k)
   if v then return v end
   return function(self, ...) return nil end   -- any unknown method: no-op
@@ -52,11 +52,16 @@ function Widget:GetWidth() return self.width or 0 end
 function Widget:GetPoint() return "CENTER", nil, "CENTER", 10, 20 end
 function Widget:Enable() self.enabled = true end
 function Widget:SetModel(path) self.modelPath = path end
+function Widget:GetModel() return self.modelPath end
+function Widget:SetAlpha(a) self.alpha = a end
+function Widget:GetModelScale() return self.modelScale end
 function Widget:ClearModel() self.modelPath = nil end
 function Widget:SetUnit(unit) self.unit = unit end
 function Widget:SetCreature(id) self.creature = id end
 function Widget:Disable() self.enabled = false end
 function Widget:GetName() return self.name end
+function Widget:SetParent(p) self.parent = p end
+function Widget:GetParent() return self.parent end
 function Widget:SetChecked(v) self.checked = v end
 function Widget:GetChecked() return self.checked end
 function Widget:LockHighlight() self.highlighted = true end
@@ -100,7 +105,8 @@ StaticPopupDialogs = {}
 local popups = {}
 function StaticPopup_Show(which, a) popups[#popups+1] = {which, a}; return {} end
 SlashCmdList = {}
-function UnitName() return "Krookowner" end
+local mouseoverUnit
+function UnitName(unit) if unit == "mouseover" then return mouseoverUnit and mouseoverUnit[1] end return "Krookowner" end
 function IsControlKeyDown() return false end
 function IsShiftKeyDown() return false end
 function PickupContainerItem() end
@@ -108,9 +114,22 @@ local itemCounts = { [901105] = 5 }
 function GetItemCount(id) return itemCounts[id] or 0 end
 function GetItemInfo(id) return nil end
 function GetItemIcon(id) return nil end
+UISpecialFrames = {}
+tinsert = table.insert
+local INVENTORY = { HeadSlot = 1, ShoulderSlot = 3, BackSlot = 15, ChestSlot = 5, ShirtSlot = 4, TabardSlot = 19, WristSlot = 9,
+  HandsSlot = 10, WaistSlot = 6, LegsSlot = 7, FeetSlot = 8, MainHandSlot = 16, SecondaryHandSlot = 17, RangedSlot = 18 }
+function GetInventorySlotInfo(name) return INVENTORY[name], "Interface\\PaperDoll\\UI-PaperDoll-Slot-" .. name end
+local cursorItem
+function GetCursorInfo() if cursorItem then return "item", cursorItem end end
+function ClearCursor() cursorItem = nil end
+-- { name, guid } of what's under the mouse, nil for nothing
+function UnitExists(unit) return unit == "mouseover" and mouseoverUnit ~= nil end
+function UnitIsPlayer(unit) return false end
+function UnitGUID(unit) return unit == "mouseover" and mouseoverUnit and mouseoverUnit[2] or nil end
 function GetCoinTextureString(copper) return copper .. "c" end
 lastMenu = nil
 function EasyMenu(menu) lastMenu = menu end
+function CloseDropDownMenus() end
 DELETE = "Delete"
 local now = 0
 function GetTime() return now end
@@ -208,22 +227,27 @@ local function SEL(text)
 end
 
 -- Hovering a piece previews its model and size; leaving hides it.
+local measuredCamera = PlayerHousing_PreviewCamera
+PlayerHousing_PreviewCamera = nil  -- first the framing without measurements
 chairSlot.scripts.OnEnter(chairSlot)
 assert(PlayerHousingPreview:IsShown(), "preview shown")
-assert(PlayerHousingPreviewModel.modelPath == PlayerHousing_Models[901105][1], "chair model: " .. tostring(PlayerHousingPreviewModel.modelPath))
--- Fitted to the frame and turned about its middle, which the builder measured.
+assert(PlayerHousingPreviewModel.modelPath == PlayerHousing_Models[901105][1] and PlayerHousingPreviewModel:IsShown() and not PlayerHousingPreviewUnit:IsShown(),
+  "chair model, in the objects' frame: " .. tostring(PlayerHousingPreviewModel.modelPath))
+-- At its own size (shrunk, it isn't drawn), moved back twice its longest side (2 yards at
+-- least), about its middle, raised a quarter of its size; turned about that middle.
 local function near(a, b) return math.abs(a - b) < 1e-6 end
 local chair = PlayerHousing_Models[901105]
-local fit, midX, midY, midZ = chair[5], chair[6], chair[7], chair[8]
-assert(fit > 0 and midZ > 0, "the chair has bounds")
-local model, fitted = PlayerHousingPreviewModel, math.min(3, 2.2 / chair[5])
-assert(near(model.modelScale, fitted), "fitted: " .. tostring(model.modelScale))
-assert(near(model.position[1], -midX * fitted) and near(model.position[2], -midY * fitted) and near(model.position[3], -midZ * fitted),
-  "its middle at the frame's: " .. table.concat(model.position, ", "))
+local midX, midY, midZ = chair[6], chair[7], chair[8]
+local size = math.max(chair[5], 0.5)  -- the model's own units
+local model, away = PlayerHousingPreviewModel, math.max(2, 2 * size)
+assert(midZ > 0, "the chair has bounds")
+assert(near(model.modelScale, 1), "its own size: " .. tostring(model.modelScale))
+assert(near(model.position[1], -midX - away) and near(model.position[2], -midY) and near(model.position[3], -midZ + 0.25 * size),
+  "back, about its middle: " .. table.concat(model.position, ", "))
 PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 1)
 local c, s = math.cos(0.6), math.sin(0.6)
-assert(near(model.facing, 0.6) and near(model.position[1], -(midX * c - midY * s) * fitted), "turns about its middle")
--- Drag to turn it (and it stops turning by itself), the wheel zooms, right-drag lifts.
+assert(near(model.facing, 0.6) and near(model.position[1], -(midX * c - midY * s) - away), "turns about its middle")
+-- Drag to turn it (and it stops turning by itself), the wheel brings it nearer, right-drag lifts.
 model.scripts.OnMouseDown(model, "LeftButton")
 cursorX = 100
 PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 0.01)
@@ -232,29 +256,54 @@ assert(near(model.facing, 2.1), "dragged: " .. model.facing)
 PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 1)
 assert(near(model.facing, 2.1), "no more turning by itself")
 model.scripts.OnMouseWheel(model, 1)
-assert(near(model.modelScale, fitted * 1.2), "zoomed")
+local c2, s2 = math.cos(2.1), math.sin(2.1)
+assert(near(model.position[1], -(midX * c2 - midY * s2) - away / 1.2) and near(model.modelScale, 1), "nearer, not bigger")
 model.scripts.OnMouseDown(model, "RightButton")
 cursorY = 50
 PlayerHousingPreview.scripts.OnUpdate(PlayerHousingPreview, 0.01)
 model.scripts.OnMouseUp(model)
-assert(near(model.position[3], -midZ * fitted * 1.2 + 0.5), "lifted: " .. model.position[3])
--- The other reading of the offsets, for clients that scale them.
-SlashCmdList.PLAYERHOUSING("framing")
-assert(PlayerHousingDB.framing == "model" and near(model.position[3], -midZ + 0.5), "framing: " .. model.position[3])
-SlashCmdList.PLAYERHOUSING("framing")
-assert(PlayerHousingDB.framing == nil)
+assert(near(model.position[3], -midZ + 0.25 * size + 0.5), "lifted: " .. model.position[3])
+assert(SlashCmdList.PLAYERHOUSING and PlayerHousingDB.framing == nil, "no framing setting any more")
 chairSlot.scripts.OnLeave(chairSlot)
--- Another piece starts afresh.
+-- Back again later: facing front again, but as near and as high as it was set by hand.
 barrelPieceSlot.scripts.OnEnter(barrelPieceSlot)
 barrelPieceSlot.scripts.OnLeave(barrelPieceSlot)
 chairSlot.scripts.OnEnter(chairSlot)
-assert(near(model.modelScale, fitted) and near(model.facing, 0), "view reset for a new piece")
+assert(near(model.facing, 0) and near(model.position[1], -midX - away / 1.2) and near(model.position[3], -midZ + 0.25 * size + 0.5),
+  "the chair's own view kept: " .. table.concat(model.position, ", "))
+-- Reset puts the view back: facing front, its whole size, turning.
+model.scripts.OnMouseWheel(model, 1)
+PlayerHousingPreviewReset.scripts.OnClick(PlayerHousingPreviewReset)
+assert(near(model.position[1], -midX - away) and near(model.position[3], -midZ + 0.25 * size) and near(model.facing, 0), "Reset: " .. model.position[1])
+-- Nearer and higher by hand are kept for the piece until Reset.
+model.scripts.OnMouseWheel(model, 1)
+chairSlot.scripts.OnLeave(chairSlot)
+barrelPieceSlot.scripts.OnEnter(barrelPieceSlot)
+barrelPieceSlot.scripts.OnLeave(barrelPieceSlot)
+chairSlot.scripts.OnEnter(chairSlot)
+assert(near(model.position[1], -midX - away / 1.2), "kept for the chair: " .. model.position[1])
+PlayerHousingPreviewReset.scripts.OnClick(PlayerHousingPreviewReset)
+assert(PlayerHousingDB.previewViews[901105] == nil and near(model.position[1], -midX - away), "Reset forgets it")
 chairSlot.scripts.OnLeave(chairSlot)
 assert(not PlayerHousingPreview:IsShown(), "preview hidden on leave")
+-- With the camera measured from screenshots (PreviewFix.lua): the chair at its measured distance
+-- and middle height, its middle where the shots showed it.
+PlayerHousing_PreviewCamera = measuredCamera
+local cam, fix = PlayerHousing_PreviewCamera, PlayerHousing_PreviewFix[901105]
+chairSlot.scripts.OnEnter(chairSlot)
+PlayerHousingPreviewReset.scripts.OnClick(PlayerHousingPreviewReset)
+assert(cam and fix and near(model.position[1], -(midX + fix[3]) - (fix[1] - cam.distance)) and near(model.position[3], -midZ + fix[2]),
+  "measured framing: " .. table.concat(model.position, ", "))
+model.scripts.OnMouseWheel(model, 1)   -- nearer: the middle follows the camera's aim
+local seen = cam.distance + (fix[1] - cam.distance) / 1.2
+assert(near(model.position[1], -(midX + fix[3]) - (seen - cam.distance)) and near(model.position[3], -midZ + fix[2] - cam.aim * (seen - fix[1]) / cam.focal),
+  "measured, nearer: " .. table.concat(model.position, ", "))
+PlayerHousingPreviewReset.scripts.OnClick(PlayerHousingPreviewReset)
+chairSlot.scripts.OnLeave(chairSlot)
 -- Buildings made of world models get a floor plan, to scale, instead of a model.
 PlayerHousing_Models[902200] = { false, 30, 10, 8 }
 cartSlot.scripts.OnEnter(cartSlot)
-assert(not PlayerHousingPreviewModel:IsShown(), "no model for a world model building")
+assert(not PlayerHousingPreviewModel:IsShown() and not PlayerHousingPreviewUnit:IsShown(), "no model for a world model building")
 assert(PlayerHousingPreviewPlan:IsShown(), "floor plan shown")
 local rect = PlayerHousingPreviewPlanRect
 assert(math.abs(rect.width / rect.height - 3) < 0.01, "30 by 10 yards drawn 3 to 1: " .. rect.width .. "x" .. rect.height)
@@ -268,6 +317,27 @@ cartSlot.scripts.OnLeave(cartSlot)
 -- A model piece hides the floor plan again.
 chairSlot.scripts.OnEnter(chairSlot)
 assert(not PlayerHousingPreviewPlan:IsShown() and PlayerHousingPreviewModel:IsShown(), "model shown, no floor plan")
+-- After the player (a mannequin's preview), an object shows in its own frame: the frame that
+-- showed the player keeps drawing the player whatever it's given later.
+PlayerHousing_Models[902200] = { "player", 1, 1, 2 }
+cartSlot.scripts.OnEnter(cartSlot)
+assert(PlayerHousingPreviewUnit.unit == "player" and PlayerHousingPreviewUnit:IsShown() and not PlayerHousingPreviewModel:IsShown(), "the player, in its own frame")
+assert(PlayerHousingPreviewModel.unit == nil, "the objects' frame never shows a unit")
+cartSlot.scripts.OnLeave(cartSlot)
+chairSlot.scripts.OnEnter(chairSlot)
+assert(PlayerHousingPreviewModel:IsShown() and not PlayerHousingPreviewUnit:IsShown() and PlayerHousingPreviewModel.unit == nil, "then a chair: the player's frame hidden")
+-- A model the frame can't load: the floor plan instead of an empty view.
+local realSetModel = Widget.SetModel
+Widget.SetModel = function(self, path) self.modelPath = nil end
+PlayerHousing_Models[902200] = { "World\\Nowhere\\Missing.m2", 4, 8, 5, 8, 0, 0, 2 }
+chairSlot.scripts.OnLeave(chairSlot)
+cartSlot.scripts.OnEnter(cartSlot)
+assert(not PlayerHousingPreviewModel:IsShown() and PlayerHousingPreviewPlan:IsShown(), "unloadable model: floor plan")
+SlashCmdList.PLAYERHOUSING("preview")
+assert(printed[#printed]:find("Missing.m2"), printed[#printed])
+cartSlot.scripts.OnLeave(cartSlot)
+Widget.SetModel = realSetModel
+chairSlot.scripts.OnEnter(chairSlot)
 chairSlot.scripts.OnLeave(chairSlot)
 assert(PlayerHousingFrame.height == 400, PlayerHousingFrame.height)
 
@@ -283,6 +353,12 @@ PlayerHousingCollectionSort.scripts.OnClick()
 assert(PlayerHousingCollectionSort.text == "Sort: name" and PlayerHousingCollectionSlot1.info[2] < "Westfall", PlayerHousingCollectionSlot1.info[2])
 PlayerHousingCollectionSort.scripts.OnClick()
 PlayerHousingCollectionSort.scripts.OnClick()
+PlayerHousingCollectionSort.scripts.OnClick()
+-- By unlock: the same unlock together, levels first (by value), the ones everyone has last.
+assert(PlayerHousingCollectionSort.text == "Sort: unlock" and PlayerHousingCollectionSlot1.info[7]:find("^Reach level"),
+  "unlock sort: " .. tostring(PlayerHousingCollectionSlot1.info[7]))
+local firstLevel = tonumber(PlayerHousingCollectionSlot1.info[7]:match("(%d+)"))
+assert(firstLevel and firstLevel <= tonumber(PlayerHousingCollectionSlot2.info[7]:match("(%d+)") or 999), "levels by value")
 PlayerHousingCollectionSort.scripts.OnClick()
 assert(PlayerHousingCollectionSort.text == "Sort: collection" and PlayerHousingCollectionSlot1.info[1] == 901105)
 
@@ -577,8 +653,15 @@ local tx, ty = 16241, 16301
 local dx, dy, dz = tx - ox, ty - oy, floorZ - oz
 local len = math.sqrt(dx * dx + dy * dy + dz * dz)
 PlayerHousing_CursorRay = function() return ox, oy, oz, dx / len, dy / len, dz / len end
+-- Upright, it's a figure the mouse goes through: a point there is the wall it's on.
 pointed = { 16240.2, 16299.6, 12.6, 0, -1, 0 }   -- on the barrel's near side
 local sentBefore = #addonSent
+tick(0.2)
+assert(#addonSent > sentBefore and addonSent[#addonSent][2]:find("ghost at 16240.20 16299.60 12.60", 1, true),
+  "upright: the wall point stands: " .. tostring(addonSent[#addonSent] and addonSent[#addonSent][2]))
+PlayerHousingAPI.state.ghostPitch = 15
+pointed = { 16240.2, 16299.6, 12.6, 0, -1, 0 }
+sentBefore = #addonSent
 tick(0.2)
 local sentPoint = addonSent[#addonSent] and addonSent[#addonSent][2] or ""
 local gx, gy, gz = sentPoint:match("ghost at (%S+) (%S+) (%S+)")
@@ -590,6 +673,7 @@ pointed = { 16240.1, 16299.9, 12.7, 0, -1, 0 }
 sentBefore = #addonSent
 tick(0.2)
 assert(#addonSent == sentBefore, "no ray: a point on the held piece is left out")
+PlayerHousingAPI.state.ghostPitch = 0
 -- A loading screen: nothing traced or moved, and the ghost is forgotten until the server says again.
 mouse.scripts.OnEvent(mouse, "PLAYER_LEAVING_WORLD")
 local placedBefore = #placedUnits
@@ -917,7 +1001,8 @@ assert(popups[#popups][1] == "PLAYERHOUSING_PACKUP", "pack up asks first")
 StaticPopupDialogs.PLAYERHOUSING_PACKUP.OnAccept()
 assert(last() == ".house packup", last())
 PlayerHousingUnstuck.scripts.OnClick(); assert(last() == ".house unstuck", last())
-PlayerHousingNewKey.scripts.OnClick(); assert(last() == ".house key", last())
+PlayerHousingCallKrook.scripts.OnClick(); assert(last() == ".house krook", last())
+assert(not PlayerHousingNewKey, "a new House Key comes from Krook, not the window")
 PlayerHousingGuestbookButton.scripts.OnClick()
 assert(PlayerHousingGuestsPanel:IsShown() and last() == ".house data guestbook", "the guestbook from the Island tab: " .. last())
 
@@ -1057,26 +1142,67 @@ local printedCount = #printed
 SlashCmdList.PLAYERHOUSING("help")
 assert(#printed > printedCount and printed[#printed]:find("%.house help"), printed[#printed])
 
--- A mannequin picked up: Dress... shows what it wears and what in the bags it could.
+-- A mannequin picked up: Dress... opens its sheet, gear in slots like the character sheet's.
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t21\tMannequin\t5\t200\t1\t10\tplaced Mannequin\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t1\t902300\tmove\t1\t\t1\t100\t0\t0\t1",
   "WHISPER", "Krookowner")
-PlayerHousingFrame:Show()
 SEL("Dress...").scripts.OnClick()
-assert(PlayerHousingDress:IsShown() and last() == ".house data stand 21", "the dress list asks for the stand: " .. last())
-rows("stand", { "figure\tHuman man", "worn\t15\tmain hand\t25\tWorn Shortsword", "worn\t6\tlegs\t39\tRecruit's Pants",
-  "wear\t2092\tWorn Dagger\toff hand" }, 21)
-assert(PlayerHousingDressFigure.text == "Figure: Human man", tostring(PlayerHousingDressFigure.text))
-assert(PlayerHousingDressRow1Text.text:find("Worn Shortsword") and PlayerHousingDressRow1.button.text == "Take off", PlayerHousingDressRow1Text.text)
-assert(PlayerHousingDressRow3Text.text:find("Worn Dagger") and PlayerHousingDressRow3.button.text == "Put on", PlayerHousingDressRow3Text.text)
-PlayerHousingDressRow1.button.scripts.OnClick(PlayerHousingDressRow1.button)
-assert(sent[#sent - 1] == ".house stand undress 15 21" and last() == ".house data stand 21", sent[#sent - 1])
-PlayerHousingDressRow3.button.scripts.OnClick(PlayerHousingDressRow3.button)
-assert(sent[#sent - 1] == ".house stand dress 2092 21", sent[#sent - 1])
+assert(PlayerHousingDress:IsShown() and last() == ".house data stand 21", "the sheet asks for the stand: " .. last())
+assert(UISpecialFrames[#UISpecialFrames] == "PlayerHousingDress", "Escape closes the sheet")
+-- look: a Dwarf (3) woman (256).
+rows("stand", { "figure\tDwarf woman", "look\t259", "worn\t15\tmain hand\t25\tWorn Shortsword", "worn\t6\tlegs\t39\tRecruit's Pants" }, 21)
+assert(PlayerHousingDressFigure.text == "Dwarf woman", tostring(PlayerHousingDressFigure.text))
+assert(PlayerHousingDressMainHandSlot.entry == 25 and PlayerHousingDressLegsSlot.entry == 39 and not PlayerHousingDressHeadSlot.entry, "worn in slots")
+-- Dragged on from the bags: the server finds the slot.
+cursorItem = 2092
+PlayerHousingDressSecondaryHandSlot.scripts.OnReceiveDrag(PlayerHousingDressSecondaryHandSlot)
+assert(sent[#sent - 1] == ".house stand dress 2092 21" and last() == ".house data stand 21" and not cursorItem, sent[#sent - 1])
+-- Dragged off, or right-clicked: back to the bags. An empty slot does nothing.
+PlayerHousingDressMainHandSlot.scripts.OnDragStart(PlayerHousingDressMainHandSlot)
+assert(sent[#sent - 1] == ".house stand undress 15 21", sent[#sent - 1])
+PlayerHousingDressLegsSlot.scripts.OnClick(PlayerHousingDressLegsSlot, "RightButton")
+assert(sent[#sent - 1] == ".house stand undress 6 21", sent[#sent - 1])
+count = #sent
+PlayerHousingDressHeadSlot.scripts.OnClick(PlayerHousingDressHeadSlot, "RightButton")
+assert(#sent == count, "an empty slot: nothing")
+-- Race, man or woman, a new look, trading gear; no poses (version 2).
+local function DressButton(text)
+  for _, f in ipairs(frames) do if f.parent == PlayerHousingDress and f.text == text then return f end end
+end
+assert(DressButton("Dwarf"), "the race button names it")
+DressButton("Dwarf").scripts.OnClick(DressButton("Dwarf"))
+assert(#lastMenu == 10, "ten races")
+lastMenu[5].func()
+assert(sent[#sent - 1] == ".house stand look 11 female 21", sent[#sent - 1])
+DressButton("Man").scripts.OnClick(DressButton("Man"))
+assert(sent[#sent - 1] == ".house stand look 3 male 21", sent[#sent - 1])
+assert(not DressButton("Pose"), "no poses for now")
+DressButton("Trade gear").scripts.OnClick(DressButton("Trade gear"))
+assert(sent[#sent - 1] == ".house stand trade 21", sent[#sent - 1])
 -- A list for another stand is ignored; selecting something else closes it.
-rows("stand", { "figure\tDwarf woman" }, 99)
-assert(PlayerHousingDressFigure.text == "Figure: Human man", "another stand's list ignored")
+rows("stand", { "figure\tOrc man" }, 99)
+assert(PlayerHousingDressFigure.text == "Dwarf woman", "another stand's list ignored")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\tmoved Barrel\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 assert(not PlayerHousingDress:IsShown(), "closed when the mannequin isn't selected")
+
+assert(not PlayerHousingPoser, "a left-click on a mannequin does nothing (no poses for now)")
+
+-- Picking a piece up with the window open: the window steps aside, the held panel stays at the
+-- bottom of the screen. Set down or put back (Escape), the window comes back.
+assert(UISpecialFrames[1] == "PlayerHousingFrame", "Escape closes the window")
+PlayerHousingFrame:Show()
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\t\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t0\t902101\t\t1\t\t0\t100\t0\t0\t1",
+  "WHISPER", "Krookowner")
+assert(not PlayerHousingFrame:IsShown() and PlayerHousingSelected:GetParent() == UIParent and PlayerHousingSelected:IsShown(), "out of the way")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\t\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+assert(PlayerHousingFrame:IsShown() and PlayerHousingSelected:GetParent() == PlayerHousingFrame, "back")
+-- Picked up with the window closed: it stays closed afterwards.
+PlayerHousingFrame:Hide()
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\t\tKrookowner\t\t0\t0\t0\t0\t0\t0\t0\t0\t902101\t\t1\t\t0\t100\t0\t0\t1",
+  "WHISPER", "Krookowner")
+assert(PlayerHousingSelected:GetParent() == UIParent, "held panel docked")
+fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t13\tBarrel\t5\t200\t1\t10\t\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
+assert(not PlayerHousingFrame:IsShown(), "stays closed")
+PlayerHousingFrame:Show()
 -- The window open on your island is decorating (chairs and chests pick up); closed, they work
 -- again, once nothing is held. Asked once each way.
 PlayerHousingFrame:Hide()
@@ -1092,6 +1218,21 @@ assert(#sent == count or last() ~= ".house decorate on", "asked once")
 fire("CHAT_MSG_ADDON", "HOUSING", "state\t1\t1\t0\t\t5\t200\t1\t10\t\tKrookowner\t\t0\t0", "WHISPER", "Krookowner")
 PlayerHousingFrame:Hide()
 assert(last() == ".house decorate off", "window closed: not decorating: " .. last())
+-- The preview tour: each shot shown as told, coded in the strip, then a screenshot.
+PlayerHousing_PreviewTask = { run = "t1", shots = { { 901105, 0, 1, 0, 0.785 }, { 901105, 1, 0.6, 0, 0.785 } } }
+local shotsBefore = screenshots
+PlayerHousingAPI.PreviewTour()
+local tourFrame = PlayerHousingPreviewTour
+local function tourTick(seconds) now = now + seconds; tourFrame.scripts.OnUpdate(tourFrame, seconds) end
+tourTick(1.1)   -- shows the first
+assert(PlayerHousingPreviewModel.modelPath == PlayerHousing_Models[901105][1] and PlayerHousingPreviewTourBlack:IsShown()
+  and not PlayerHousingPreviewReset:IsShown(), "first shot shown on black")
+tourTick(0.7)   -- shoots
+assert(screenshots == shotsBefore + 1, "one screenshot")
+for _ = 1, 6 do tourTick(0.8) end
+assert(screenshots == shotsBefore + 2 and PlayerHousingDB.previewTourDone == "t1" and not PlayerHousingPreviewTourBlack:IsShown()
+  and PlayerHousingPreviewReset:IsShown(), "two shots, done, back to normal")
+PlayerHousing_PreviewTask = nil
 OnUpdate(driver, 1)
 print("sent:", table.concat(sent, " | "))
 print("ALL ADDON CHECKS PASSED")

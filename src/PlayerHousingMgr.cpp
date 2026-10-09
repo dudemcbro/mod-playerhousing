@@ -614,12 +614,9 @@ bool PlayerHousingMgr::ResolvePlayerGuid(std::string const& playerName, ObjectGu
     return true;
 }
 
-void PlayerHousingMgr::GiveFirstLoginItems(Player* player)
+void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
 {
     ObjectGuid::LowType guid = player->GetGUID().GetCounter();
-    if (GetCharacterFlags(guid) & CHAR_FLAG_KEY_GIVEN)
-        return;
-
     std::string reason;
     if (!GiveHouseKey(player, reason))
     {
@@ -648,7 +645,12 @@ void PlayerHousingMgr::GiveFirstLoginItems(Player* player)
 
     SetCharacterFlag(guid, CHAR_FLAG_KEY_GIVEN, false);
     Say(player, firstOnAccount ? "You have a house! Your House Key (or /housing) opens the housing window: Go home takes you there."
-        : "Here is your House Key: your island is shared by all your characters. The key (or /housing) opens the housing window.");
+        : "Here is your House Key: your island is shared by all your characters. The key (or /housing) opens the housing window. If you lose it, come back to me (I'm by the innkeeper in every capital city) for another.");
+}
+
+bool PlayerHousingMgr::HadHouseKey(Player const* player) const
+{
+    return GetCharacterFlags(player->GetGUID().GetCounter()) & CHAR_FLAG_KEY_GIVEN;
 }
 
 bool PlayerHousingMgr::GiveHouseKey(Player* player, std::string& reason)
@@ -664,7 +666,7 @@ bool PlayerHousingMgr::GiveHouseKey(Player* player, std::string& reason)
 
     if (!player->AddItem(HOUSE_KEY_ITEM, 1))
     {
-        reason = "Your bags are full. Make room and type .house key to get your House Key.";
+        reason = "Your bags are full. Make room, then ask me again for your House Key.";
         return false;
     }
 
@@ -706,7 +708,7 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
     if (bot)
         return;
 
-    GiveFirstLoginItems(player);
+    // The House Key comes from Krook, beside the innkeeper in every capital city.
     // Pieces from before the Collection kept count, in the bags or the bank, join it.
     SweepHousingItems(player, true);
 
@@ -888,7 +890,6 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
 
     if (arrived)
         OnArrived(player, ownerGuid);
-    UpdateEditHelpers(player, ownerGuid);
     UpdateGhost(player);
 
     // Swimmers and anyone falling through the world go back to the landing spot rather than
@@ -1184,7 +1185,7 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
             placement.z = fields[4].Get<float>();
             placement.o = fields[5].Get<float>();
             placement.scale = std::max(0.05f, fields[6].Get<float>());
-            placement.look = fields[7].Get<uint32>();
+            placement.look = fields[7].Get<uint64>();
             placement.parent = fields[8].Get<uint32>();
             placement.pitch = fields[9].Get<float>();
             placement.roll = fields[10].Get<float>();
@@ -1213,7 +1214,9 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     if (QueryResult maxResult = CharacterDatabase.Query("SELECT IFNULL(MAX(placement_id), 0) FROM mod_playerhousing_placement WHERE owner_guid={}", ownerGuid))
         session.nextPlacementId = std::max(session.nextPlacementId, (*maxResult)[0].Get<uint32>() + 1);
 
-    SpawnSteward(session, map);
+    // Krook stands by until the welcome tour is done; then he comes only when called.
+    if (!TourDone(ownerGuid))
+        SpawnSteward(session, map);
 
     HouseRecord house;
     if (GetHouseRecord(ownerGuid, house) && !(house.flags & HOUSE_FLAG_WRECKAGE_PLACED))
@@ -1234,11 +1237,6 @@ void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
     for (auto const& [placementId, spawned] : session.spawned)
         RemoveSpawned(map, spawned.guid);
 
-    for (auto const& [who, rings] : session.rings)
-        for (auto const& [id, ring] : rings)
-            if (GameObject* object = map->GetGameObject(ring.guid))
-                object->AddObjectToRemoveList();
-    session.rings.clear();
     DespawnPhoto(session, map);
 
     if (session.stewardGuid)
@@ -1518,6 +1516,13 @@ bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
         return false;
     }
 
+    // The way home is the House Key, which Krook hands out beside every capital's innkeeper.
+    if (!player->IsGameMaster() && !player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
+    {
+        reason = "You need a House Key to go home. Krook, beside the innkeeper in every capital city, has one for you.";
+        return false;
+    }
+
     if (_freeMode || _keyDelaySeconds == 0 || player->IsGameMaster())
         return EnterOwnHouse(player, reason);
 
@@ -1666,4 +1671,38 @@ void PlayerHousingMgr::SendAddonState(Player* player) const
     }
     message += Acore::StringFormat("\t{}\t{}\t{}\t{}\t{}", ghostSize, ghostPitch, ghostRoll, ghostCount, ghostFront);
     SendAddon(player, message);
+}
+
+bool PlayerHousingMgr::TourDone(ObjectGuid::LowType ownerGuid) const
+{
+    // The tour's last quest, handed in by any character of the account the island is kept for.
+    return bool(CharacterDatabase.Query(
+        "SELECT 1 FROM character_queststatus_rewarded r JOIN characters c ON c.guid = r.guid "
+        "JOIN characters h ON h.account = c.account WHERE h.guid={} AND r.quest={} LIMIT 1", ownerGuid, QUEST_TOUR_OPEN));
+}
+
+bool PlayerHousingMgr::CallSteward(Player* player, std::string& reason)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    Session* session = GetOwnerSession(player, reason);
+    if (!session)
+        return false;
+    Map* map = player->GetMap();
+
+    // A couple of yards ahead of the player, facing them.
+    float o = player->GetOrientation();
+    float x = player->GetPositionX() + std::cos(o) * 2.5f;
+    float y = player->GetPositionY() + std::sin(o) * 2.5f;
+    float z = player->GetPositionZ();
+    float facing = Position::NormalizeOrientation(o + 3.14159265f);
+    // He appears there (one already out goes: a creature moved by teleport doesn't reach every
+    // client reliably).
+    if (Creature* steward = session->stewardGuid ? map->GetCreature(session->stewardGuid) : nullptr)
+        steward->DespawnOrUnsummon();
+    session->stewardGuid.Clear();
+    Position position;
+    position.Relocate(x, y, z + 0.1f, facing);
+    SpawnStewardAt(*session, map, position);
+    reason = "Krook hurries over.";
+    return true;
 }

@@ -440,7 +440,11 @@ def build(args):
         # Pieces that work like the real thing, and every building, get a clickable goober copy
         # while the housing window is open. Generic/destructible building objects otherwise do
         # not deliver clicks to the script, which made buildings movable only from the Placed tab.
-        edit = edit_entry(item) if (building or go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC, GO_TYPE_DESTRUCTIBLE_BUILDING)) and not stand and not figure else 0
+        # World-model buildings (destructible-building objects) get none: a goober can't draw a
+        # world model, so the building vanished while the window was open. They're moved from
+        # the Placed tab.
+        edit = edit_entry(item) if ((building and go_type != GO_TYPE_DESTRUCTIBLE_BUILDING)
+                                    or go_type not in (GO_TYPE_GOOBER, GO_TYPE_GENERIC, GO_TYPE_DESTRUCTIBLE_BUILDING)) and not stand and not figure else 0
 
         def go_row(entry, gtype, gdata):
             return "(%d, %d, %d, %s, '', '', '', %s, %s, '', %s, 0)" % (
