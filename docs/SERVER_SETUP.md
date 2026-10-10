@@ -104,6 +104,12 @@ client download or patches, and point players to it. Options:
   `CreatureDisplayInfo.dbc` or `CreatureModelData.dbc`, so give it a later letter.
 - `--icons-only` for the `guildhouse` layout.
 - `--patch <file>` to pack a patch you built already.
+- `--patch-name enUS/patch-enUS-z.MPQ` for clients with HD packs, whose own patches sit in
+  `Data/enUS` and load after anything in `Data`.
+
+The addon, DLL and launcher in the zip come from the module folder you built. Each
+[release](https://github.com/dudemcbro/mod-playerhousing/releases) also has them on their own (`PlayerHousing-<version>-client.zip`), without the
+patch; the patch is the one part only you can provide, since it's built from game files.
 
 ## 7. Try it as a player
 

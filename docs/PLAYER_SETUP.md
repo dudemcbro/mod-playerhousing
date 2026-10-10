@@ -4,7 +4,9 @@ A home of your own: an island shared by all your characters, to build and furnis
 like. Setting up takes about five minutes.
 
 You need the **PlayerHousing-client.zip** from your server (ask where they host it) and a
-World of Warcraft 3.3.5a client.
+World of Warcraft 3.3.5a client. Your server's zip has everything, including the client patch.
+The [GitHub releases](https://github.com/dudemcbro/mod-playerhousing/releases) have the addon, DLL and launcher on their own, without the patch
+(it's built from game files, so only your server can hand it out).
 
 ## 1. Unzip into your game folder
 

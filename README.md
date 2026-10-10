@@ -52,6 +52,10 @@ piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md). Troub
   PlayerHousingLauncher.exe, and ask Krook at any capital's inn for a House Key.
 - **Trying it out:** [tools/test-server](tools/test-server/README.md) runs a complete
   server with the module in a container.
+- **Downloads:** each [release](https://github.com/dudemcbro/mod-playerhousing/releases) has `PlayerHousing-<version>-client.zip`, the client
+  files that are this project's own (the addon, PlayerHousing.dll and its launcher, the
+  player guide). It has no game files: the client patch is built by each server from its own
+  game client, so players get the full download from their server.
 
 In short, a server needs AzerothCore WotLK (3.3.5a) built with the module and its map tools;
 every player needs the [client addon](#client-addon) (required: it is the housing window),

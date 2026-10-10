@@ -13,7 +13,8 @@ addon doesn't use the mouse (it checks when you log in), and pieces follow you a
 ## Install (each player)
 
 Players get it in the server's PlayerHousing-client.zip (see
-[docs/PLAYER_SETUP.md](../docs/PLAYER_SETUP.md)). By hand:
+[docs/PLAYER_SETUP.md](../docs/PLAYER_SETUP.md)), and every [release](https://github.com/dudemcbro/mod-playerhousing/releases) has it too. By
+hand:
 
 1. Copy `bin/PlayerHousing.dll` and `bin/PlayerHousingLauncher.exe` into the game's folder,
    next to `Wow.exe`.

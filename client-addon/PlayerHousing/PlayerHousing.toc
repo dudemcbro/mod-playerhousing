@@ -1,8 +1,8 @@
 ## Interface: 30300
 ## Title: Player Housing
 ## Notes: The housing window for mod-playerhousing (the server needs it): your Collection, placing and moving pieces with the mouse, your island, guests and visits.
-## Author: mod-playerhousing
-## Version: 2.1
+## Author: dudemcbro
+## Version: 1.0.0
 ## SavedVariablesPerCharacter: PlayerHousingDB
 
 PieceModels.lua

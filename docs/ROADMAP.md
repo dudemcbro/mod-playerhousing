@@ -1,7 +1,7 @@
 # Roadmap: 1.0 to 2.0
 
 Each release after 1.0 centers on one core system, so it can be built, tested and shipped
-on its own. Only what's missing is listed; what 1.0 already has is at the end.
+on its own. Only what's missing is listed; what 1.0 already has is at the end. 1.0.0 is released.
 
 ## 1.0: the first release
 
@@ -12,7 +12,6 @@ work:
 | Item | Why |
 | --- | --- |
 | Try in game | Built and tested on the test server, still to be seen in a real client: GM Island's guild hall on the regular map, the Lich King figurine's preview (the server now tells the client about every figurine's boss), and the launcher staying open until WoW closes (for the exit hang under Lutris). |
-| Tag `v1.0.0` | With the SQL, the addon and the DLL in the release; the client patch is built by each server from its own client. |
 
 ## 1.1: islands as instances
 
