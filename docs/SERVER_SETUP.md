@@ -140,8 +140,8 @@ nearest end of it.
 
 Every open island shares the same map cells on Kalimdor, so the piece limits are also how you
 keep a busy server quick: about 6,000 pieces out across 100 occupied islands is comfortable;
-past a few hundred busy islands, lower `MaxFurnishings` (see "Thousands of players" in the
-[README](../README.md#thousands-of-players)).
+past a few hundred busy islands, lower `MaxFurnishings` (see
+[Thousands of players](HOW_IT_WORKS.md#thousands-of-players)).
 
 ### Placing
 
@@ -189,7 +189,7 @@ past a few hundred busy islands, lower `MaxFurnishings` (see "Thousands of playe
 
 - **Prices and unlocks:** what each piece costs as an extra copy, and what unlocks it, come
   from `tools/content/pieces.py`. Edit it, then run `tools/content/build_content.py` (see
-  [Content](../README.md#content)) and apply the SQL again. Editing the tables
+  [Content](CONTENT.md)) and apply the SQL again. Editing the tables
   directly works until the next `apply_sql.sh`, which rewrites them.
 - **Where players land and where Krook stands** on the island: the
   `mod_playerhousing_layout` table (landing point, Krook's offset from it, the island's
@@ -200,8 +200,8 @@ past a few hundred busy islands, lower `MaxFurnishings` (see "Thousands of playe
 - **GM tools** for running it: `.house unlock <item|name|all> [player]` and `relock`,
   `.house unlocks [player]`, `.house key` (a House Key for yourself), `.house add` (Krook
   beside you for ten minutes), and moderation: `.house reports`, `close`, `inspect`, `hide`,
-  `unhide`, `cleargreeting`, `gmpackup` (all in the
-  [README](../README.md#moderation)).
+  `unhide`, `cleargreeting`, `gmpackup` (all in
+  [COMMANDS.md](COMMANDS.md#moderation)).
 
 ## Updating
 
@@ -216,6 +216,36 @@ When the update changed the addon, the DLL or the content (`tools/content/`,
 `client-addon/`, `client-dll/bin/`), run `make_player_bundle.sh` again and tell players to
 install the new zip over the old one (and clear their `Cache` folder once).
 
+### From the house levels version
+
+Older versions had house styles, stages, a vendor catalog and furniture unlocks. Applying
+the world SQL removes those tables. At the next startup the module converts what players
+had: placed furniture and catalog unlocks become Collection unlocks and counts, and with the
+cleared island, anything that stood inside the old guild hall goes back to its owner's
+Collection with a message on their next visit. Gold spent on stages isn't refunded.
+
+The repository's history was rewritten in September 2026. A clone from before that cannot
+pull: clone it again, or run `git fetch && git reset --hard origin/main` (this discards local
+commits).
+
+## Uninstall
+
+With the worldserver stopped (the characters rollback hands out mail ids), from the
+module directory:
+
+```sh
+cd <azerothcore>/modules/mod-playerhousing
+mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_rollback.sql
+mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters_rollback.sql
+```
+
+They remove everything the module added; gear still on mannequins is mailed back to its
+owners. On the cleared layout, put the guild hall back in the server data with
+`tools/gm-island-cleared/server_data.sh --restore` (see its
+[README](../tools/gm-island-cleared/README.md)). Then delete the module directory and your
+server's `etc/modules/mod_playerhousing.conf`, re-run CMake and rebuild. Players can
+remove the client patch and the addon.
+
 ## When something's wrong
 
 | What you see | Why, and the fix |
@@ -228,4 +258,4 @@ install the new zip over the old one (and clear their `Cache` folder once).
 | Pieces follow the player instead of the mouse | The DLL isn't loaded: the game wasn't started with `PlayerHousingLauncher.exe`, or `AddonChannel = 0`. |
 | Bots have no islands | On purpose: playerbots never get housing. |
 
-Uninstalling is in the [README](../README.md#uninstall).
+Uninstalling: see [Uninstall](#uninstall), above.

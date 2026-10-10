@@ -190,8 +190,8 @@ docker exec housing-dev python3 /opt/acore/modules/mod-playerhousing/tools/test-
 ```
 
 It waits for its characters to be out of the world before resetting them, and logs them
-out cleanly at the end, so runs can follow each other. Results are in the module README
-(Load).
+out cleanly at the end, so runs can follow each other. Results are in
+[docs/HOW_IT_WORKS.md](../../docs/HOW_IT_WORKS.md#load).
 
 ## Not covered by the test
 

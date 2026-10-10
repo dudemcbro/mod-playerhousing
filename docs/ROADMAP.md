@@ -18,7 +18,7 @@ work:
 **Core system:** where islands live. The biggest gap left, and what 2.0 stands on.
 
 Today every island is a phase of the same spot on Kalimdor: one map thread runs them all,
-and every moving player looks at every island's pieces (README, "Thousands of players").
+and every moving player looks at every island's pieces ([HOW_IT_WORKS.md](HOW_IT_WORKS.md#thousands-of-players)).
 Past a few hundred open islands that slows all of Kalimdor.
 
 - A map of its own: a Map.dbc row and a WDT listing GM Island's tiles in the client patch;

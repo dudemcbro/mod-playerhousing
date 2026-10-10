@@ -98,7 +98,7 @@ with the icons (and ghosts) alone.
 ## Ghosts
 
 A piece being placed or moved follows its player as a see-through copy of itself: a
-creature with the piece's model (see the main README). The client only draws creatures
+creature with the piece's model (see [docs/HOW_IT_WORKS.md](../../docs/HOW_IT_WORKS.md)). The client only draws creatures
 from its own `CreatureDisplayInfo.dbc` and `CreatureModelData.dbc`, so the patch adds a
 creature model and a see-through display (opacity 150 of 255) for each piece's model, and a
 see-through copy of the figurines' and the mannequin's displays, all with ids from 61100 (a

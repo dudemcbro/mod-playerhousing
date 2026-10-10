@@ -35,8 +35,8 @@ pieces float ahead of the player instead.
 
 Click a piece in the housing window's Collection, or right-click a placed piece: it follows
 the mouse over the world (floor, table top, a wall facing out, under a ceiling), and a click
-sets it down. The mouse and key controls are in the main
-[README](../README.md#client-addon).
+sets it down. The mouse and key controls are in
+[docs/ADDON.md](../docs/ADDON.md).
 
 ## What it does, exactly
 
