@@ -28,7 +28,7 @@ tops, walls and ceilings; undo for everything; saved layouts and sets; mannequin
 your real gear; weather, time of day and music per island; visitors, likes, a guestbook and
 roommates; GM moderation tools.
 
-The design and the reasoning behind it are in [docs/UX_PLAN.md](docs/UX_PLAN.md). Every
+The design and the reasoning behind it are in [docs/DESIGN.md](docs/DESIGN.md). Every
 piece and what unlocks it is listed in [docs/UNLOCKS.md](docs/UNLOCKS.md). Troubleshooting: for servers in
 [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md#when-somethings-wrong), for players in
 [docs/PLAYER_SETUP.md](docs/PLAYER_SETUP.md#if-somethings-not-right).
