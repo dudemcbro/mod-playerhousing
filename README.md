@@ -68,7 +68,7 @@ work as well as the playerbots fork it is developed on (see
 | `PlayerHousing.Enable` | 1 | The whole module |
 | `PlayerHousing.FreeMode` | 0 | Test servers: copies from the Collection are free and the House Key is instant |
 | `PlayerHousing.UnlockAll` | 0 | Test servers: the whole Collection is unlocked, plus "one of everything" |
-| `PlayerHousing.Layout` | cleared | `cleared`: every island is GM Island with its guild hall **removed**, so islands start as open ground (needs the server data step and the client patch). `guildhouse`: GM Island as it ships, guild hall and all; players land inside the hall. The hall is removed from the map itself (the client patch and the server's collision data), so for now the regular GM Island has no hall either. |
+| `PlayerHousing.Layout` | cleared | `cleared`: every island is GM Island with its guild hall **removed**, so islands start as open ground (needs the server data step and the client patch). `guildhouse`: GM Island as it ships, guild hall and all; players land inside the hall. The patch removes the hall from the map tile itself, and the module puts it back on the regular GM Island as an object only players outside housing see. |
 | `PlayerHousing.DefaultPrivacy` | private | Privacy of new islands: `private`, `friends` or `public` |
 | `PlayerHousing.GmBypassPrivate` | 0 | GMs in GM mode can visit any island |
 | `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |

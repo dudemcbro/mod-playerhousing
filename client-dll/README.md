@@ -25,8 +25,9 @@ Players get it in the server's PlayerHousing-client.zip (see
    `PlayerHousing.dll 4: ready (Wow.exe 3.3.5.12340) ...`. `PlayerHousing.log`, next to the
    DLL, says the same.
 
-The launcher starts Wow.exe paused, loads the DLL into it, and lets it carry on. Wow.exe itself
-is never changed. If the DLL can't load, the game still starts, with a message saying why, and
+The launcher starts Wow.exe paused, loads the DLL into it, and lets it carry on, then stays
+until the game closes and ends with its exit code, so Lutris, Steam and Bottles see it exactly
+as they would Wow.exe. Wow.exe itself is never changed. If the DLL can't load, the game still starts, with a message saying why, and
 pieces float ahead of the player instead.
 
 ## Using it

@@ -6,9 +6,11 @@ trees, rocks and beach stay. To keep the hall instead, set
 `PlayerHousing.Layout = "guildhouse"` and skip everything here except the client patch,
 built with `--icons-only` (see [Item icons](#item-icons)).
 
-The hall is removed from the map itself, not only from housing islands: players with the
-patch see no hall on the regular GM Island either, and the server's collision there has none.
-Bringing it back outside housing is on the 1.0 list in [the roadmap](../../docs/ROADMAP.md).
+The patch removes the hall from the map tile itself, so the module puts it back on the regular
+GM Island as an object (a destructible building with the hall's own model, display 90000,
+which the patch also adds: `client_gameobject_displays.tsv`). It stands in the normal phase
+only, so housing islands never see it. On the `guildhouse` layout the map keeps its hall, and
+the module hides this copy. The server has no collision for the object; players' clients do.
 
 Three things have to match, or the server and clients disagree about where walls are:
 

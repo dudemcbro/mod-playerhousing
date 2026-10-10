@@ -130,6 +130,11 @@ if [ "$ISLAND" = 1 ]; then
     mkdir -p "$work/pack/World/Maps/Kalimdor"
     python3 "$HERE/adt_sink_wmo.py" "$work/Kalimdor_1_1.adt" "$work/pack/World/Maps/Kalimdor/Kalimdor_1_1.adt"
     files+=("World/Maps/Kalimdor/Kalimdor_1_1.adt")
+    # The hall as an object, for the regular GM Island outside housing (the server spawns it).
+    latest 'DBFilesClient\GameObjectDisplayInfo.dbc' "$work/GameObjectDisplayInfo.dbc"
+    mkdir -p "$work/pack/DBFilesClient"
+    python3 "$HERE/dbc_add_gameobject_displays.py" "$HERE/client_gameobject_displays.tsv" "$work/GameObjectDisplayInfo.dbc" "$work/pack/DBFilesClient"
+    files+=("DBFilesClient/GameObjectDisplayInfo.dbc")
 fi
 
 latest 'DBFilesClient\Item.dbc' "$work/Item.dbc"

@@ -1,7 +1,9 @@
 #include "PlayerHousingMgr.h"
 
+#include "AllGameObjectScript.h"
 #include "Chat.h"
 #include "CommandScript.h"
+#include "Config.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "GlobalScript.h"
@@ -21,6 +23,7 @@
 #include "WorldPacket.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -525,6 +528,7 @@ public:
             }
             mgr->SetAddonClient(player, mouse, local);
             mgr->SendAddonState(player);
+            mgr->SendFigurineCreatures(player);
             return true;
         }
         else if (sub == "data")
@@ -1203,6 +1207,26 @@ public:
     }
 };
 
+// GM Island's guild hall as an object on the regular map (world SQL), for the cleared layout:
+// its client patch takes the hall out of the map tile. On any other layout the map tile still
+// has its hall, so this copy is put in a phase nobody is in rather than drawn twice. Read
+// straight from the config: the island's cells can load before the module reads it.
+class mod_playerhousing_gameobjectscript : public AllGameObjectScript
+{
+public:
+    mod_playerhousing_gameobjectscript() : AllGameObjectScript("mod_playerhousing_gameobjectscript") { }
+
+    void OnGameObjectAddWorld(GameObject* go) override
+    {
+        if (go->GetEntry() != GUILD_HALL_GO)
+            return;
+        std::string layout = sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared");
+        std::transform(layout.begin(), layout.end(), layout.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (layout != "cleared")
+            go->SetPhaseMask(0, true);
+    }
+};
+
 void Addmod_playerhousingScripts()
 {
     new npc_playerhousing_steward();
@@ -1218,4 +1242,5 @@ void Addmod_playerhousingScripts()
     new mod_playerhousing_commandscript();
     new mod_playerhousing_playerscript();
     new mod_playerhousing_globalscript();
+    new mod_playerhousing_gameobjectscript();
 }

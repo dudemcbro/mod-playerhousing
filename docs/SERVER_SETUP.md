@@ -127,7 +127,7 @@ nearest end of it.
 | Setting | Default | Range | What it does |
 | --- | --- | --- | --- |
 | `PlayerHousing.Enable` | 1 | 0, 1 | The whole module. Off: housing stops working, and every island, piece and unlock stays in the database for when it's back on. |
-| `PlayerHousing.Layout` | cleared | cleared, guildhouse | `cleared`: removes GM Island's big guild hall from every housing island, so islands start as open ground where the hall stood (needs step 4's server data and the client patch). `guildhouse`: keeps the guild hall, and players land inside it. The hall goes from the map itself, so the regular GM Island loses it too, for now. Switching to `cleared` sends anything placed inside the old hall back to its owner's Collection. |
+| `PlayerHousing.Layout` | cleared | cleared, guildhouse | `cleared`: removes GM Island's big guild hall from every housing island, so islands start as open ground where the hall stood (needs step 4's server data and the client patch). `guildhouse`: keeps the guild hall, and players land inside it. The patch takes the hall out of the map tile, and the module puts it back on the regular GM Island as an object only players outside housing see. Switching to `cleared` sends anything placed inside the old hall back to its owner's Collection. |
 | `PlayerHousing.MaxFurnishings` | 200 | 1 to 5000 | Furnishings one island can hold. |
 | `PlayerHousing.MaxBuildings` | 10 | 0 to 200 | Buildings one island can hold. 0: no buildings at all. |
 | `PlayerHousing.SavedLayouts` | 5 | 0 to 20 | Layouts each island can keep. 0 turns layouts off. |

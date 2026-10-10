@@ -128,7 +128,7 @@ More accounts: `python3 tools/test-server/testclient/create_account.py NAME PASS
 
 ## The automated test
 
-`testclient/collection_smoke.py` is the end-to-end suite (96 checks). It logs in headless
+`testclient/collection_smoke.py` is the end-to-end suite (99 checks). It logs in headless
 characters (`Krookowner`, `Krookguest` and the GM `Krookadmin`, created on first run),
 resets their housing, plays it through, and checks the database and what each client sees
 after every step:
@@ -148,12 +148,14 @@ after every step:
   the character and back
 - layouts, Krook leaving after his tour and coming when called, visitors and guests,
   logging back in on the island, and one island shared by all the account's characters
+- the figurines' bosses sent to the client, and GM Island's guild hall on the regular map
+  (and not on islands)
 
 Add `--verbose` to see every chat line, and `--layout guildhouse` when the server keeps
 the guild hall. The exit code is 0 only if every check passes.
 
-`testclient/housing_smoke.py` is the suite from before the redesign (menus, bag items, House
-Storage, the targeting circle). It is kept for reference and isn't run.
+Its shared helpers (items, database and client helpers, the pass/fail tally) are in
+`testclient/housing_common.py`.
 
 ## The load test
 

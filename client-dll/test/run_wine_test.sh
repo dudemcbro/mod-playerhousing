@@ -48,12 +48,16 @@ echo "  log: $(tr -d '\r' < "$work/PlayerHousing.log" | tr '\n' ' ')"
 
 echo "The launcher starting the fake game:"
 rm -f "$work/fake_game.result" "$work/PlayerHousing.log"
-"${wine[@]}" "$work/PlayerHousingLauncher.exe" "$work/fake_game.exe" --launched "two words" third || true
-for _ in $(seq 1 30); do
-    [ -f "$work/fake_game.result" ] && break
-    sleep 1
-done
+launched=0
+"${wine[@]}" "$work/PlayerHousingLauncher.exe" "$work/fake_game.exe" --launched "two words" third || launched=$?
+# The launcher stays until the game closes and ends with its exit code (7 from the fake game),
+# so the game's result is already there when it returns.
 result=$(tr -d '\r' < "$work/fake_game.result" 2>/dev/null || echo "no result")
+echo "  launcher exit code: $launched"
+if [ "$launched" != 7 ]; then
+    echo "FAIL: the launcher returned before the game closed, or without its exit code"
+    status=1
+fi
 echo "  $result"
 echo "  log: $(tr -d '\r' < "$work/PlayerHousing.log" 2>/dev/null | tr '\n' ' ')"
 if [ "$result" != "dll loaded; args: [--launched] [two words] [third]" ]; then

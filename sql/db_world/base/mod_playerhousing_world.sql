@@ -204,6 +204,32 @@ DELETE FROM `gameobject_template` WHERE `entry` = @RING;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
 (@RING, 5, 674, 'Selected', '', '', '', 1, '', 0);
 
+-- GM Island's guild hall on the regular map. The cleared island's client patch and server
+-- data take the hall out of the map tile itself, which would leave the regular GM Island
+-- without it; this puts it back as an object (a destructible building, so its model is the
+-- hall's own) at the hall's original spot, in the normal phase only. Housing islands are
+-- phases of their own and never see it. On the guildhouse layout the map keeps its hall, so
+-- the module hides this copy (PlayerHousingScripts.cpp). Display 90000 is added to the client
+-- by the same patch (tools/gm-island-cleared/client_gameobject_displays.tsv).
+SET @HALL_DISPLAY := 90000;
+SET @HALL := 903992;
+DELETE FROM `gameobjectdisplayinfo_dbc` WHERE `ID` = @HALL_DISPLAY;
+INSERT INTO `gameobjectdisplayinfo_dbc` (`ID`, `ModelName`, `Sound_1`, `Sound_2`, `Sound_3`, `Sound_4`, `Sound_5`, `Sound_6`,
+ `Sound_7`, `Sound_8`, `Sound_9`, `Sound_10`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`,
+ `ObjectEffectPackageID`) VALUES
+(@HALL_DISPLAY, 'World\\wmo\\Azeroth\\Buildings\\GuildHouses\\GuildHouseA.wmo', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+ -44.8117, -12.7480, -2.5587, 12.8626, 41.1757, 51.7295, 0);
+DELETE FROM `gameobject` WHERE `id` = @HALL;
+DELETE FROM `gameobject_template` WHERE `entry` = @HALL;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`, `VerifiedBuild`) VALUES
+(@HALL, 33, @HALL_DISPLAY, 'Guild House', '', '', '', 1, '', 0);
+-- Where the map tile had it (Kalimdor_1_1.adt): 84.5 degrees there is 264.5 in the world.
+SET @GUID := (SELECT COALESCE(MAX(`guid`), 0) + 1 FROM `gameobject`);
+INSERT INTO `gameobject` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `position_x`, `position_y`, `position_z`,
+ `orientation`, `rotation0`, `rotation1`, `rotation2`, `rotation3`, `spawntimesecs`, `animprogress`, `state`, `ScriptName`, `VerifiedBuild`, `Comment`) VALUES
+(@GUID, @HALL, 1, 876, 876, 1, 1, 16224.1227, 16284.1090, 14.0954, 4.6164, 0, 0, 0.7402181, -0.6723668, 0, 100, 1, '', 0,
+ 'mod-playerhousing: GM Island guild hall (regular map)');
+
 -- Krook's welcome tour: five short quests that walk through housing. Each completes the
 -- moment the player does the thing (the module reports it as an event), and Krook anywhere,
 -- in a city or on the island, hands them out and takes them back. The last one unlocks

@@ -65,6 +65,7 @@ local sinceSend = 0
 local stateHooks, windowHooks, dataHooks, combatEndHooks, messageHooks = {}, {}, {}, {}, {}
 local lists = {}            -- lists from the server for the window's tabs, by kind
 local registered = false    -- told the server this session that the addon is here
+local checker               -- the setup check's timer (PlayerHousing_Check)
 
 local frame, statusText, selectedPanel
 -- Two model frames on the same spot: previewModel for objects and figurines' creatures, as it
@@ -361,11 +362,14 @@ local function OnState(fields)
     state.ghostRoll = tonumber(fields[28] or "") or 0
     state.ghostCount = tonumber(fields[29] or "") or 0
     state.ghostFront = tonumber(fields[30] or "") or 0
-    -- Once a session: the server learns the addon is here.
+    -- Once a session: the server learns the addon is here; a little later (once the command
+    -- channel has had time to answer), anything missing from this client is pointed out.
     if not registered and db then
         registered = true
         Register()
         PingChannel()
+        checker.wait = 10
+        checker:Show()
     end
     for _, hook in ipairs(stateHooks) do
         hook(state)
@@ -1049,13 +1053,59 @@ function PlayerHousing_Open(tab)
     end
 end
 
+-- What's missing from this client, in words a player can act on: the client patch (housing
+-- items are question marks without it), PlayerHousing.dll, and the server's addon channel.
+local HOUSE_KEY_ITEM = 902000
+local function SetupProblems()
+    local problems = {}
+    local icon = GetItemIcon(HOUSE_KEY_ITEM)
+    if not icon or icon:lower():find("questionmark") then
+        problems[#problems + 1] = "the housing client patch isn't loading, so housing items show as question marks and a piece you hold can't be seen."
+            .. " Put the patch from your server's download in your Data folder, delete the Cache folder, and restart the game."
+    end
+    if type(PlayerHousing_CursorWorld) ~= "function" then
+        problems[#problems + 1] = "PlayerHousing.dll isn't loaded, so pieces float ahead of you instead of following the mouse."
+            .. " Start the game with PlayerHousingLauncher.exe."
+    elseif not commandChannel then
+        problems[#problems + 1] = "the server's addon channel isn't answering, so pieces can't follow the mouse (ask your server's staff)."
+    end
+    return problems
+end
+
+-- /housing check, and once a session by itself when something's missing.
+function PlayerHousing_Check(asked)
+    local problems = SetupProblems()
+    if #problems == 0 then
+        if asked then
+            Print("setup check: the addon, the client patch and PlayerHousing.dll are all working.")
+        end
+        return
+    end
+    for _, problem in ipairs(problems) do
+        Print("setup: " .. problem)
+    end
+    if not asked then
+        Print("/housing check looks again.")
+    end
+end
+
+checker = CreateFrame("Frame")
+checker:Hide()
+checker:SetScript("OnUpdate", function(self, elapsed)
+    self.wait = (self.wait or 0) - elapsed
+    if self.wait <= 0 then
+        self:Hide()
+        PlayerHousing_Check(false)
+    end
+end)
+
 function PlayerHousing_Help()
     Print("Placing: click a piece in the Collection and it goes on your mouse. Left-click sets it down, right-click or Escape puts it back.")
     Print("Moving: right-click a piece on your island and it goes on your mouse the same way. Buildings: the Placed tab's Move.")
     Print("While you hold it, the wheel zooms as ever, and with a key it changes the piece: turn (Shift), up and down (Ctrl), fine turn (Ctrl+Shift), tilt forward and back (Alt), tilt to its side (Alt+Shift), size (Ctrl+Alt).")
     Print("Middle-click stands it straight, Ctrl+middle-click: normal size, Shift+middle-click: grid. Shift+right-click puts it away. Undo takes back anything.")
     Print("Ctrl-right-click pieces to select several, then right-click one of them to move them all.")
-    Print("/housing opens this window; /housing <command> runs any .house command; .house help lists them.")
+    Print("/housing opens this window; /housing <command> runs any .house command; .house help lists them; /housing check says what's missing.")
 end
 
 -- A piece by its number (the Placed tab), straight away like the selected one.
@@ -1313,6 +1363,8 @@ SlashCmdList["PLAYERHOUSING"] = function(message)
             lastLoad and tostring(lastLoad.got) or "-", tostring(scale), view.zoom, view.lift))
     elseif message == "help" then
         PlayerHousing_Help()
+    elseif message == "check" then
+        PlayerHousing_Check(true)
     elseif message == "localghost" then
         -- The DLL moving the ghost on this screen itself, or the server moving it.
         db.localGhosts = db.localGhosts == false

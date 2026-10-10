@@ -36,6 +36,7 @@ CMSG_LOGOUT_REQUEST = 0x04B
 SMSG_LOGOUT_COMPLETE = 0x04D
 CMSG_MESSAGECHAT = 0x095
 SMSG_MESSAGECHAT = 0x096
+SMSG_CREATURE_QUERY_RESPONSE = 0x061
 SMSG_UPDATE_OBJECT = 0x0A9
 SMSG_DESTROY_OBJECT = 0x0AA
 CMSG_USE_ITEM = 0x0AB
@@ -382,6 +383,7 @@ class WorldClient:
         self.items_pushed = []
         self.last_gossip = None
         self.last_vendor = None
+        self.creatures_known = set()   # creature entries the server described (query responses)
         self.world_changes = []
         self.errors = []
 
@@ -461,7 +463,9 @@ class WorldClient:
 
     # ------------------------------------------------------------ dispatch
     def _dispatch(self, opcode, data):
-        if opcode == SMSG_TIME_SYNC_REQ:
+        if opcode == SMSG_CREATURE_QUERY_RESPONSE and len(data) >= 4:
+            self.creatures_known.add(struct.unpack_from("<I", data)[0])
+        elif opcode == SMSG_TIME_SYNC_REQ:
             counter = struct.unpack("<I", data[:4])[0]
             self.send(CMSG_TIME_SYNC_RESP, struct.pack("<II", counter, self.now_ms()))
         elif opcode == SMSG_MESSAGECHAT:

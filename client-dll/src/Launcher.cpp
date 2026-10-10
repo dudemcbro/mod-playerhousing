@@ -159,10 +159,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     if (!resumed)
         ResumeThread(started.hThread);
     CloseHandle(started.hThread);
-    CloseHandle(started.hProcess);
 
     if (!loaded)
         Say(L"The game started without PlayerHousing.dll: " + error + L".\n\nEverything works without it except placing pieces with the mouse "
             L"(they follow you instead).", MB_ICONWARNING);
-    return 0;
+
+    // Stay until the game closes, and end the way it did: Lutris, Steam and Bottles follow the
+    // program they started, so the launcher has to live as long as Wow.exe does.
+    WaitForSingleObject(started.hProcess, INFINITE);
+    DWORD exitCode = 0;
+    GetExitCodeProcess(started.hProcess, &exitCode);
+    CloseHandle(started.hProcess);
+    return static_cast<int>(exitCode);
 }

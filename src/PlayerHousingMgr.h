@@ -66,6 +66,7 @@ namespace Housing
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 HIGHLIGHT_RING_GO = 903991;  // under the piece chosen in the Placed list
+    constexpr uint32 GUILD_HALL_GO = 903992;      // GM Island's hall on the regular map (world SQL)
     constexpr uint32 SPELL_FREEZE_ANIM = 16245;     // holds a figurine still, mid-pose
     constexpr uint32 GHOST_ENTRY = 900203;          // a see-through piece following its player
     // Each piece's ghost model (tools/content/build_content.py): its see-through creature
@@ -634,6 +635,9 @@ public:
     // A tour quest's step done, if the player is on that quest.
     static void QuestEvent(Player* player, uint32 questId);
     void SendAddonState(Player* player) const;
+    // The figurines' bosses, told to the client as if it had met them, so the Collection's
+    // previews can draw them (a model frame only draws creatures the client knows).
+    void SendFigurineCreatures(Player* player) const;
     bool ResolvePlayerGuid(std::string const& playerName, ObjectGuid::LowType& guidLow, std::string& normalizedName) const;
     std::string NameOf(ObjectGuid::LowType guid) const;
     static std::string FormatMoney(uint64 copper);

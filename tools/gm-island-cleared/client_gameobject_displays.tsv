@@ -1,0 +1,5 @@
+# GameObjectDisplayInfo rows the cleared island's client patch adds (the server has the same
+# rows in gameobjectdisplayinfo_dbc). Columns: id, model path, bounding box min x y z, max x y z.
+# 90000: GM Island's guild hall as an object, so it can stand on the regular map in the
+# normal phase (the patch sinks the hall that's part of the map tile itself).
+90000	World\wmo\Azeroth\Buildings\GuildHouses\GuildHouseA.wmo	-44.8117	-12.7480	-2.5587	12.8626	41.1757	51.7295

@@ -64,6 +64,10 @@ your key? Krook has another.
 
 ## If something's not right
 
+Type `/housing check`: it says what's missing (the patch, the launcher's DLL, the server's
+addon channel) and how to fix it. It also tells you by itself, once, if something's missing
+when you log in.
+
 | What you see | Fix |
 | --- | --- |
 | Housing items are red question marks | Delete the `Cache` folder (step 2). Still there? Your game has another patch that wins: rename `Data/patch-H.MPQ` to a later letter, such as `patch-Z.MPQ`. On some HD client packs it has to go in `Data/enUS/` (your language's folder) as `patch-enUS-z.MPQ`. |

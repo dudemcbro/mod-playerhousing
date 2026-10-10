@@ -558,7 +558,9 @@ namespace
             std::fprintf(file, "%s\n", result.c_str());
             std::fclose(file);
         }
-        return 0;
+        // A moment's play, then an exit code the launcher has to wait for and hand on.
+        Sleep(2000);
+        return 7;
     }
 }
 

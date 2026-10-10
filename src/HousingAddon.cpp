@@ -3,6 +3,7 @@
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "Item.h"
+#include "Opcodes.h"
 #include "Player.h"
 #include "StringFormat.h"
 #include "WorldPacket.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <set>
 
 using namespace Housing;
 
@@ -346,4 +348,28 @@ void PlayerHousingMgr::MarkAllSeen(Player* player) const
 {
     std::set<uint32> fresh = LoadNewUnlocks(player);
     MarkSeen(player, std::vector<uint32>(fresh.begin(), fresh.end()));
+}
+
+void PlayerHousingMgr::SendFigurineCreatures(Player* player) const
+{
+    std::set<uint32> entries;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        for (auto const& [itemEntry, piece] : _pieces)
+        {
+            if (!piece.HasFlag(PIECE_FLAG_FIGURE))
+                continue;
+            for (PieceRule const& rule : piece.rules)
+                if (rule.type == RULE_KILL && rule.param1)
+                    entries.insert(rule.param1);
+        }
+    }
+    // The core's own answer to the client asking about a creature, sent unasked: the client
+    // keeps it in its creature cache like any other.
+    for (uint32 entry : entries)
+    {
+        WorldPacket query(CMSG_CREATURE_QUERY, 12);
+        query << uint32(entry) << ObjectGuid::Empty;
+        player->GetSession()->HandleCreatureQueryOpcode(query);
+    }
 }

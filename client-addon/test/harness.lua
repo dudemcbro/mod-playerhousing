@@ -1149,6 +1149,20 @@ assert(not PlayerHousingMinimapButton:IsShown() and PlayerHousingDB.minimapHidde
 SlashCmdList.PLAYERHOUSING("minimap")
 assert(PlayerHousingMinimapButton:IsShown(), "back")
 
+-- /housing check: what's missing from this client, said plainly. Here the House Key's icon
+-- is unknown (no client patch).
+local printedBefore = #printed
+SlashCmdList.PLAYERHOUSING("check")
+local said = table.concat(printed, "\n", printedBefore + 1)
+assert(said:find("client patch isn't loading"), said)
+local realIcon = GetItemIcon
+GetItemIcon = function(id) return id == 902000 and "Interface\\Icons\\INV_Misc_Key_14" or nil end
+printedBefore = #printed
+SlashCmdList.PLAYERHOUSING("check")
+said = table.concat(printed, "\n", printedBefore + 1)
+assert(not said:find("client patch"), "with the patch: " .. said)
+GetItemIcon = realIcon
+
 -- /housing help: how it works, in the chat.
 local printedCount = #printed
 SlashCmdList.PLAYERHOUSING("help")

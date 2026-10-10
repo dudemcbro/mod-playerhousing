@@ -12,6 +12,8 @@
 # The patch is built from a 3.3.5a client's Data folder (see tools/gm-island-cleared): use a
 # client like your players' (plain 3.3.5a, plus any custom patches your server hands out), or
 # pass a patch you built already with --patch. --icons-only is for the guildhouse layout.
+# --patch-name can be a path inside Data: clients with HD packs whose own patches sit in
+# Data/enUS (and load after anything in Data) need it there, as enUS/patch-enUS-z.MPQ.
 # Needs python3, and smpq when building the patch.
 set -euo pipefail
 
@@ -39,7 +41,8 @@ trap 'rm -rf "$work"' EXIT
 
 if [ -z "$PATCH" ]; then
     [ -n "$DATA_DIR" ] || { echo "Give the client's Data folder to build the patch, or --patch <file>." >&2; exit 1; }
-    PATCH="$work/$PATCH_NAME"
+    PATCH="$work/patch/$(basename "$PATCH_NAME")"
+    mkdir -p "$work/patch"
     # shellcheck disable=SC2086
     "$MODULE/tools/gm-island-cleared/make_client_patch.sh" $ICONS_ONLY "$DATA_DIR" "$PATCH"
 fi
@@ -49,6 +52,7 @@ stage="$work/stage"
 mkdir -p "$stage/Interface/AddOns" "$stage/Data"
 cp -r "$MODULE/client-addon/PlayerHousing" "$stage/Interface/AddOns/"
 cp "$MODULE/client-dll/bin/PlayerHousing.dll" "$MODULE/client-dll/bin/PlayerHousingLauncher.exe" "$stage/"
+mkdir -p "$(dirname "$stage/Data/$PATCH_NAME")"
 cp "$PATCH" "$stage/Data/$PATCH_NAME"
 cp "$MODULE/docs/PLAYER_SETUP.md" "$stage/"
 

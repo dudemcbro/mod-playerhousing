@@ -2,7 +2,7 @@
 """End-to-end test for the Collection keeping count (no furnishing items in the bags), the
 housing window as the only way in (no menus), and ghosts a client moves itself.
 
-Expects the same server and accounts as housing_smoke.py (FreeMode on, the cleared island):
+Expects a server with the module (FreeMode on, the cleared island) and three accounts:
 houseowner and houseguest (players) and admin (GM). The test characters' housing state is
 reset at the start of every run.
 """
@@ -12,7 +12,7 @@ import math
 import sys
 import time
 
-from housing_smoke import (BANK_CHEST, CHAIR, ELWYNN_ACHIEVEMENT, FARMHOUSE, STORMWIND, GHOST_NPC, HOUSE_KEY, KEY_SPELL, LAMP_POST, LANTERN, LAYOUTS, MANNEQUIN,
+from housing_common import (BANK_CHEST, CHAIR, ELWYNN_ACHIEVEMENT, FARMHOUSE, STORMWIND, GHOST_NPC, HOUSE_KEY, KEY_SPELL, LAMP_POST, LANTERN, LAYOUTS, MANNEQUIN,
                            MOVERS, MUSIC_BOX, QUEST_HOME, RAZORFEN_LEANTO, STEWARD, SWORD, SLOT_MAIN_HAND, TABLE, TYPEID_GAMEOBJECT,
                            TYPEID_UNIT, addon_list, addon_state, check, connect, db, finish, gear_of, get_or_create_char, has, joined,
                            live, log, move, placement_of, placements, results, shape_of, spell_of, stand_next_to, storage, unlocked, wait_for,
@@ -160,6 +160,8 @@ def main():
 
     # The addon says it's there (with a DLL that moves ghosts), as the real one does.
     owner.addon_command("house addon 2 mouse local", owner_char["name"], wait=1.0)
+    check("registering, the addon's client learns the figurines' bosses (the Lich King too)",
+          {36597, 448}.issubset(owner.creatures_known), str(sorted(owner.creatures_known)[:30]))
     mark = len(owner.addon_messages)
     owner.command(".house")
     check(".house opens the housing window", addon_since(owner, mark, "HOUSING\topen"), str(owner.addon_messages[mark:]))
@@ -212,9 +214,16 @@ def main():
 
     # ------------------------------------------------------------- home, Krook
     log("== home")
-    owner.command(".house home")
+    # The steps before this one send commands in a burst; a refusal from the flood limit (15
+    # in 3 seconds) gets one more try once the window has passed. Any other refusal fails.
+    msgs = owner.command(".house home")
     home = wait_for_map(owner, HOUSING_MAP)
-    check("going home from the window's command", home and math.dist(owner.pos[:2], L["landing"][:2]) < 5, str(owner.pos))
+    if not home and has(msgs, "too many housing commands"):
+        owner.pump(3.5)
+        msgs += owner.command(".house home")
+        home = wait_for_map(owner, HOUSING_MAP)
+    check("going home from the window's command", home and math.dist(owner.pos[:2], L["landing"][:2]) < 5,
+          "%s %s" % (owner.pos, joined(msgs)))
     if not home:
         return finish()
     wait_for(lambda: owner.nearest(STEWARD, TYPEID_UNIT) is not None, 6, owner)
@@ -677,6 +686,18 @@ def main():
     owner.pump(1.0)
     check("and comes when called", owner.nearest(STEWARD, TYPEID_UNIT) is not None)
     db("DELETE FROM character_queststatus_rewarded WHERE guid=%d AND quest=900404" % owner_guid)
+
+    # GM Island's guild hall: back on the regular map as an object (the cleared layout's patch
+    # takes it out of the map tile), and never on a housing island.
+    log("== the guild hall on the regular map")
+    GUILD_HALL = 903992
+    check("no guild hall on the owner's island", not owner.find_objects(GUILD_HALL, TYPEID_GAMEOBJECT))
+    admin.command(".go xyz 16240 16300 13.5 1", wait=1.0)
+    wait_for_map(admin, 1)
+    wait_for(lambda: admin.find_objects(GUILD_HALL, TYPEID_GAMEOBJECT), 8, admin)
+    hall = admin.find_objects(GUILD_HALL, TYPEID_GAMEOBJECT)
+    check("the regular GM Island has its guild hall where the map had it", hall and math.dist((hall[0].x, hall[0].y), (16224.12, 16284.11)) < 0.1,
+          str(hall and (hall[0].x, hall[0].y)))
 
     owner.close()
     guest.close()

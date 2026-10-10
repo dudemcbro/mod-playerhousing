@@ -11,12 +11,8 @@ work:
 
 | Item | Why |
 | --- | --- |
-| GM Island's guild hall back on the regular map | The client patch and server data remove it from the map itself, so the regular GM Island has no hall either. Spawn it as a type 33 building in the normal phase at its original spot. |
-| In-game setup check | The player download and its guide are done (`tools/release/make_player_bundle.sh`, `docs/PLAYER_SETUP.md`); still missing is a check in game that says what's missing (addon, DLL, patch). |
-| WoW hanging on exit (Lutris launcher) | Players will hit it on day one. |
-| Preview gaps | A few pieces still frame badly or show nothing (Lich King figurine). |
-| Tests | Retire or port `housing_smoke.py` (it still drives the old menus); fix the flaky first "go home" check. |
-| Tag `v1.0.0` | With the SQL, the client files and the upgrade notes in the release. |
+| Try in game | Built and tested on the test server, still to be seen in a real client: GM Island's guild hall on the regular map, the Lich King figurine's preview (the server now tells the client about every figurine's boss), and the launcher staying open until WoW closes (for the exit hang under Lutris). |
+| Tag `v1.0.0` | With the SQL, the addon and the DLL in the release; the client patch is built by each server from its own client. |
 
 ## 1.1: islands as instances
 
