@@ -238,7 +238,11 @@ tells you how to earn it, with your progress so far
 - **Showing all pieces / unlocked only**: hide what you haven't earned yet, for a shorter
   list of what you can place right now.
 - Unlocks happen the moment you earn them, with a message.
-- Things you did before the module was installed count: they unlock at your next login.
+- Things you did before the module was installed count: they unlock at your next login, one
+  copy each in the Collection. That covers level, achievements, reputation, finished quests,
+  explored areas and profession skill. Boss kills on their own don't, because the server keeps
+  no record of past kills; every boss figurine also unlocks from that dungeon's or raid's
+  achievement, so earlier victories still count that way.
 - Unlocks are shared by all your characters, except faction buildings, which need Exalted
   with their faction on the character that places them.
 

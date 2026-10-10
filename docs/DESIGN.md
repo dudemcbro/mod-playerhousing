@@ -58,7 +58,8 @@ Each piece has rules: a level, an achievement, a reputation rank, a quest, a kil
 an area, or a skill level. Rules in a group must all be met; any complete group unlocks the
 piece. Achievements come first wherever one fits, because players already see and track
 them. Past progress counts: a character that did something before the module was installed
-unlocks it at the next login. The full list is in [UNLOCKS.md](UNLOCKS.md).
+unlocks it at the next login. The one exception is a boss kill on its own (the server keeps
+no kill history), which is why every figurine also unlocks from its boss's achievement. The full list is in [UNLOCKS.md](UNLOCKS.md).
 
 ## Where it's going
 
