@@ -128,123 +128,32 @@ More accounts: `python3 tools/test-server/testclient/create_account.py NAME PASS
 
 ## The automated test
 
-`testclient/collection_smoke.py` is the current end-to-end suite. It checks the addon-only
-window, Collection counts instead of furnishing items, mouse/local ghosts, exact building
-previews, right-click movement of buildings and furnishings, tilt, mannequins, sets, layouts,
-visitors, logging back into an island, and one shared island per account.
+`testclient/collection_smoke.py` is the end-to-end suite (96 checks). It logs in headless
+characters (`Krookowner`, `Krookguest` and the GM `Krookadmin`, created on first run),
+resets their housing, plays it through, and checks the database and what each client sees
+after every step:
 
-`testclient/housing_smoke.py` below is retained as a reference for the pre-2.1 menu-and-bag
-workflow; it is not run by the test scripts because those menus and furnishing items were
-intentionally removed.
-
-### Legacy pre-2.1 suite
-
-`testclient/housing_smoke.py` logs in three characters (`Krookowner`, `Krookguest` and
-the GM `Krookadmin`, created on first run), resets their housing, and plays it through,
-checking the database and what the client sees after each step (302 checks, 303 with `PlayerHousing.Catalog = everything`):
-
-- first login: House Key, starter furnishings, past progress unlocking pieces
-- the Home menu from `.house` and from the key, going home, Krook's greeting, the
-  starter wreckage
-- Krook's welcome tour: the quests above his menu, each completing when it's done (going
-  home, placing, turning a piece, undoing, inviting a guest), handed in one after
-  another, and the last unlocking Krook's Picnic Basket
-- placing with the targeting circle where it was clicked, facing you; each item sends its
-  own spell, and the circles fit the pieces (small for a chair, large for a farmhouse);
-  no menu after placing furniture, the menu after a building, and with `.house adjust
-  all` the menu after anything, with Take it back and Keep it here; undo returns the
-  item, redo places it again; no spacing rules; placing far out on the island; refusing
-  spots off the island; swimmers brought back to the beach
-- edit mode (the addon's keys): a click only selects, `.house shift` moves and turns a
-  piece relative to your facing, a quick run of shifts is one undo step, a flood of them
-  is capped, Tab picks the next piece; a ring under the selected piece (gone when edit
-  mode ends), and no Move a Piece in the bags; G's ghost: a see-through copy with the
-  piece's ghost model starting where the piece stands, walked over, pushed farther and
-  turned, then set down there (the ring following) and undone; Escape leaving the piece
-  where it was; the grid size reaching the addon
-- several pieces at once: the undo history newest first and `undo 2`, adding a piece to
-  the selection (a ring under each), sliding and turning the group with what stands on
-  it, one undo for the run and the group still selected after it, Fwd nudging all of
-  them, size waiting for one piece, a newly placed piece selected on its own, match
-  height, line up, Ctrl-click taking a piece out and
-  putting it back, a plain click selecting just one, picking the group up and undoing
-  that; a row of three chairs and one undo for it; saving the selection as a set, the
-  window's list of sets, setting it down with Move a Piece where the circle was clicked
-  and deleting it; a set's name needing a letter; a lantern saved before its table
-  still standing on it when set down; going to a piece; the Collection's recently placed pieces; taking one
-  piece out of House Storage
-- the addon's window: its lists (Collection, Placed, Island, Layouts, Guests, Visit),
-  getting copies, weather by name, House Storage, and the House Key opening the window
-  (or its menu when the player prefers)
-- decorate mode: clickable copies, the snap rune on tables, the piece menu (turn, nudge,
-  undo), putting a lantern on a table, the lantern moving and turning with its table in
-  one undoable step, picking up
-- size, tilt, grid and copies: a table made bigger with the lantern kept on its top (and
-  the client seeing the new size), the size and tilt limits, a tilt reaching the client
-  as the object's rotation, the "More turns, tilt and size" menu, "Place another like
-  this" sending a see-through chair after the owner (the addon told which), set down
-  ahead of the owner with the first one's turn, size and tilt, the ghost gone after, and
-  the grid squaring up a new piece and nudging it one square
-- full bags: pieces go to House Storage, undo takes them back out, "Take everything"
-- the Collection: categories, hints with progress, "(new)" marks that clear once seen and
-  the new counts on the Home menu, a piece's page (what you have, get one, get 5),
-  showing unlocked pieces only, searching by name (`.house collection lamp`), a level up
-  unlocking a shelter on the spot, a GM unlocking the mailbox for the owner
-- figurines: a GM unlocking the Hogger Figurine, marked new in the Collection, placed as
-  Hogger's own model shrunk to table size, its piece menu, no tilting, and a guest
-  seeing it as a trophy
-- the catalog of every object: left out with `curated`; with `everything`, the Catalog
-  category counts every object and a Wanted Poster places like any piece
-- the Bank Chest: unlocked at level 20, its menu, the bank opening through an unseen
-  banker at the chest, a bank slot bought there, and refused from across the island;
-  placing a lantern and banking it in the same packet batch (the lantern is used up, not
-  banked); a guest finding it locked
-- buildings: placing a faction building, the pick up choice, what counts as inside (a
-  lantern in a corner does, a table past the wall doesn't), the building and what's
-  inside coming back, undo; moving the building: carried as it is, the chair and lantern
-  inside as see-through ghosts, all set down two yards over, then undone
-- a mannequin: it takes after its owner, its menu, dressing it from the bags (the item
-  leaves the bags but stays the same item), the figure holding the sword and wearing the
-  pants (read the way the client reads them), undo and redo giving back the very same
-  item, taking gear off, picking it up with its gear and undoing that, moving it with the
-  targeting circle (the Move a Piece item used up, undo), gear mailed when the bags are
-  full, a ghost set down with full bags all the same, and the gear still there after a
-  relog
-- saved layouts: saving the island, setting it out again (everything back where it was,
-  the mannequin's gear to the bags) and undoing that in one step, renaming (a name with
-  a quote), sending a copy (refused to a stranger, fine for a friend), letting visitors
-  copy the layout
-- ambience: rain and night set from Island settings reaching the client, a Music Box
-  playing Grizzly Hills; the guest arriving to the same rain, night and music, hearing
-  what the music box plays, and getting the real clock and weather back on leaving
-- visitors: greeting, private islands refusing strangers, invites, the visit menu, the
-  owner setting the door and a guest arriving there with one click, facing the door's way;
-  signing the guestbook (once a day), the owner reading it (new, then read) and throwing a
-  note out; saving a copy of the island's layout and getting the
-  missing pieces, becoming a roommate (decorating, placing their own chair, moving the
-  owner's table with their own undo, refused packing up; the owner picking up their
-  chair sends it to their House Storage and undo takes it back; picking it up
-  themselves returns it to their bags; no more changes once a guest again), liking the
-  island (the owner told, owners can't like their own), the visitor log, the most liked
-  islands list, and the owner told of the visit on coming home, reporting the island
-  (the GM told, once per island), a GM listing and closing reports, clearing the
-  greeting, hiding a public island from strangers, and inspecting it anyway, sitting on a chair, opening the owner's mailbox and
-  seeing what the mannequin wears but not changing anything, private copies, privacy
-  presets
-- the addon messages: at login, on request, the selected piece and the undo label
-- leaving the island with a ghost following: it ends and nothing moves
-- pack up everything and undo, unstuck, logging out on the island and back in (an
-  unfinished move's item is gone)
-- a GM packing up the island: every piece in House Storage, the mannequin's sword in the
-  mail, and the owner's undo list gone with the pieces
-- a GM's photo tour: the first building set up with the addon told which, then the next,
-  then stopping
-- last, deleting a character: a fourth account's character makes the guest a roommate,
-  the guest places a chair there, the character is deleted, and the chair is in the
-  guest's House Storage while the island is gone
+- getting started: no House Key at first, no way home without it, `.house key` pointing to
+  Krook, Krook beside the Stormwind innkeeper giving the key and the first pieces, and
+  another key after one is lost
+- the window: `.house` and the House Key opening it, Collection counts instead of bag items,
+  old furnishing items joining the counts
+- placing on the mouse: ghosts the client moves itself, the grid, raising, walls (facing out)
+  and ceilings (hanging), size and tilt (right over and upside down), turning with the
+  player, setting down where the client showed it
+- changing: a right-click picking a piece up, buildings carried as their real object or
+  their exact see-through model, several pieces at once, sets
+- the Placed list's green ring, appearing and going
+- mannequins: dressing and undressing, race and a new look each time, trading gear with
+  the character and back
+- layouts, Krook leaving after his tour and coming when called, visitors and guests,
+  logging back in on the island, and one island shared by all the account's characters
 
 Add `--verbose` to see every chat line, and `--layout guildhouse` when the server keeps
 the guild hall. The exit code is 0 only if every check passes.
+
+`testclient/housing_smoke.py` is the suite from before the redesign (menus, bag items, House
+Storage, the targeting circle). It is kept for reference and isn't run.
 
 ## The load test
 
@@ -286,8 +195,8 @@ out cleanly at the end, so runs can follow each other. Results are in the module
 
 These need a real client:
 
-- how things look: pieces on tabletops, building models and their collision, the
-  targeting circle, mannequins wearing their gear
+- how things look: pieces on table tops, building models and their collision, the ghost
+  following the mouse, mannequins wearing their gear
 - the cleared island client patch (`tools/gm-island-cleared/make_client_patch.sh`)
 - the client addon's window (its logic is tested with
   `client-addon/test/harness.lua`)

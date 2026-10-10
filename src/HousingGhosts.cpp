@@ -589,7 +589,7 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
     members.erase(std::remove_if(members.begin(), members.end(), [&](uint32 id) { return !session->placements.count(id); }), members.end());
     if (members.empty())
     {
-        reason = "Choose a piece first: click it in edit mode, or press Tab.";
+        reason = "Choose a piece first: right-click it with the housing window open, or click it in the Placed tab.";
         return false;
     }
 
@@ -600,7 +600,7 @@ bool PlayerHousingMgr::StartGhostMove(Player* player, uint32 placementId, std::s
     GroupRoots(*session, members, roots, carried);
     if (roots.empty())
     {
-        reason = "Choose a piece first: click it in edit mode, or press Tab.";
+        reason = "Choose a piece first: right-click it with the housing window open, or click it in the Placed tab.";
         return false;
     }
     Placement const& lead = session->placements[roots.front()];

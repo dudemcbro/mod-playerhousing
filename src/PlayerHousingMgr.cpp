@@ -106,7 +106,7 @@ void PlayerHousingMgr::LoadConfig()
 
     _maxFurnishings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxFurnishings", 200), 1, 5000);
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
-    _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 0), 60);
+    _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 10), 60);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
     // It goes into a query: letters, digits and underscores only.
     if (_layoutCode.empty() || _layoutCode.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)

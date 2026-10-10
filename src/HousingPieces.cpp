@@ -1382,7 +1382,7 @@ bool PlayerHousingMgr::Shift(Player* player, uint32 placementId, float forward, 
     std::optional<Placement> placement = GetPlacement(player, ResolvePlacementArgument(player, placementId));
     if (!placement)
     {
-        reason = "Choose a piece first: click it in edit mode, or press Tab.";
+        reason = "Choose a piece first: right-click it with the housing window open, or click it in the Placed tab.";
         return false;
     }
 

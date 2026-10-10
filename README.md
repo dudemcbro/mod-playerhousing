@@ -68,7 +68,7 @@ work as well as the playerbots fork it is developed on (see
 | `PlayerHousing.Enable` | 1 | The whole module |
 | `PlayerHousing.FreeMode` | 0 | Test servers: copies from the Collection are free and the House Key is instant |
 | `PlayerHousing.UnlockAll` | 0 | Test servers: the whole Collection is unlocked, plus "one of everything" |
-| `PlayerHousing.Layout` | cleared | `cleared` (no guild hall) or `guildhouse` |
+| `PlayerHousing.Layout` | cleared | `cleared`: every island is GM Island with its guild hall **removed**, so islands start as open ground (needs the server data step and the client patch). `guildhouse`: GM Island as it ships, guild hall and all; players land inside the hall. The hall is removed from the map itself (the client patch and the server's collision data), so for now the regular GM Island has no hall either. |
 | `PlayerHousing.DefaultPrivacy` | private | Privacy of new islands: `private`, `friends` or `public` |
 | `PlayerHousing.GmBypassPrivate` | 0 | GMs in GM mode can visit any island |
 | `PlayerHousing.MaxFurnishings` | 200 | Furnishings per island |
@@ -78,7 +78,7 @@ work as well as the playerbots fork it is developed on (see
 | `PlayerHousing.SavedLayouts` | 5 | Layouts each island can keep (0 turns them off, 20 at most) |
 | `PlayerHousing.Ghosts` | 1 | A piece being placed or moved follows its player as a see-through ghost (needs this version's client patch); 0 carries every piece as it is |
 | `PlayerHousing.Catalog` | curated | `curated`: the pieces earned through progression. `everything`: also every other object model in the game (about 2,000), in the Collection's Catalog |
-| `PlayerHousing.HouseKey.DelaySeconds` | 0 | How long "Go home" takes (0: at once); moving or combat cancels |
+| `PlayerHousing.HouseKey.DelaySeconds` | 10 | How long "Go home" takes (0: at once); moving or combat cancels |
 | `PlayerHousing.StewardEntry` | 900200 | Krook's creature entry |
 | `PlayerHousing.StewardDisplayId` | 25384 | Krook's model (a Wolvar orphan) |
 
@@ -108,7 +108,7 @@ quests that walk you through housing, each done the moment you do the thing:
 
 1. **Home Sweet Island**: use your House Key to go home.
 2. **Making It Yours**: place a furnishing.
-3. **A Fresh Look**: click a piece, then turn, nudge or move it.
+3. **A Fresh Look**: right-click a piece and set it down somewhere new.
 4. **Nothing Is Ever Lost**: undo a change.
 5. **Open House**: invite a guest, or open your island to friends or everyone.
 
@@ -511,26 +511,23 @@ fits, since players already see and track those.
   (`.house ghost at x y z [nx ny nz]`). The server decides where the piece goes (a table
   top, a wall, a ceiling, the ground under a building) and tells the addon, which moves the
   ghost itself between the server's updates.
-- **Ghosts** (`src/HousingGhosts.cpp`) follow the player's position, guessed ahead of their
-  last movement packet (the client reports only every half second when running straight),
-  and are redrawn every tenth of a second. Furniture's ghost is a creature (entry 900203)
-  with a see-through model of the piece: a `CreatureModelData` and `CreatureDisplayInfo` row
-  per piece model (display 60000 plus the item's offset from 900000, opacity 150), which
-  the content builder writes for the server (`creaturemodeldata_dbc`,
-  `creaturedisplayinfo_dbc`) and the client patch adds to the client. It glides with a
-  movement spline, its facing held. Figurines and the mannequin get a see-through copy of
-  their creature's display. A building's ghost is a see-through block: a model the client
-  patch writes for each building (`tools/gm-island-cleared/make_ghost_blocks.py`, a box from
-  the building's outline and height, with one shared texture), under the same display
-  numbers. Pieces whose model has no ghost are carried as game objects, put down again in the
-  new spot at most four times a second. With PlayerHousing.dll the addon sends where the
-  mouse points (`.house ghost at x y z [facing]`) up to ten times a second over AzerothCore's
-  addon command channel (prefix `AzerothCore`), which chat's flood limit doesn't count and
-  which answers the addon rather than the chat window; the server keeps its own limit of 25
-  a second. The ghost then shows at that point instead of ahead of the player: on the table
-  top there when the point is on one, and turned to face out when the surface there is a
-  wall. A point on one of the pieces being moved (still standing where it was) counts as
-  what that stands on.
+- **Ghosts** (`src/HousingGhosts.cpp`): a held piece is shown as a see-through copy of
+  itself. Furniture's ghost is a creature (entry 900203) with a see-through model of the
+  piece: a `CreatureModelData` and `CreatureDisplayInfo` row per piece model (display 60000
+  plus the item's offset from 900000, opacity 150), which the content builder writes for the
+  server (`creaturemodeldata_dbc`, `creaturedisplayinfo_dbc`) and the client patch adds to
+  the client. Figurines and the mannequin get a see-through copy of their creature's display.
+  Buildings with an M2 model use their own see-through model the same way; world-model
+  (`.wmo`) buildings can't be a creature's model, so they're carried as their real,
+  collisionless object, and so is a tilted piece (a creature can't lean). With
+  PlayerHousing.dll the addon sends where the mouse points, and which way the surface there
+  faces (`.house ghost at x y z [nx ny nz]`), up to ten times a second over AzerothCore's
+  addon command channel (prefix `AzerothCore`), which chat's flood limit doesn't count; the
+  server keeps its own limit of 25 a second. The server works out where the piece goes (the
+  grid, a table top, a wall, a ceiling, the ground under a building) and tells the addon,
+  which moves the ghost on the client between the server's answers, so it keeps up with the
+  mouse. Without the DLL the ghost follows the player, guessed ahead of their last movement
+  packet and redrawn every tenth of a second.
 - **Undo** keeps each change as the before and after of the pieces it touched, so undo and
   redo replay them exactly, handing items back or taking them as needed. Each player has
   their own list, in memory, cleared when they leave the island. A step only applies to

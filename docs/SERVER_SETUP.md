@@ -127,7 +127,7 @@ nearest end of it.
 | Setting | Default | Range | What it does |
 | --- | --- | --- | --- |
 | `PlayerHousing.Enable` | 1 | 0, 1 | The whole module. Off: housing stops working, and every island, piece and unlock stays in the database for when it's back on. |
-| `PlayerHousing.Layout` | cleared | cleared, guildhouse | `cleared`: GM Island without its guild hall (needs step 4 and the client patch). `guildhouse`: the island as it ships, landing in the hall. Switching to `cleared` sends anything placed inside the old hall back to its owner's Collection. |
+| `PlayerHousing.Layout` | cleared | cleared, guildhouse | `cleared`: removes GM Island's big guild hall from every housing island, so islands start as open ground where the hall stood (needs step 4's server data and the client patch). `guildhouse`: keeps the guild hall, and players land inside it. The hall goes from the map itself, so the regular GM Island loses it too, for now. Switching to `cleared` sends anything placed inside the old hall back to its owner's Collection. |
 | `PlayerHousing.MaxFurnishings` | 200 | 1 to 5000 | Furnishings one island can hold. |
 | `PlayerHousing.MaxBuildings` | 10 | 0 to 200 | Buildings one island can hold. 0: no buildings at all. |
 | `PlayerHousing.SavedLayouts` | 5 | 0 to 20 | Layouts each island can keep. 0 turns layouts off. |
@@ -150,7 +150,7 @@ past a few hundred busy islands, lower `MaxFurnishings` (see "Thousands of playe
 
 | Setting | Default | Range | What it does |
 | --- | --- | --- | --- |
-| `PlayerHousing.HouseKey.DelaySeconds` | 0 | 0 to 60 | How long Go home takes, like a hearthstone cast: moving or combat cancels it. 0 is instant. GMs and FreeMode always go at once. |
+| `PlayerHousing.HouseKey.DelaySeconds` | 10 | 0 to 60 | How long Go home takes, like a hearthstone cast: moving or combat cancels it. 0 is instant. GMs and FreeMode always go at once. |
 | `PlayerHousing.DefaultPrivacy` | private | private, friends, public | Who may visit a new island: its owner's guest list, friends and guild too, or anyone. Players change their own afterwards. |
 | `PlayerHousing.GmBypassPrivate` | 0 | 0, 1 | GMs in GM mode can visit any island. (`.house inspect <player>` goes to any island regardless.) |
 
@@ -173,8 +173,7 @@ past a few hundred busy islands, lower `MaxFurnishings` (see "Thousands of playe
 
 - **A test or showcase server:** `FreeMode = 1`, `UnlockAll = 1`, `GmBypassPrivate = 1`;
   `Catalog = "everything"` for a sandbox with every model in the game.
-- **A busy live server:** `MaxFurnishings = 100`, `MaxBuildings = 5`,
-  `HouseKey.DelaySeconds = 10`.
+- **A busy live server:** `MaxFurnishings = 100`, `MaxBuildings = 5`.
 - **Grand islands on a small server:** `MaxFurnishings = 500`, `MaxBuildings = 25`,
   `Size.Max = 4`, `SavedLayouts = 10`.
 - **No tilting or resizing:** `Tilt.Max = 0`, `Size.Min = 1`, `Size.Max = 1`.

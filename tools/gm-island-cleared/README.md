@@ -6,6 +6,10 @@ trees, rocks and beach stay. To keep the hall instead, set
 `PlayerHousing.Layout = "guildhouse"` and skip everything here except the client patch,
 built with `--icons-only` (see [Item icons](#item-icons)).
 
+The hall is removed from the map itself, not only from housing islands: players with the
+patch see no hall on the regular GM Island either, and the server's collision there has none.
+Bringing it back outside housing is on the 1.0 list in [the roadmap](../../docs/ROADMAP.md).
+
 Three things have to match, or the server and clients disagree about where walls are:
 
 | Part | What changes | How |
@@ -45,21 +49,31 @@ hall goes back to their Collection, and they get a message on their next visit.
 
 ## Client patch
 
-Nothing to download: the patch is built from your own 3.3.5a client files, so it runs on
-your machine. On Ubuntu or Debian (on an immutable host, inside a distrobox):
+The patch is built from a 3.3.5a client's own files. The server admin builds it once and
+hands it to players inside the player download:
+
+```bash
+tools/release/make_player_bundle.sh /path/to/WoW-3.3.5a/Data
+```
+
+(see [docs/SERVER_SETUP.md](../../docs/SERVER_SETUP.md#6-make-the-player-download)). To build
+the patch on its own, on Ubuntu or Debian (on an immutable host, inside a distrobox):
 
 ```bash
 sudo apt install smpq
 tools/gm-island-cleared/make_client_patch.sh /path/to/WoW-3.3.5a/Data patch-H.MPQ
 ```
 
-The folder can be the client's install folder or its `Data` folder, in any letter case,
-and any `patch-*.MPQ` the client already has is read too. Copy `patch-H.MPQ` into the
-`Data` folder of every client that plays on this server, and clear the client's `WDB`
-cache folder once. Without the patch, players still see (and bump into) the hall while the
-server treats the spot as open ground, housing items show as question marks, and the
-see-through ghosts of pieces being placed can't be seen. Pick another letter if
-`patch-H.MPQ` is already taken. Rebuild and recopy the patch whenever the module's content
+The folder can be the client's install folder or its `Data` folder, in any letter case, and
+any `patch-*.MPQ` the client already has is read too (rows with the same ids are replaced, so
+building from a client that already has an older housing patch is fine). Use a client like
+your players': plain 3.3.5a plus any custom patches your server hands out.
+
+Players put `patch-H.MPQ` in their `Data` folder and delete their `Cache` folder once (see
+[docs/PLAYER_SETUP.md](../../docs/PLAYER_SETUP.md)). Without the patch, players still see (and
+bump into) the hall while the server treats the spot as open ground, housing items show as
+question marks, and the see-through ghosts of pieces being placed can't be seen. Pick another
+letter if `patch-H.MPQ` is already taken. Rebuild the download whenever the module's content
 changes, so new pieces get their icons and ghosts.
 
 ## Item icons

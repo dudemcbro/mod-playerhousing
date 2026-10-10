@@ -3,7 +3,7 @@
 Every piece a player can own and what unlocks it. Generated from `tools/content/pieces.py` by
 `tools/content/build_content.py`; edit the list there, not this file.
 
-Unlocked pieces are in the Collection (House Key, Collection), which hands out copies. Pieces with
+Unlocked pieces are in the housing window's Collection, with a copy to place; more cost a little gold. Pieces with
 no condition are everyone's from the start. Faction buildings need Exalted with their faction and
 belong to the character that earned it; everything else is shared across the account.
 
@@ -11,16 +11,16 @@ belong to the character that earned it; everything else is shared across the acc
 
 | Piece | Kind | How to unlock | Model | Notes |
 | --- | --- | --- | --- | --- |
-| Westfall Chair | furnishing | Everyone has it | object 180047 | can be sat on, given on first login |
-| Tiny Table | furnishing | Everyone has it | object 180885 | things go on top, given on first login |
-| Lantern | furnishing | Everyone has it | object 180765 | fits on tables, given on first login |
+| Westfall Chair | furnishing | Everyone has it | object 180047 | can be sat on, given with the first House Key |
+| Tiny Table | furnishing | Everyone has it | object 180885 | things go on top, given with the first House Key |
+| Lantern | furnishing | Everyone has it | object 180765 | fits on tables, given with the first House Key |
 | Campfire | furnishing | Everyone has it | object 1798 | works like the real thing |
 | Bedroll | furnishing | Everyone has it | object 193684 |  |
 | Supply Crate | furnishing | Everyone has it | object 181302 | things go on top |
 | Mannequin | furnishing | Everyone has it | a figure in your gear | wears real gear from your bags: armor, weapons, shields |
 | Krook's Picnic Basket | furnishing | Finish Krook's welcome tour (Open House) | object 179910 |  |
 | Music Box | furnishing | Reach level 10 | object 180620 | plays the island's music |
-| Bank Chest | furnishing | Reach level 20, or buy 7 bank slots (Safe Deposit) | object 2850 | opens your bank and House Storage |
+| Bank Chest | furnishing | Reach level 20, or buy 7 bank slots (Safe Deposit) | object 2850 | opens your bank |
 | Barrel | furnishing | Everyone has it | object 180779 | things go on top |
 | Candle | furnishing | Everyone has it | object 180338 | fits on tables |
 | Wooden Bench | furnishing | Everyone has it | object 24538 | works like the real thing |

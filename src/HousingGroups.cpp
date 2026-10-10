@@ -450,7 +450,7 @@ bool PlayerHousingMgr::MatchGroup(Player* player, std::string const& how, std::s
     std::vector<uint32> members = GetGroup(player);
     if (members.size() < 2)
     {
-        reason = "Select two or more pieces first: click one, then Ctrl-click the others (in edit mode, or while decorating).";
+        reason = "Select two or more pieces first: with the housing window open, Ctrl-right-click each of them.";
         return false;
     }
 
@@ -748,7 +748,7 @@ bool PlayerHousingMgr::SaveSet(Player* player, std::string const& name, std::str
     std::vector<uint32> members = GetGroup(player);
     if (members.empty())
     {
-        reason = "Select the pieces first: click one, then Ctrl-click the others (in edit mode, or while decorating).";
+        reason = "Select the pieces first: with the housing window open, Ctrl-right-click each of them.";
         return false;
     }
 

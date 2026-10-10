@@ -503,14 +503,14 @@ bool PlayerHousingMgr::CopyIslandLayout(Player* visitor, std::string& reason)
     }
     if (GetSavedLayouts(self).size() >= _maxSavedLayouts)
     {
-        reason = "Your saved layouts are full: delete one first (Island settings, Saved layouts).";
+        reason = "Your saved layouts are full: delete one first (housing window, Layouts tab).";
         return false;
     }
 
     std::string ownerName = NameOf(owner);
     std::string name = CleanName(ownerName + "'s island");
     WriteLayout(self, NextLayoutId(self), name, ownerName, owner, 0);
-    reason = Acore::StringFormat("Saved a copy of {}'s layout as {}. At home: Island settings, Saved layouts.", ownerName, name);
+    reason = Acore::StringFormat("Saved a copy of {}'s layout as {}. At home: housing window, Layouts tab.", ownerName, name);
     return true;
 }
 
@@ -565,7 +565,7 @@ bool PlayerHousingMgr::SendLayout(Player* player, uint32 layoutId, std::string c
     std::string copyName = CleanName(layout->name + " (from " + senderName + ")");
     WriteLayout(recipientHome, NextLayoutId(recipientHome), copyName, senderName, self, layoutId);
     if (Player* online = ObjectAccessor::FindPlayerByLowGUID(recipient))
-        Say(online, Acore::StringFormat("{} sent you a layout: {}. Island settings, Saved layouts.", senderName, copyName));
+        Say(online, Acore::StringFormat("{} sent you a layout: {}. Housing window, Layouts tab.", senderName, copyName));
     reason = Acore::StringFormat("Sent {} a copy of {}.", name, layout->name);
     return true;
 }

@@ -1,5 +1,8 @@
 # Multi Realm Player Housing for AzerothCore
 
+**Status:** proposal, not built. Today every account has one island, on GM Island. See also
+[ROADMAP.md](ROADMAP.md) (2.0).
+
 ## Purpose
 
 Expand `mod-playerhousing` from one private GM Island per account into a collection of small, private housing realms. A realm is a finished, self-contained piece of existing 3.3.5a terrain such as Fray Island, Fenris Isle, or Jaguero Isle. Each account owns one home in one realm at a time, while its furnishings, Collection, guest list, storage, and progression remain the existing shared account housing data.
@@ -36,13 +39,13 @@ Do not add a realm merely because it has a good screenshot. Each candidate needs
 The module already solves the hard housing-specific problems:
 
 - `mod_playerhousing_account` selects the account's home character and keeps Collection data account-wide.
-- `mod_playerhousing_house` holds household settings, guests, ambience, and placements.
+- `mod_playerhousing_house` holds household settings and ambience; guests (`mod_playerhousing_acl`) and placements (`mod_playerhousing_placement`) have tables of their own.
 - `Session` holds the active private phase and spawned furnishing objects for an occupied home.
 - `EnterHouse`, `VisitHouse`, and `LeaveHouse` already preserve privacy, visitor access, return location, and phase restoration.
 - The current `mod_playerhousing_layout` table supplies map, landing position, steward position, center, radius, and description for the global `PlayerHousing.Layout` choice.
 - The current `IsOnIslandGround` and player update logic prevent placement or movement outside the GM Island circle.
 
-Multi-realm housing changes the scope of the existing layout data. It does not replace collections, pieces, ghosts, placement validation, ambience, rooms, guests, layouts, or the client addon.
+Multi-realm housing changes the scope of the existing layout data. It does not replace collections, pieces, ghosts, placement validation, ambience, guests, layouts, or the client addon.
 
 ## Realm data model
 

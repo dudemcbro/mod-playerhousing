@@ -378,8 +378,8 @@ public:
     static void SendUsage(ChatHandler* handler, bool gm)
     {
         handler->SendSysMessage("Housing commands (.house alone opens the housing window, which has all of them):");
-        handler->SendSysMessage(".house home | leave | unstuck | key | visit <name>");
-        handler->SendSysMessage(".house decorate [on|off] | edit [on|off] | undo | redo | packup");
+        handler->SendSysMessage(".house home | leave | unstuck | krook | visit <name>");
+        handler->SendSysMessage(".house decorate [on|off] | undo [steps] | redo | packup | highlight <id|0>");
         handler->SendSysMessage(".house shift <forward> <left> <up> <degrees> [id] | select next|previous");
         handler->SendSysMessage(".house pickup [id] [inside] | rotate <degrees> [id] | face [id] | here [id] | move [id]");
         handler->SendSysMessage(".house nudge <forward|back|left|right|up|down> [yards] [id] | select <id|nearest> | list");
@@ -390,15 +390,15 @@ public:
         handler->SendSysMessage(".house layout <save <name> | load <name> | delete <name> | send <name> <player> | rename <name> <new name>");
         handler->SendSysMessage(".house layout <overwrite <name> | missing <name> | copyable on|off | copy | list>");
         handler->SendSysMessage(".house get <item> [count] | get all (test servers) | invite <name|target|party> | uninvite <name>");
-        handler->SendSysMessage(".house stand <dress <item> | undress <slot|all> | figure> [id] | weather <name> | time <name> | music <sound id|off>");
-        handler->SendSysMessage(".house privacy <private|friends|public> | greeting <text|clear>");
+        handler->SendSysMessage(".house stand <dress <item> | undress <slot|all> | look <race> <male|female> | trade> [id]");
+        handler->SendSysMessage(".house weather <name> | time <name> | music <sound id|off> | privacy <private|friends|public> | greeting <text|clear>");
         handler->SendSysMessage(".house group [add|remove <id> | clear] | match <height|turn|line|space> | row <count> [yards] [right|left|forward|back]");
         handler->SendSysMessage(".house set [save <name> | place <name> | delete <name> | list] | undo [steps] | goto <id>");
         handler->SendSysMessage(".house sign <note> (while visiting) | guestbook [delete <id>] | door [here|reset]");
         handler->SendSysMessage(".house report <what's wrong> (while visiting)");
         if (gm)
         {
-            handler->SendSysMessage("GM: .house unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
+            handler->SendSysMessage("GM: .house key | unlock|relock <item|name|all> [player] | unlocks [player] | add (steward)");
             handler->SendSysMessage("GM: .house reports [all] | close <id> | inspect <player> | hide|unhide <player> | cleargreeting <player> | gmpackup <player>");
             handler->SendSysMessage("GM: .house phototour <start|next|stop|item> (the addon's /housing phototour takes the pictures)");
         }
@@ -912,8 +912,8 @@ public:
             else
             {
                 size_t count = mgr->GetGroup(player).size();
-                reason = count > 1 ? Acore::StringFormat("{} pieces selected. Ctrl-click a piece (in edit mode or while decorating) to add or remove it.", count)
-                                   : "One piece selected. Ctrl-click others (in edit mode or while decorating) to move them together.";
+                reason = count > 1 ? Acore::StringFormat("{} pieces selected. Ctrl-right-click a piece to add it or take it out.", count)
+                                   : "One piece selected. Ctrl-right-click others to move them together.";
             }
         }
         else if (sub == "match")

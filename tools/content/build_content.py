@@ -561,7 +561,7 @@ def build(args):
         if figure:
             notes.append("a figurine of %s" % world.creature_name(piece["creature"]))
         if style == "chest":
-            notes.append("opens your bank and House Storage")
+            notes.append("opens your bank")
         if style == "music":
             notes.append("plays the island's music")
         if style in ("keep", "chair"):
@@ -571,7 +571,7 @@ def build(args):
         if flags & FLAG_BITS["small"]:
             notes.append("fits on tables")
         if flags & FLAG_BITS["gift"]:
-            notes.append("given on first login")
+            notes.append("given with the first House Key")
         if flags & FLAG_BITS["wreckage"]:
             notes.append("waiting on the island at the first visit")
         if flags & FLAG_BITS["per_char"]:
@@ -651,7 +651,7 @@ def build(args):
         "Every piece a player can own and what unlocks it. Generated from `tools/content/pieces.py` by",
         "`tools/content/build_content.py`; edit the list there, not this file.",
         "",
-        "Unlocked pieces are in the Collection (House Key, Collection), which hands out copies. Pieces with",
+        "Unlocked pieces are in the housing window's Collection, with a copy to place; more cost a little gold. Pieces with",
         "no condition are everyone's from the start. Faction buildings need Exalted with their faction and",
         "belong to the character that earned it; everything else is shared across the account.",
         "",

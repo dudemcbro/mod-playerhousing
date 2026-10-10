@@ -11,9 +11,8 @@ work:
 
 | Item | Why |
 | --- | --- |
-| GM Island's guild hall back on the regular map | It should only be gone in housing phases. Spawn it as a type 33 building in the normal phase at its original spot. |
-| README rewrite | Several sections still describe the old bag items, House Storage, menus and the targeting circle. |
-| Player install package | One download: addon, PlayerHousing.dll, launcher and the client patch, with a short install guide and a check in game that says what's missing. |
+| GM Island's guild hall back on the regular map | The client patch and server data remove it from the map itself, so the regular GM Island has no hall either. Spawn it as a type 33 building in the normal phase at its original spot. |
+| In-game setup check | The player download and its guide are done (`tools/release/make_player_bundle.sh`, `docs/PLAYER_SETUP.md`); still missing is a check in game that says what's missing (addon, DLL, patch). |
 | WoW hanging on exit (Lutris launcher) | Players will hit it on day one. |
 | Preview gaps | A few pieces still frame badly or show nothing (Lich King figurine). |
 | Tests | Retire or port `housing_smoke.py` (it still drives the old menus); fix the flaky first "go home" check. |
@@ -75,7 +74,9 @@ Past a few hundred open islands that slows all of Kalimdor.
 **Headline:** choose where your home is.
 
 - Several housing maps, each a cleared piece of the world the client already has (a forest
-  glade, a coastline, a mountain shelf), each an instance (1.1).
+  glade, a coastline, a mountain shelf). [MULTI_REALM_HOUSING_DESIGN.md](MULTI_REALM_HOUSING_DESIGN.md)
+  proposes these as phased "realms" in place (Fray Island, Fenris Isle, Jaguero Isle and
+  more); whether each is a phase or an instance (1.1) is still to decide.
 - Move between maps keeping your Collection; layouts that fit are set out again, pieces
   that don't go back to the Collection.
 - Map-specific pieces and Krook quests.

@@ -16,13 +16,13 @@ Fields:
             building  a building: its own limit, seen from farther away
             stand     a mannequin that wears real gear from the owner's bags (no go or
                       display: the figure takes after its owner)
-            chest     opens its owner's bank (and House Storage)
+            chest     opens its owner's bank
             music     a music box: its owner picks the island's music
             figure    a figurine: the creature's model (creature=<entry>), frozen and
                       shrunk to fit on a table
   rules     list of groups; each group is a list of rules that must all be met. Any
             complete group unlocks the piece. No rules: everyone has it.
-  flags     surface (things go on top), small (fits on a surface), gift (first login),
+  flags     surface (things go on top), small (fits on a surface), gift (with the first House Key),
             wreckage (standing on the island at the first visit), per_char
   footprint, height  override the size read from the game data. Buildings made of
             world models take theirs from the server's collision data; set these only to

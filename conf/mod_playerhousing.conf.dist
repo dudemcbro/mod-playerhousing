@@ -29,9 +29,11 @@ PlayerHousing.UnlockAll = 0
 ###############################################################################
 # PlayerHousing.Layout
 #    Which island layout to use (table mod_playerhousing_layout):
-#      cleared     GM Island without its guild hall. Needs the matching server
-#                  data and client patch, see tools/gm-island-cleared.
-#      guildhouse  GM Island as it ships, landing in the guild hall.
+#      cleared     Removes GM Island's guild hall: every housing island starts
+#                  as open ground where the hall stood. Needs the matching
+#                  server data and client patch, see tools/gm-island-cleared.
+#      guildhouse  Keeps the guild hall: GM Island as it ships, players land
+#                  inside the hall.
 #    Default: cleared
 ###############################################################################
 PlayerHousing.Layout = "cleared"
@@ -117,11 +119,11 @@ PlayerHousing.Ghosts = 1
 
 ###############################################################################
 # PlayerHousing.HouseKey.DelaySeconds
-#    How long "Go home" takes (moving or combat cancels). 0 = instant.
-#    FreeMode always goes instantly.
-#    Default: 0
+#    How long "Go home" takes, like a hearthstone: moving or combat cancels it.
+#    0 = instant. GMs and FreeMode always go instantly.
+#    Default: 10
 ###############################################################################
-PlayerHousing.HouseKey.DelaySeconds = 0
+PlayerHousing.HouseKey.DelaySeconds = 10
 
 ###############################################################################
 # PlayerHousing.StewardEntry
