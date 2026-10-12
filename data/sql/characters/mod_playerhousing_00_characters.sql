@@ -1,5 +1,5 @@
 -- mod-playerhousing: character data. Re-applying is safe; for databases created by older
--- versions, mod_playerhousing_characters_hotfix.sql adds the columns they lack.
+-- versions, mod_playerhousing_01_characters_hotfix.sql (run after this file) adds the columns they lack.
 
 -- One island per character. is_private holds the privacy level: 0 public, 1 private,
 -- 2 friends and guild. style_id and stage are unused since house levels were removed.

@@ -1,4 +1,6 @@
--- Brings databases created by older versions up to date. Safe to re-apply.
+-- Brings databases created by older versions up to date. Safe to re-apply. Runs after
+-- mod_playerhousing_00_characters.sql, which creates the tables; on a database that file
+-- created, nothing here changes anything.
 
 SET @ph_stmt = (
   SELECT IF(COUNT(*) = 0,
@@ -121,7 +123,17 @@ SET @ph_stmt = (
 PREPARE ph_stmt FROM @ph_stmt;
 EXECUTE ph_stmt;
 DEALLOCATE PREPARE ph_stmt;
-ALTER TABLE `mod_playerhousing_collection` ALTER COLUMN `seen` SET DEFAULT 0;
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 1,
+    'ALTER TABLE `mod_playerhousing_collection` ALTER COLUMN `seen` SET DEFAULT 0',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_collection' AND column_name = 'seen'
+    AND (column_default IS NULL OR column_default <> '0')
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
 
 SET @ph_stmt = (
   SELECT IF(COUNT(*) = 0,

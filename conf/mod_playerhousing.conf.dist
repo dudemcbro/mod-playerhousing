@@ -99,7 +99,7 @@ PlayerHousing.SavedLayouts = 5
 #    everything  also every other object model in the game (about 2,000), one
 #                piece each, everyone's from the start, in the Collection's
 #                Catalog (search it by name). Needs
-#                sql/db_world/base/mod_playerhousing_world_catalog.sql applied.
+#                data/sql/world/mod_playerhousing_01_world_catalog.sql applied.
 #    Default: curated
 ###############################################################################
 PlayerHousing.Catalog = "curated"

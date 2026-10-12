@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Builds the housing content from tools/content/pieces.py:
 
-  sql/db_world/base/mod_playerhousing_world_content.sql   items, objects, pieces, rules
-  sql/db_world/base/mod_playerhousing_world_catalog.sql   every other object model (Catalog = everything)
+  data/sql/world/mod_playerhousing_02_world_content.sql   items, objects, pieces, rules
+  data/sql/world/mod_playerhousing_01_world_catalog.sql   every other object model (Catalog = everything)
   docs/UNLOCKS.md                                          the same list for people
   tools/gm-island-cleared/client_items.tsv                 bag icons, for the client patch
 
@@ -76,13 +76,13 @@ QUALITY = {"Starter": 1, "Buildings": 2, "Exploration": 2, "Dungeons": 3, "Raids
 # Bag icons: an icon some item already uses keeps that item's display; any other icon (spell
 # and achievement icons) gets a display of its own, added by the client patch.
 CUSTOM_DISPLAY_BASE = 190000   # plus the icon's SpellIcon.dbc id, so ids never move
-HOUSE_KEY, HOUSE_KEY_DISPLAY = 902000, 22071   # as in mod_playerhousing_world.sql
+HOUSE_KEY, HOUSE_KEY_DISPLAY = 902000, 22071   # as in mod_playerhousing_00_world.sql
 CLIENT_ITEMS = os.path.join(MODULE, "tools/gm-island-cleared/client_items.tsv")
 # Ghosts: the see-through copy of a piece that follows a player placing or moving it. Its
 # creature display (and model) is Housing::GHOST_DISPLAY_BASE plus the item's offset.
 GHOST_DISPLAY_BASE = 60000
 GHOST_ALPHA = 150            # 0 (unseen) to 255 (solid)
-MANNEQUIN_DISPLAY = 49       # the mannequin's figure, as in mod_playerhousing_world.sql
+MANNEQUIN_DISPLAY = 49       # the mannequin's figure, as in mod_playerhousing_00_world.sql
 # A building's ghost: a see-through block its size, a model the client patch writes
 # (tools/gm-island-cleared/make_ghost_blocks.py).
 GHOST_BLOCK_PATH = "World\\PlayerHousing\\GhostBlock%d.m2"
@@ -642,7 +642,7 @@ def build(args):
         "",
     ]
     sql += ghosts.sql(901100, 902999)
-    with open(os.path.join(MODULE, "sql/db_world/base/mod_playerhousing_world_content.sql"), "w") as f:
+    with open(os.path.join(MODULE, "data/sql/world/mod_playerhousing_02_world_content.sql"), "w") as f:
         f.write("\n".join(sql))
 
     md = [
@@ -672,7 +672,7 @@ def build(args):
     md += ["## Catalog (%d)" % catalog_count, "",
            "With `PlayerHousing.Catalog = everything`, every other object model in the game is a piece too, one per",
            "model, everyone's from the start (search the Collection for them). They come from",
-           "`sql/db_world/base/mod_playerhousing_world_catalog.sql`.", ""]
+           "`data/sql/world/mod_playerhousing_01_world_catalog.sql`.", ""]
     with open(os.path.join(MODULE, "docs/UNLOCKS.md"), "w") as f:
         f.write("\n".join(md))
 
@@ -828,7 +828,7 @@ def build_catalog(world, models, boxes, curated_displays, previews, icons, clien
                 "`outline_min_x`, `outline_min_y`, `outline_max_x`, `outline_max_y`) VALUES",
                 ",\n".join(piece_rows[start:start + 500]) + ";", ""]
     sql += ghosts.sql(CATALOG_FIRST, CATALOG_LAST)
-    with open(os.path.join(MODULE, "sql/db_world/base/mod_playerhousing_world_catalog.sql"), "w") as f:
+    with open(os.path.join(MODULE, "data/sql/world/mod_playerhousing_01_world_catalog.sql"), "w") as f:
         f.write("\n".join(sql))
     return len(piece_rows)
 

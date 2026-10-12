@@ -4,7 +4,7 @@ Where the pieces, their models and their unlock rules come from, and how to chan
 
 The pieces, their models and what unlocks them are written as a Python list in
 `tools/content/pieces.py`. `tools/content/build_content.py` turns it into
-`sql/db_world/base/mod_playerhousing_world_content.sql` (items, objects, pieces and rules), `docs/UNLOCKS.md`, the addon's model list
+`data/sql/world/mod_playerhousing_02_world_content.sql` (items, objects, pieces and rules), `docs/UNLOCKS.md`, the addon's model list
 (`client-addon/PlayerHousing/PieceModels.lua`) and the items the client patch adds
 (`tools/gm-island-cleared/client_items.tsv`). Each item's bag icon is picked from its name
 by `tools/content/icons.py` (a piece's `icon` field overrides it). It reads the world
@@ -16,7 +16,7 @@ python3 tools/content/build_content.py --dbc /path/to/data/dbc \
     --mysql "mysql -uacore -pacore acore_world"
 ```
 
-The builder also writes `sql/db_world/base/mod_playerhousing_world_catalog.sql`: every
+The builder also writes `data/sql/world/mod_playerhousing_01_world_catalog.sql`: every
 other object model in the game (about 2,000), one piece each, named after its object (or
 its model when the object's name is an internal one), sized from the game data, and
 marked as fitting on tables when small. Big models (whole areas, ships), collision shapes

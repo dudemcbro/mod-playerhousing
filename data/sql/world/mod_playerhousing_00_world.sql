@@ -1,8 +1,14 @@
 -- mod-playerhousing: world data.
 --
 -- The pieces themselves (furnishings and buildings, their items, objects and unlock rules)
--- are generated into mod_playerhousing_world_content.sql by tools/content/build_content.py.
--- Apply this file first, then the content file. Both can be re-applied at any time.
+-- are generated into mod_playerhousing_02_world_content.sql, and the catalog of every other
+-- object into mod_playerhousing_01_world_catalog.sql, by tools/content/build_content.py.
+-- This file runs first. All three can be re-applied at any time.
+--
+-- The worldserver applies a file again on its own whenever the file changes, so the tables
+-- here are only created when they're missing: applying this file again must not empty the
+-- pieces the other two files put in. A column added later needs a guarded ALTER (like the
+-- ones after mod_playerhousing_piece) for databases that already have the table.
 
 SET @STEWARD := 900200;
 SET @MANNEQUIN := 900201;
@@ -12,7 +18,8 @@ SET @HOUSE_KEY := 902000;
 SET @MARKER := 903990;
 SET @RING := 903991;
 
--- Tables from before furnishings became items and house levels were removed.
+-- Tables from before furnishings became items and house levels were removed. They only held
+-- shipped data, and nothing reads them any more.
 DROP TABLE IF EXISTS `mod_playerhousing_style_object`;
 DROP TABLE IF EXISTS `mod_playerhousing_style_default_unlock`;
 DROP TABLE IF EXISTS `mod_playerhousing_stage`;
@@ -23,8 +30,7 @@ DROP TABLE IF EXISTS `mod_playerhousing_catalog`;
 -- Where players land on the island and where Krook stands, per island layout. The
 -- PlayerHousing.Layout setting picks one; the server data has to match (see
 -- tools/gm-island-cleared). center/radius: the private copy around the island.
-DROP TABLE IF EXISTS `mod_playerhousing_layout`;
-CREATE TABLE `mod_playerhousing_layout` (
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_layout` (
   `layout` varchar(16) NOT NULL,
   `map_id` int unsigned NOT NULL,
   `landing_x` float NOT NULL,
@@ -40,6 +46,7 @@ CREATE TABLE `mod_playerhousing_layout` (
   PRIMARY KEY (`layout`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DELETE FROM `mod_playerhousing_layout` WHERE `layout` IN ('cleared', 'guildhouse');
 INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landing_y`, `landing_z`, `landing_o`, `steward_offset_x`, `steward_offset_y`, `center_x`, `center_y`, `radius`, `description`) VALUES
 ('cleared',    1, 16240.0, 16296.0, 12.92, 1.5708, 2.0, 12.0, 16250.0, 16334.0, 230.0, 'GM Island with the guild hall removed: land on the plateau where it stood'),
 ('guildhouse', 1, 16224.5, 16283.5, 13.18, 1.5708, 3.0, 2.5, 16250.0, 16334.0, 230.0, 'GM Island with its guild hall: land in the hall''s entry room');
@@ -55,8 +62,7 @@ INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landin
 --             which is what counts as inside a building
 --   flags     1 surface, 2 small, 4 unlock per character, 8 first-login gift, 16 starter wreckage,
 --             32 mannequin, 64 Bank Chest, 128 Music Box, 256 figurine
-DROP TABLE IF EXISTS `mod_playerhousing_piece`;
-CREATE TABLE `mod_playerhousing_piece` (
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_piece` (
   `item_entry` int unsigned NOT NULL,
   `kind` tinyint unsigned NOT NULL DEFAULT 0,
   `category` tinyint unsigned NOT NULL DEFAULT 0,
@@ -79,14 +85,83 @@ CREATE TABLE `mod_playerhousing_piece` (
   PRIMARY KEY (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Tables made by older versions: before the figurines there was no creature_entry and hints
+-- were shorter, and before buildings had their real outlines there were no outline columns.
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `creature_entry` int unsigned NOT NULL DEFAULT 0 AFTER `edit_go_entry`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'creature_entry'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 1,
+    'ALTER TABLE `mod_playerhousing_piece` MODIFY COLUMN `hint` varchar(255) NOT NULL DEFAULT \'\'',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'hint'
+    AND character_maximum_length < 255
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_min_x` float NOT NULL DEFAULT 0 AFTER `legacy_catalog_id`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_min_x'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_min_y` float NOT NULL DEFAULT 0 AFTER `outline_min_x`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_min_y'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_max_x` float NOT NULL DEFAULT 0 AFTER `outline_min_y`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_max_x'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_max_y` float NOT NULL DEFAULT 0 AFTER `outline_max_x`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_max_y'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
 -- What unlocks a piece. Rules in the same rule_group must all be met; any complete group
 -- unlocks the piece. No rules at all: everyone has it.
 --   rule_type 1 level (param1), 2 achievement (param1), 3 reputation (param1 faction,
 --             param2 rank, 7 = Exalted), 4 quest rewarded (param1), 5 kill (param1 creature),
 --             6 explore area or zone (param1), 7 skill (param1 skill, param2 value),
 --             8 never (GM or UnlockAll only)
-DROP TABLE IF EXISTS `mod_playerhousing_piece_rule`;
-CREATE TABLE `mod_playerhousing_piece_rule` (
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_piece_rule` (
   `item_entry` int unsigned NOT NULL,
   `rule_group` tinyint unsigned NOT NULL DEFAULT 0,
   `rule_index` tinyint unsigned NOT NULL,

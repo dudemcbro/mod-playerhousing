@@ -1,6 +1,6 @@
--- Removes everything mod-playerhousing added to the characters database. Run it with the
--- worldserver stopped: the mail below takes the next free mail ids, which a running server
--- also hands out.
+-- Removes everything mod-playerhousing added to the characters database. Run it by hand
+-- (the worldserver never imports data/sql/rollback) with the worldserver stopped: the mail
+-- below takes the next free mail ids, which a running server also hands out.
 DROP TABLE IF EXISTS `mod_playerhousing_meta`;
 DROP TABLE IF EXISTS `mod_playerhousing_account`;
 DROP TABLE IF EXISTS `mod_playerhousing_guestbook`;
@@ -39,3 +39,7 @@ DROP TABLE IF EXISTS `mod_playerhousing_placement`;
 DROP TABLE IF EXISTS `mod_playerhousing_unlock`;
 DROP TABLE IF EXISTS `mod_playerhousing_acl`;
 DROP TABLE IF EXISTS `mod_playerhousing_house`;
+
+-- Forget the install files, so the worldserver imports them again if the module comes back.
+DELETE FROM `updates` WHERE `name` IN ('mod_playerhousing_00_characters.sql',
+  'mod_playerhousing_01_characters_hotfix.sql');

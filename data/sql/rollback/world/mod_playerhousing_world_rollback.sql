@@ -1,4 +1,5 @@
--- Removes everything mod-playerhousing added to the world database.
+-- Removes everything mod-playerhousing added to the world database. Run it by hand: the
+-- worldserver never imports data/sql/rollback.
 -- The creature table's entry column is id1 in older cores and id in newer ones.
 SET @CREATURE_ENTRY := IF(EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
     AND TABLE_NAME = 'creature' AND COLUMN_NAME = 'id1'), 'id1', 'id');
@@ -34,3 +35,7 @@ DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900404;
 DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900404;
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900404;
 DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 19 AND `SourceEntry` BETWEEN 900400 AND 900404;
+
+-- Forget the install files, so the worldserver imports them again if the module comes back.
+DELETE FROM `updates` WHERE `name` IN ('mod_playerhousing_00_world.sql',
+  'mod_playerhousing_01_world_catalog.sql', 'mod_playerhousing_02_world_content.sql');

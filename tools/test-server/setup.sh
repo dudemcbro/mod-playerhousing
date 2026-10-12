@@ -116,22 +116,13 @@ fi
 step "Populating databases (worldserver --dry-run)"
 tables=$(quiet_mysql -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='acore_world'")
 if [ "$tables" -lt 100 ]; then
-    # Also creates the auth and characters tables (Updates.EnableDatabases = 7).
-    echo "(warnings that the playerhousing scripts are not assigned are expected; the module SQL is next)"
+    # Also creates the auth and characters tables (Updates.EnableDatabases = 7) and imports
+    # this module's SQL from data/sql/world and data/sql/characters.
+    echo "(warnings that the playerhousing scripts are not assigned are expected on this first run)"
     (cd "$SERVER_DIR/bin" && AC_DISABLE_INTERACTIVE=1 ./worldserver -c "$etc/worldserver.conf" --dry-run | tail -n 3)
 else
-    echo "already populated"
+    echo "already populated (the worldserver imports new or changed module SQL when it starts)"
 fi
-
-step "Applying module SQL (safe to re-run)"
-# The core's auto-updater only reads modules/<name>/data/sql/{world,characters,auth}, so these are applied by hand.
-for db in world characters; do
-    # C collation: the table file sorts before the content file that fills it.
-    find "$MODULE_DIR/sql/db_$db" -name '*.sql' ! -iname '*rollback*' | LC_ALL=C sort | while read -r f; do
-        quiet_mysql "acore_$db" < "$f" >/dev/null
-        echo "applied ${f#"$MODULE_DIR"/}"
-    done
-done
 
 step "Test accounts"
 (cd "$HERE/testclient" && python3 create_account.py houseowner houseowner \

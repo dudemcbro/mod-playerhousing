@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Applies the module's SQL in the right order (all files are safe to apply again). Run it
-# from anywhere, with the worldserver stopped:
+# Applies the module's SQL in the right order (all files are safe to apply again). The
+# worldserver imports the same files on its own when it starts (data/sql/world and
+# data/sql/characters); use this script when that updater is turned off. Run it from
+# anywhere, with the worldserver stopped:
 #
 #   MYSQL="mysql -u acore -p" tools/release/apply_sql.sh
 #
 # MYSQL is the client command with your login (default: mysql, using ~/.my.cnf);
 # WORLD_DB and CHARACTERS_DB name the databases (default acore_world, acore_characters).
-# The world files go together: the base file rebuilds the piece tables the catalog and
-# content files fill, so applying it alone leaves housing with no pieces.
 set -euo pipefail
 
 MODULE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -21,11 +21,11 @@ apply() {
     $MYSQL "$1" < "$2" > /dev/null
 }
 
-apply "$WORLD_DB" "$MODULE/sql/db_world/base/mod_playerhousing_world.sql"
-apply "$WORLD_DB" "$MODULE/sql/db_world/base/mod_playerhousing_world_catalog.sql"
-apply "$WORLD_DB" "$MODULE/sql/db_world/base/mod_playerhousing_world_content.sql"
-apply "$CHARACTERS_DB" "$MODULE/sql/db_characters/base/mod_playerhousing_characters.sql"
-apply "$CHARACTERS_DB" "$MODULE/sql/db_characters/base/mod_playerhousing_characters_hotfix.sql"
+apply "$WORLD_DB" "$MODULE/data/sql/world/mod_playerhousing_00_world.sql"
+apply "$WORLD_DB" "$MODULE/data/sql/world/mod_playerhousing_01_world_catalog.sql"
+apply "$WORLD_DB" "$MODULE/data/sql/world/mod_playerhousing_02_world_content.sql"
+apply "$CHARACTERS_DB" "$MODULE/data/sql/characters/mod_playerhousing_00_characters.sql"
+apply "$CHARACTERS_DB" "$MODULE/data/sql/characters/mod_playerhousing_01_characters_hotfix.sql"
 
 # shellcheck disable=SC2086
 pieces=$($MYSQL -N "$WORLD_DB" -e "SELECT COUNT(*) FROM mod_playerhousing_piece")

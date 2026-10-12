@@ -60,7 +60,7 @@ namespace Housing
         SetRotationAngles(object, z, y, x, 0);
     }
 
-    // Items, objects and texts owned by the module (see sql/db_world).
+    // Items, objects and texts owned by the module (see data/sql/world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear

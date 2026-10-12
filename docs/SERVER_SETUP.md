@@ -49,17 +49,28 @@ The defaults suit a live server; [Knobs and dials](#knobs-and-dials), below, lis
 you can change. Also check that `worldserver.conf` doesn't set `AddonChannel = 0`: the addon
 talks to the server over it.
 
-## 3. Apply the SQL
+## 3. The SQL
 
-With the worldserver stopped, from the module folder:
+Nothing to do in most setups. The module's SQL lives in `data/sql/world` and
+`data/sql/characters`, and the worldserver's updater applies it on the next start, in file
+order, and again whenever a module update changes a file. That needs the updater to cover
+the world and characters databases (`Updates.EnableDatabases`, default `7`) and to find the
+source tree (`SourceDirectory`, empty by default: the tree the core was built from). Every
+file is safe to apply again.
+
+With the updater turned off, or on a server without the source tree, apply the files by
+hand, with the worldserver stopped, from the module folder:
 
 ```bash
 MYSQL="mysql -u <user> -p" tools/release/apply_sql.sh
 ```
 
-It applies the five files in the right order (every one is safe to apply again) and says how
-many pieces are defined (about 2,400, counting the optional catalog). The worldserver's own updater doesn't pick these up,
-because they live in `sql/`, not `data/sql/`.
+It applies the five files in the right order and says how many pieces are defined (about
+2,400, counting the optional catalog).
+
+**Installed by hand before the SQL moved to `data/sql`?** The updater doesn't know those
+files were applied, so it applies them once more on the next start. That's safe: no table
+with player data is dropped or emptied.
 
 ## 4. Clear the island in the server data
 
@@ -85,7 +96,8 @@ mod-playerhousing: Loaded layout 'cleared' and 340 pieces.
 (About 340 with the default curated Collection; around 2,400 with
 `PlayerHousing.Catalog = "everything"`.)
 
-If it says definitions failed to load, step 3 was incomplete: run `apply_sql.sh` again.
+If it says definitions failed to load, the world SQL didn't go in: check the startup log for
+the updater's errors (step 3), or run `apply_sql.sh`.
 
 ## 6. Make the player download
 
@@ -189,11 +201,12 @@ past a few hundred busy islands, lower `MaxFurnishings` (see
 
 - **Prices and unlocks:** what each piece costs as an extra copy, and what unlocks it, come
   from `tools/content/pieces.py`. Edit it, then run `tools/content/build_content.py` (see
-  [Content](CONTENT.md)) and apply the SQL again. Editing the tables
-  directly works until the next `apply_sql.sh`, which rewrites them.
+  [Content](CONTENT.md)) and restart the worldserver, which applies the changed file.
+  Editing the tables directly works until the content file is applied again, which
+  rewrites them.
 - **Where players land and where Krook stands** on the island: the
   `mod_playerhousing_layout` table (landing point, Krook's offset from it, the island's
-  center and radius), set in `sql/db_world/base/mod_playerhousing_world.sql`.
+  center and radius), set in `data/sql/world/mod_playerhousing_00_world.sql`.
 - **Fixed limits**, the same on every server: 15 housing commands in any 3 seconds per player
   (GMs exempt), 3 seconds between heavy actions (pack up, set out a layout), 30 undo steps,
   the last 100 guestbook notes, five reports an hour per account.
@@ -211,8 +224,8 @@ git pull
 cd <azerothcore>/build && cmake --build . -j"$(nproc)" && cmake --install .
 ```
 
-Then, with the worldserver stopped, run `tools/release/apply_sql.sh` again and start it.
-When the update changed the addon, the DLL or the content (`tools/content/`,
+Then restart the worldserver: it applies the SQL files the update changed (with the updater
+turned off, run `tools/release/apply_sql.sh` first). When the update changed the addon, the DLL or the content (`tools/content/`,
 `client-addon/`, `client-dll/bin/`), run `make_player_bundle.sh` again and tell players to
 install the new zip over the old one (and clear their `Cache` folder once).
 
@@ -235,8 +248,8 @@ module directory:
 
 ```sh
 cd <azerothcore>/modules/mod-playerhousing
-mysql -u <user> -p acore_world < sql/db_world/base/mod_playerhousing_world_rollback.sql
-mysql -u <user> -p acore_characters < sql/db_characters/base/mod_playerhousing_characters_rollback.sql
+mysql -u <user> -p acore_world < data/sql/rollback/world/mod_playerhousing_world_rollback.sql
+mysql -u <user> -p acore_characters < data/sql/rollback/characters/mod_playerhousing_characters_rollback.sql
 ```
 
 They remove everything the module added; gear still on mannequins is mailed back to its
@@ -250,7 +263,7 @@ remove the client patch and the addon.
 
 | What you see | Why, and the fix |
 | --- | --- |
-| Log: definitions failed to load, housing disabled | Only part of the world SQL went in. Run `apply_sql.sh` again, restart. |
+| Log: definitions failed to load, housing disabled | The world SQL didn't go in: look for updater errors earlier in the log, or run `apply_sql.sh` and restart. |
 | Players walk into an invisible wall where the hall stood | The server data step was skipped (step 4), or the player has no client patch. |
 | Players see the hall but walk through it | The player is missing the client patch, or another patch loads after it and wins. |
 | Housing items are red question marks | Same: the client patch is missing or loads too early. |

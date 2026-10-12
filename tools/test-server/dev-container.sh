@@ -49,8 +49,8 @@ wait_ready() {
 }
 
 apply_sql() {
-    run "for f in \$(find $IN/sql/db_world -name '*.sql' ! -iname '*rollback*' | sort); do mysql acore_world < \$f; done;
-         for f in \$(find $IN/sql/db_characters -name '*.sql' ! -iname '*rollback*' | sort); do mysql acore_characters < \$f; done"
+    run "for f in \$(find $IN/data/sql/world -name '*.sql' ! -iname '*rollback*' | sort); do mysql acore_world < \$f; done;
+         for f in \$(find $IN/data/sql/characters -name '*.sql' ! -iname '*rollback*' | sort); do mysql acore_characters < \$f; done"
 }
 
 restart_world() {

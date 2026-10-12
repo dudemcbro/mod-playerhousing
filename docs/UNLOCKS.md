@@ -401,4 +401,4 @@ belong to the character that earned it; everything else is shared across the acc
 
 With `PlayerHousing.Catalog = everything`, every other object model in the game is a piece too, one per
 model, everyone's from the start (search the Collection for them). They come from
-`sql/db_world/base/mod_playerhousing_world_catalog.sql`.
+`data/sql/world/mod_playerhousing_01_world_catalog.sql`.
