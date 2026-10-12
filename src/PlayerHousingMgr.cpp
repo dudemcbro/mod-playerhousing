@@ -138,7 +138,7 @@ bool PlayerHousingMgr::LoadDefinitions()
         "FROM mod_playerhousing_layout ORDER BY layout = '{}' DESC, layout", _layoutCode);
     if (!layoutResult)
     {
-        LOG_ERROR("module", "mod-playerhousing: No island layouts found. Did you apply the db_world SQL?");
+        LOG_ERROR("module", "mod-playerhousing: No island layouts found. Is the world SQL in data/sql/world applied?");
         return false;
     }
 
@@ -166,7 +166,7 @@ bool PlayerHousingMgr::LoadDefinitions()
         "outline_min_x, outline_min_y, outline_max_x, outline_max_y, creature_entry FROM mod_playerhousing_piece");
     if (!pieceResult)
     {
-        LOG_ERROR("module", "mod-playerhousing: No pieces found. Did you apply the db_world SQL?");
+        LOG_ERROR("module", "mod-playerhousing: No pieces found. Is the world SQL in data/sql/world applied?");
         return false;
     }
 

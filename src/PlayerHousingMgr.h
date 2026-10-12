@@ -854,7 +854,6 @@ private:
     std::string DescribeReturns(bool collectionToo = true) const;
     std::string DescribeItemReturns(bool collectionToo = true) const;
 
-
     // HousingGroups.cpp
     // The group's pieces that nothing else in it carries (the rest move with them), and what
     // each of those carries.
