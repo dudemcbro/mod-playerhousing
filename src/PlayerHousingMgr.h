@@ -86,6 +86,7 @@ namespace Housing
 
     constexpr uint32 TEXT_HOME = 900300;  // Krook's greeting above his quests
     constexpr uint32 TEXT_NO_KEY = 900301; // Krook's greeting to someone without a House Key
+    constexpr uint32 TEXT_LOST_KEY = 900302; // ...and to someone who had one and lost it
 
     enum PieceKind : uint8
     {
@@ -631,6 +632,8 @@ public:
 
     // ---- misc helpers shared by the scripts
     void Say(Player* player, std::string const& text) const;
+    // A line in Krook's own voice (docs/KROOK.md), under his name rather than "Housing".
+    void KrookSay(Player* player, std::string const& text) const;
     void Tip(Player* player, uint32 tip, std::string const& text);
     // A tour quest's step done, if the player is on that quest.
     static void QuestEvent(Player* player, uint32 questId);

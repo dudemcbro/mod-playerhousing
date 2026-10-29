@@ -304,8 +304,9 @@ void PlayerHousingMgr::ReturnGear(Player* player, ObjectGuid::LowType islandOwne
     }
 
     // Bags full (or not there to take it): Krook mails it, so nothing is ever lost.
-    MailDraft(Acore::StringFormat("Your {}", proto->Name1),
-              "This came off your mannequin while your bags were full (or you weren't there), so I sent it on. Krook")
+    MailDraft(Acore::StringFormat("Your {}, from your mannequin", proto->Name1),
+              "This came off your mannequin while your bags were full (or you weren't there), so I mailed it to you.\n\n"
+              "Krook, Housing Steward\n\nP.S. Postage is free. I checked the ledger twice.")
         .AddItem(item)
         .SendMailTo(trans, MailReceiver(player ? player : ObjectAccessor::FindPlayerByLowGUID(ownerGuid), ownerGuid),
             MailSender(MAIL_CREATURE, _stewardEntry));
@@ -770,8 +771,9 @@ bool PlayerHousingMgr::TradeStandGear(Player* player, uint32 placementId, std::s
             continue;
         }
         ItemTemplate const* proto = item->GetTemplate();
-        MailDraft(Acore::StringFormat("Your {}", proto->Name1),
-                  "This came off your mannequin while your bags were full, so I sent it on. Krook")
+        MailDraft(Acore::StringFormat("Your {}, from your mannequin", proto->Name1),
+                  "This came off your mannequin while your bags were full, so I mailed it to you.\n\n"
+                  "Krook, Housing Steward\n\nP.S. Postage is free. I checked the ledger twice.")
             .AddItem(item)
             .SendMailTo(trans, MailReceiver(player, player->GetGUID().GetCounter()), MailSender(MAIL_CREATURE, _stewardEntry));
         ++mailed;

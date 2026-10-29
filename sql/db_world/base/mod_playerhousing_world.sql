@@ -245,38 +245,38 @@ INSERT INTO `quest_template`
  `LogTitle`, `LogDescription`, `QuestDescription`, `QuestCompletionLog`, `VerifiedBuild`) VALUES
 (900400, 2, -1, 1, 876, 900401, 500, 0, 'Home Sweet Island',
  'Use your House Key to go to your island.',
- 'Psst, $N! You''ve got an island now. All yours! Right-click your House Key and choose Go home: it takes you right there. I''ll meet you on the beach and show you around, promise.',
+ 'Psst, $N! You''ve got an island now. All yours, no strings attached! *sniff* Mostly no strings.$B$BRight-click your House Key and choose Go home to travel there. I''ll meet you on the beach and show you around. Promise. Good, good!',
  'Talk to Krook on your island.', 0),
 (900401, 2, -1, 1, 876, 900402, 500, 0, 'Making It Yours',
  'Place a furnishing: click one in the housing window''s Collection, then click where it should go.',
- 'An empty island is a sad island. You''ve got a chair, a table and a lantern in your Collection. Click one in the housing window and it follows your mouse: click where it should go. Shift and the mouse wheel turn it, too!',
+ 'An empty island is a sad island. You''ve got a chair, a table and a lantern in your Collection. Fell off a cart in Westfall, all three. Finders keepers!$B$BClick one in the housing window and it follows your mouse: click where it should go. Shift and the mouse wheel turn it, too.',
  'Talk to Krook.', 0),
 (900402, 2, -1, 1, 876, 900403, 500, 0, 'A Fresh Look',
  'Right-click a piece on your island and set it down somewhere new.',
- 'Not quite right? Easy. With the housing window open, right-click any piece and it''s back on your mouse: move it, turn it, tilt it, make it bigger. Go on, move something!',
+ 'Not quite right? Easy.$B$BWith the housing window open, right-click any piece and it''s back on your mouse: move it, turn it, tilt it, make it bigger. Go on, move something!$B$BNothing is ever permanent here. Except the ledger.',
  'Talk to Krook.', 0),
 (900403, 2, -1, 1, 876, 900404, 500, 0, 'Nothing Is Ever Lost',
  'Undo a change: Undo, at the top of the housing window.',
- 'Here''s the best secret, $N: nothing is ever lost. Didn''t like what you did? Undo, and it''s back. Picked something up? It goes back to your Collection. Try it: undo something.',
+ 'Here''s the best secret, $N: nothing is ever lost. Krook would know. *scribbles in ledger*$B$BDidn''t like what you did? Click Undo, at the top of the housing window, and it''s back. Picked something up? It goes back to your Collection. Try it: undo something.',
  'Talk to Krook.', 0),
 (900404, 2, -1, 1, 876, 0, 1000, 0, 'Open House',
  'Invite a guest (the Guests tab), or open your island to friends or to everyone (the Island tab).',
- 'An island is better with friends. Invite someone in, or let your friends and guild visit. Or everyone! You decide who comes over, and you can change it whenever you like.',
+ 'An island is better with friends. Invite someone in on the Guests tab, or open your island to your friends, your guild or everyone on the Island tab. You decide who comes over, and you can change it whenever you like.$B$BEvery good home needs company. And witnesses.',
  'Talk to Krook.', 0);
 INSERT INTO `quest_template_addon` (`ID`, `PrevQuestID`, `SpecialFlags`) VALUES
 (900400, 0, 2), (900401, 900400, 2), (900402, 900401, 2), (900403, 900402, 2), (900404, 900403, 2);
 INSERT INTO `quest_request_items` (`ID`, `EmoteOnComplete`, `EmoteOnIncomplete`, `CompletionText`, `VerifiedBuild`) VALUES
-(900400, 1, 1, 'Found it? The island, I mean.', 0),
-(900401, 1, 1, 'Placed something yet?', 0),
-(900402, 1, 1, 'Moved something?', 0),
-(900403, 1, 1, 'Tried the undo?', 0),
-(900404, 1, 1, 'Anyone coming over?', 0);
+(900400, 1, 1, 'Found it? The island, I mean. Krook was waiting. Krook is always waiting.', 0),
+(900401, 1, 1, 'Placed something yet? Anything at all. Krook isn''t picky.', 0),
+(900402, 1, 1, 'Moved something? Go on, nobody''s counting. *scribbles in ledger*', 0),
+(900403, 1, 1, 'Tried the undo? Go on. Krook will wait.', 0),
+(900404, 1, 1, 'Anyone coming over? Krook loves a crowd. More customers.', 0);
 INSERT INTO `quest_offer_reward` (`ID`, `Emote1`, `RewardText`, `VerifiedBuild`) VALUES
-(900400, 4, 'You made it! Sand, sea, and nobody telling you where to put your chairs. Welcome home.', 0),
-(900401, 4, 'Now that''s a start! Every piece you place can be picked up again, so don''t be shy.', 0),
-(900402, 4, 'Much better. You''ve got an eye for this.', 0),
-(900403, 4, 'See? Nothing lost. Mistakes are free here.', 0),
-(900404, 4, 'Company! Here, take this basket. For picnics. With your friends. Welcome home, $N.', 0);
+(900400, 4, 'You made it! Sand, sea, and nobody telling you where to put your chairs. Welcome home, $N.$B$BRent? *grrf* ...Never heard of it. Good, good!', 0),
+(900401, 4, 'Now that''s a start! *tail wag* Every piece you place can be picked up again, so don''t be shy.', 0),
+(900402, 4, 'Much better. You''ve got an eye for this. Good, good!', 0),
+(900403, 4, 'See? Mistakes vanish. *grrf* ...Yours, I mean. Nothing lost, and no charge for it either.', 0),
+(900404, 4, 'Company! Good, good! Here, take this basket. For picnics, with your friends. No charge, $N. The previous owner won''t miss it. Probably.$B$BWelcome home.', 0);
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
 (@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
@@ -289,8 +289,9 @@ INSERT INTO `conditions` (`SourceTypeOrReferenceId`, `SourceGroup`, `SourceEntry
  `NegativeCondition`, `ErrorType`, `ErrorTextId`, `ScriptName`, `Comment`) VALUES
 (19, 0, 900400, 0, 0, 2, 0, @HOUSE_KEY, 1, 1, 0, 0, 0, '', 'Home Sweet Island: needs a House Key, keeps playerbots out');
 
--- Krook's greeting above his quests (the menus' other texts went with the menus).
+-- Krook's greetings: above his quests, and to someone without a House Key (new, or lost it).
 DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;
 INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `Probability0`) VALUES
-(900300, 'Your island, your rules. Everything you place can be picked up again, and every change can be undone. The housing window has it all: your Collection, your island, and islands to visit.', '', 1),
-(900301, 'Krook, at your service. Every adventurer deserves somewhere to come home to: an island of your own, shared by all your characters, to build and furnish as you please. All it takes is a House Key, and I keep one for everyone. Lose yours, and come back to me for another.', '', 1);
+(900300, 'Good, good, $N! Your island, your rules. Everything you place can be picked up again, and every change can be undone.$B$BThe housing window has it all: your Collection, your island, and islands to visit. *scribbles in ledger*', '', 1),
+(900301, '*sniff sniff* A new face! Krook, Housing Steward, at your service. Every adventurer deserves somewhere to come home to: an island of your own, shared by all your characters, to build and furnish as you please.$B$BAll it takes is a House Key, and I keep one for everyone. Lose yours? Come back for another. No charge... for now.', '', 1),
+(900302, '*sniff* Welcome back, $N! Lost something? Krook remembers his customers.$B$BYour island is right where you left it. Ask, and I''ll hand you another House Key. Free! Today.', '', 1);

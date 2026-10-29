@@ -576,6 +576,12 @@ void PlayerHousingMgr::Say(Player* player, std::string const& text) const
         ChatHandler(player->GetSession()).PSendSysMessage("Housing: {}", text);
 }
 
+void PlayerHousingMgr::KrookSay(Player* player, std::string const& text) const
+{
+    if (player && player->GetSession())
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffffd000Krook:|r {}", text);
+}
+
 void PlayerHousingMgr::Tip(Player* player, uint32 tip, std::string const& text)
 {
     if (!player)
@@ -620,7 +626,9 @@ void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
     std::string reason;
     if (!GiveHouseKey(player, reason))
     {
-        Say(player, reason);
+        if (!player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
+            reason += " *tail droops* Krook would hold it for you, but liability.";
+        KrookSay(player, reason);
         return;
     }
 
@@ -644,8 +652,8 @@ void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
     }
 
     SetCharacterFlag(guid, CHAR_FLAG_KEY_GIVEN, false);
-    Say(player, firstOnAccount ? "You have a house! Your House Key (or /housing) opens the housing window: Go home takes you there."
-        : "Here is your House Key: your island is shared by all your characters. The key (or /housing) opens the housing window. If you lose it, come back to me (I'm by the innkeeper in every capital city) for another.");
+    KrookSay(player, firstOnAccount ? "You have a house! Good, good! Use your House Key or type /housing to open the housing window, then click Go home to travel there. *scribbles in ledger*"
+        : "Here is your House Key. Your island is shared by all your characters: the key (or /housing) opens the housing window. Lose it again? Come find me by any capital's innkeeper. No charge... for now.");
 }
 
 bool PlayerHousingMgr::HadHouseKey(Player const* player) const
@@ -943,7 +951,7 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
         {
             SetCharacterFlag(ownerGuid, CHAR_FLAG_GREETED, false);
             ChatHandler handler(player->GetSession());
-            handler.SendSysMessage("|cffffd000Krook:|r Welcome to your island! Every character of yours shares it. Three things to know:");
+            handler.SendSysMessage("|cffffd000Krook:|r *tail wag* Welcome to your island! Every character of yours shares it. Three things to know:");
             handler.SendSysMessage("|cffffd000Krook:|r 1. Click a piece in the housing window's Collection: it goes on your mouse. Click where it should go.");
             handler.SendSysMessage("|cffffd000Krook:|r 2. Right-click a piece on the island to pick it up again. The mouse wheel turns it; the window lists the rest.");
             handler.SendSysMessage("|cffffd000Krook:|r 3. Don't like it? Undo. Nothing is ever lost: picked up pieces go back to your Collection.");
@@ -1708,6 +1716,6 @@ bool PlayerHousingMgr::CallSteward(Player* player, std::string& reason)
     Position position;
     position.Relocate(x, y, z + 0.1f, facing);
     SpawnStewardAt(*session, map, position);
-    reason = "Krook hurries over.";
+    KrookSay(player, "*tail wag* Here I am! Krook is never far from his customers.");
     return true;
 }

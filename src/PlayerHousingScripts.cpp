@@ -79,7 +79,7 @@ public:
             bool hadOne = sPlayerHousingMgr->HadHouseKey(player);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, hadOne ? "I've lost my House Key." : "I'd like a house of my own.",
                 GOSSIP_SENDER_MAIN, ACTION_KEY);
-            SendGossipMenuFor(player, TEXT_NO_KEY, creature->GetGUID());
+            SendGossipMenuFor(player, hadOne ? TEXT_LOST_KEY : TEXT_NO_KEY, creature->GetGUID());
             return true;
         }
         if (creature->IsQuestGiver())
