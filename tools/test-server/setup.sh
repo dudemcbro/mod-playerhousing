@@ -124,10 +124,11 @@ else
 fi
 
 step "Applying module SQL (safe to re-run)"
-# The core's auto-updater only reads modules/<name>/data/sql/{world,characters,auth}, so these are applied by hand.
+# The core's updater applies these at startup only when the module sits in its modules/ folder,
+# so they're applied by hand here too (every file is safe to apply again).
 for db in world characters; do
     # C collation: the table file sorts before the content file that fills it.
-    find "$MODULE_DIR/sql/db_$db" -name '*.sql' ! -iname '*rollback*' | LC_ALL=C sort | while read -r f; do
+    find "$MODULE_DIR/data/sql/db-$db" -name '*.sql' ! -iname '*rollback*' | LC_ALL=C sort | while read -r f; do
         quiet_mysql "acore_$db" < "$f" >/dev/null
         echo "applied ${f#"$MODULE_DIR"/}"
     done

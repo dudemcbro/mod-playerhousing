@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Builds the housing content from tools/content/pieces.py:
 
-  sql/db_world/base/mod_playerhousing_world_content.sql   items, objects, pieces, rules
-  sql/db_world/base/mod_playerhousing_world_catalog.sql   every other object model (Catalog = everything)
+  data/sql/db-world/mod_playerhousing_world_content.sql   items, objects, pieces, rules
+  data/sql/db-world/mod_playerhousing_world_catalog.sql   every other object model (Catalog = everything)
   docs/UNLOCKS.md                                          the same list for people
   tools/gm-island-cleared/client_items.tsv                 bag icons, for the client patch
 
@@ -642,7 +642,7 @@ def build(args):
         "",
     ]
     sql += ghosts.sql(901100, 902999)
-    with open(os.path.join(MODULE, "sql/db_world/base/mod_playerhousing_world_content.sql"), "w") as f:
+    with open(os.path.join(MODULE, "data/sql/db-world/mod_playerhousing_world_content.sql"), "w") as f:
         f.write("\n".join(sql))
 
     md = [
@@ -672,7 +672,7 @@ def build(args):
     md += ["## Catalog (%d)" % catalog_count, "",
            "With `PlayerHousing.Catalog = everything`, every other object model in the game is a piece too, one per",
            "model, everyone's from the start (search the Collection for them). They come from",
-           "`sql/db_world/base/mod_playerhousing_world_catalog.sql`.", ""]
+           "`data/sql/db-world/mod_playerhousing_world_catalog.sql`.", ""]
     with open(os.path.join(MODULE, "docs/UNLOCKS.md"), "w") as f:
         f.write("\n".join(md))
 
@@ -828,7 +828,7 @@ def build_catalog(world, models, boxes, curated_displays, previews, icons, clien
                 "`outline_min_x`, `outline_min_y`, `outline_max_x`, `outline_max_y`) VALUES",
                 ",\n".join(piece_rows[start:start + 500]) + ";", ""]
     sql += ghosts.sql(CATALOG_FIRST, CATALOG_LAST)
-    with open(os.path.join(MODULE, "sql/db_world/base/mod_playerhousing_world_catalog.sql"), "w") as f:
+    with open(os.path.join(MODULE, "data/sql/db-world/mod_playerhousing_world_catalog.sql"), "w") as f:
         f.write("\n".join(sql))
     return len(piece_rows)
 

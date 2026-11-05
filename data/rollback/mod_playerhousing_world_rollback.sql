@@ -34,3 +34,6 @@ DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900405;
 DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900405;
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900405;
 DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 19 AND `SourceEntry` BETWEEN 900400 AND 900405;
+
+-- The updater's record of the module's files, so a reinstall applies them all again.
+DELETE FROM `updates` WHERE `name` LIKE 'mod\_playerhousing\_%';

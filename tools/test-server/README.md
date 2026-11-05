@@ -98,9 +98,9 @@ changed, so it is also the way to pick up module edits.
    (`tools/gm-island-cleared/server_data.sh`), or puts it back for the guildhouse layout.
 7. Creates the `acore` MySQL user and databases, then populates them with
    `worldserver --dry-run`.
-8. Applies this module's SQL. The core's updater only imports a module's
-   `data/sql/world`, `data/sql/characters` and `data/sql/auth` folders, so the files in
-   `sql/` are applied here.
+8. Applies this module's SQL (`data/sql/`). The core's updater would also apply it at
+   startup, but only when the module sits in the core's `modules/` folder, so it's applied
+   here to be sure. Every file is safe to apply again.
 9. Creates accounts `houseowner` and `houseguest` (players) and `admin` (GM 3).
    Passwords match the names.
 

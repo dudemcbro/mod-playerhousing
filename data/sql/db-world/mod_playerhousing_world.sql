@@ -2,7 +2,11 @@
 --
 -- The pieces themselves (furnishings and buildings, their items, objects and unlock rules)
 -- are generated into mod_playerhousing_world_content.sql by tools/content/build_content.py.
--- Apply this file first, then the content file. Both can be re-applied at any time.
+-- The worldserver's updater applies the files in this folder by name (this one first) when
+-- the server starts, and again whenever one changes: each one is safe to apply again on its
+-- own. So this file creates the piece tables only when they're missing: the content and
+-- catalog files clear and refill their own rows. A change to those tables' columns needs an
+-- ALTER here.
 
 SET @STEWARD := 900200;
 SET @MANNEQUIN := 900201;
@@ -56,8 +60,7 @@ INSERT INTO `mod_playerhousing_layout` (`layout`, `map_id`, `landing_x`, `landin
 --             which is what counts as inside a building
 --   flags     1 surface, 2 small, 4 unlock per character, 8 first-login gift, 16 starter wreckage,
 --             32 mannequin, 64 Bank Chest, 128 Music Box, 256 figurine
-DROP TABLE IF EXISTS `mod_playerhousing_piece`;
-CREATE TABLE `mod_playerhousing_piece` (
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_piece` (
   `item_entry` int unsigned NOT NULL,
   `kind` tinyint unsigned NOT NULL DEFAULT 0,
   `category` tinyint unsigned NOT NULL DEFAULT 0,
@@ -86,8 +89,7 @@ CREATE TABLE `mod_playerhousing_piece` (
 --             param2 rank, 7 = Exalted), 4 quest rewarded (param1), 5 kill (param1 creature),
 --             6 explore area or zone (param1), 7 skill (param1 skill, param2 value),
 --             8 never (GM or UnlockAll only)
-DROP TABLE IF EXISTS `mod_playerhousing_piece_rule`;
-CREATE TABLE `mod_playerhousing_piece_rule` (
+CREATE TABLE IF NOT EXISTS `mod_playerhousing_piece_rule` (
   `item_entry` int unsigned NOT NULL,
   `rule_group` tinyint unsigned NOT NULL DEFAULT 0,
   `rule_index` tinyint unsigned NOT NULL,

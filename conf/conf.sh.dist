@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 DB_CHARACTERS_CUSTOM_PATHS+=(
-    "$MOD_PLAYERHOUSING_ROOT/sql/db_characters/base/"
+    "$MOD_PLAYERHOUSING_ROOT/data/sql/db-characters/"
 )
 
 DB_WORLD_CUSTOM_PATHS+=(
-    "$MOD_PLAYERHOUSING_ROOT/sql/db_world/base/"
+    "$MOD_PLAYERHOUSING_ROOT/data/sql/db-world/"
 )
