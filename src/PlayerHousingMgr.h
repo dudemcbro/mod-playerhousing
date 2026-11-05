@@ -62,7 +62,9 @@ namespace Housing
 
     // Items, objects and texts owned by the module (see sql/db_world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
+    constexpr uint32 KROOK_LETTER_ITEM = 900500; // mailed at the letter level; starts QUEST_LETTER
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
+    constexpr uint32 HEARTHSTONE_SPELL = 8690; // Go home casts it (bar and animation), not its teleport
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 HIGHLIGHT_RING_GO = 903991;  // under the piece chosen in the Placed list
@@ -79,6 +81,8 @@ namespace Housing
     constexpr uint32 QUEST_TOUR_CHANGE = 900402;
     constexpr uint32 QUEST_TOUR_UNDO = 900403;
     constexpr uint32 QUEST_TOUR_OPEN = 900404;
+    // Krook's letter: find him in a capital. Turning it in hands over the House Key.
+    constexpr uint32 QUEST_LETTER = 900405;
     // The old "Move a Piece" items (targeting circles), retired: any still around are taken
     // away (see SweepHousingItems).
     constexpr uint32 MOVER_ITEM_FIRST = 901190;
@@ -86,6 +90,7 @@ namespace Housing
 
     constexpr uint32 TEXT_HOME = 900300;  // Krook's greeting above his quests
     constexpr uint32 TEXT_NO_KEY = 900301; // Krook's greeting to someone without a House Key
+    constexpr uint32 TEXT_LOST_KEY = 900302; // ...and to someone who had one and lost it
 
     enum PieceKind : uint8
     {
@@ -157,7 +162,8 @@ namespace Housing
         CHAR_FLAG_VETERAN_DONE = 0x02,
         CHAR_FLAG_GREETED = 0x04,
         CHAR_FLAG_HOME_AT_LOGOUT = 0x80,  // last seen on their own island: logging in puts them back
-        CHAR_FLAG_GIFTS_GIVEN = 0x100     // on the account's home character: its first pieces came
+        CHAR_FLAG_GIFTS_GIVEN = 0x100,    // on the account's home character: its first pieces came
+        CHAR_FLAG_LETTER_SENT = 0x200     // Krook's letter went out (once a character)
     };
 
     // 0x04 was the first trip to House Storage, when pieces still went to the bags.
@@ -353,6 +359,9 @@ public:
     bool VisitHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason);
     bool VisitHouseByName(Player* player, std::string const& ownerName, std::string& reason);
     bool RequestGoHome(Player* player, std::string& reason);
+    // Go home's Hearthstone cast finished: the trip goes now. False when no trip is waiting
+    // (an ordinary Hearthstone, left alone).
+    bool HomeCastDone(Player* player);
     bool LeaveHouse(Player* player, std::string& reason);
     bool Unstuck(Player* player, std::string& reason);
     // Krook comes over to the player (the window's Call Krook), on their island.
@@ -362,6 +371,9 @@ public:
     bool HadHouseKey(Player const* player) const;
     // Krook hands over a House Key: the first on the account comes with its first pieces.
     void GiveKeyFromKrook(Player* player);
+    // At the letter level (or past it, at login), a character without a key gets Krook's
+    // letter by mail, once.
+    void SendKrookLetter(Player* player);
 
     // Where the player stands: 0 when not on anyone's island.
     ObjectGuid::LowType GetIslandOwner(Player const* player) const;
@@ -631,6 +643,8 @@ public:
 
     // ---- misc helpers shared by the scripts
     void Say(Player* player, std::string const& text) const;
+    // A line in Krook's own voice (docs/KROOK.md), under his name rather than "Housing".
+    void KrookSay(Player* player, std::string const& text) const;
     void Tip(Player* player, uint32 tip, std::string const& text);
     // A tour quest's step done, if the player is on that quest.
     static void QuestEvent(Player* player, uint32 questId);
@@ -751,6 +765,7 @@ private:
         float x{0.0f};
         float y{0.0f};
         float z{0.0f};
+        bool casting{false};  // the Hearthstone cast is showing; it ending early cancels the trip
     };
 
     PlayerHousingMgr() = default;
@@ -1005,6 +1020,7 @@ private:
     uint32 _maxFurnishings{200};
     uint32 _maxBuildings{10};
     uint32 _keyDelaySeconds{5};
+    uint32 _letterLevel{10};
     float _sizeMin{0.5f};   // times the piece's normal size
     float _sizeMax{2.0f};
     float _tiltMax{180.0f};  // degrees either way; 180: all the way round

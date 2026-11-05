@@ -52,6 +52,9 @@ little wolvar, stands beside the innkeeper. Talk to him and ask for a house.
 Right-click the House Key (or type `/housing`) and click **Go home**. Krook's quests walk you
 through the rest.
 
+Haven't gone looking? At level 10, Krook mails you a letter (check a mailbox) that starts a quest
+leading to him. Turning it in gets you the key.
+
 Each of your characters asks Krook for their own key; they all share the same island. Lost
 your key? Krook has another.
 

@@ -10,6 +10,7 @@
 #include "Group.h"
 #include "Item.h"
 #include "Log.h"
+#include "Mail.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
@@ -17,6 +18,7 @@
 #include "Player.h"
 #include "QuestDef.h"
 #include "SharedDefines.h"
+#include "Spell.h"
 #include "StringFormat.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
@@ -107,6 +109,7 @@ void PlayerHousingMgr::LoadConfig()
     _maxFurnishings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxFurnishings", 200), 1, 5000);
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
     _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 10), 60);
+    _letterLevel = sConfigMgr->GetOption<uint32>("PlayerHousing.KrookLetter.Level", 10);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
     // It goes into a query: letters, digits and underscores only.
     if (_layoutCode.empty() || _layoutCode.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
@@ -576,6 +579,12 @@ void PlayerHousingMgr::Say(Player* player, std::string const& text) const
         ChatHandler(player->GetSession()).PSendSysMessage("Housing: {}", text);
 }
 
+void PlayerHousingMgr::KrookSay(Player* player, std::string const& text) const
+{
+    if (player && player->GetSession())
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffffd000Krook:|r {}", text);
+}
+
 void PlayerHousingMgr::Tip(Player* player, uint32 tip, std::string const& text)
 {
     if (!player)
@@ -620,7 +629,9 @@ void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
     std::string reason;
     if (!GiveHouseKey(player, reason))
     {
-        Say(player, reason);
+        if (!player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
+            reason += " *tail droops* Krook would hold it for you, but liability.";
+        KrookSay(player, reason);
         return;
     }
 
@@ -644,8 +655,39 @@ void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
     }
 
     SetCharacterFlag(guid, CHAR_FLAG_KEY_GIVEN, false);
-    Say(player, firstOnAccount ? "You have a house! Your House Key (or /housing) opens the housing window: Go home takes you there."
-        : "Here is your House Key: your island is shared by all your characters. The key (or /housing) opens the housing window. If you lose it, come back to me (I'm by the innkeeper in every capital city) for another.");
+    KrookSay(player, firstOnAccount ? "You have a house! Good, good! Use your House Key or type /housing to open the housing window, then click Go home to travel there. *scribbles in ledger*"
+        : "Here is your House Key. Your island is shared by all your characters: the key (or /housing) opens the housing window. Lose it again? Come find me by any capital's innkeeper. No charge... for now.");
+}
+
+void PlayerHousingMgr::SendKrookLetter(Player* player)
+{
+    if (!_enabled || !player || _letterLevel == 0 || player->GetLevel() < _letterLevel || player->GetSession()->IsBot())
+        return;
+
+    // Once a character, and only for one that hasn't found Krook (or the quest) by itself.
+    ObjectGuid::LowType guid = player->GetGUID().GetCounter();
+    if (GetCharacterFlags(guid) & (CHAR_FLAG_KEY_GIVEN | CHAR_FLAG_LETTER_SENT))
+        return;
+    if (player->HasItemCount(HOUSE_KEY_ITEM, 1, true) || player->GetQuestStatus(QUEST_LETTER) != QUEST_STATUS_NONE)
+        return;
+
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    MailDraft draft(Acore::StringFormat("An opportunity, {}!", player->GetName()),
+        Acore::StringFormat("Dear {},\n\n"
+            "Word reaches Krook that you're making a name for yourself. Good, good! An adventurer like you deserves a home of your own, and I have one ready.\n\n"
+            "Find me beside the innkeeper in any capital city and I'll hand over your House Key. Right-click the letter attached here, so you don't forget the way.\n\n"
+            "Krook, Housing Steward\n\n"
+            "P.S. No obligation. None at all. I've checked.", player->GetName()));
+    if (Item* letter = Item::CreateItem(KROOK_LETTER_ITEM, 1, player))
+    {
+        letter->SaveToDB(trans);
+        draft.AddItem(letter);
+    }
+    draft.SendMailTo(trans, MailReceiver(player, guid), MailSender(MAIL_CREATURE, _stewardEntry));
+    CharacterDatabase.CommitTransaction(trans);
+
+    SetCharacterFlag(guid, CHAR_FLAG_LETTER_SENT, false);
+    KrookSay(player, "Psst! I've sent you a letter. Check the nearest mailbox. Good, good!");
 }
 
 bool PlayerHousingMgr::HadHouseKey(Player const* player) const
@@ -724,6 +766,9 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
     }
     SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_VETERAN_DONE, false);
 
+    // Past the letter level without a key (made before housing, or a Death Knight): the letter.
+    SendKrookLetter(player);
+
     // Lets the optional client addon know this server has housing.
     SendAddonState(player);
 }
@@ -776,19 +821,27 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
         trip = itr->second;
     }
 
+    // Still showing the Hearthstone cast? (Escape, a stun or a kick ends it early.)
+    Spell const* cast = player->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    bool castShowing = cast && cast->GetSpellInfo()->Id == HEARTHSTONE_SPELL && !cast->m_CastItem;
+
     bool moved = player->GetExactDist(trip.x, trip.y, trip.z) > 1.0f;
-    if (moved || player->IsInCombat() || player->isDead())
+    bool due = std::time(nullptr) >= trip.at;
+    if (moved || player->IsInCombat() || player->isDead() || (trip.casting && !castShowing && !due))
     {
         {
             std::lock_guard<std::recursive_mutex> guard(_lock);
             _pendingTrips.erase(player->GetGUID());
         _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
         }
+        // The cast isn't cancelled by moving by itself (the server cast it), so it stops here.
+        if (castShowing)
+            player->InterruptNonMeleeSpells(false, HEARTHSTONE_SPELL);
         Say(player, "Trip home canceled.");
         return;
     }
 
-    if (std::time(nullptr) < trip.at)
+    if (!due)
         return;
 
     {
@@ -796,6 +849,9 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
         _pendingTrips.erase(player->GetGUID());
         _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
     }
+    // The fallback time came first: the cast stops as the trip goes.
+    if (castShowing)
+        player->InterruptNonMeleeSpells(false, HEARTHSTONE_SPELL);
 
     std::string reason;
     if (!EnterOwnHouse(player, reason))
@@ -943,7 +999,7 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
         {
             SetCharacterFlag(ownerGuid, CHAR_FLAG_GREETED, false);
             ChatHandler handler(player->GetSession());
-            handler.SendSysMessage("|cffffd000Krook:|r Welcome to your island! Every character of yours shares it. Three things to know:");
+            handler.SendSysMessage("|cffffd000Krook:|r *tail wag* Welcome to your island! Every character of yours shares it. Three things to know:");
             handler.SendSysMessage("|cffffd000Krook:|r 1. Click a piece in the housing window's Collection: it goes on your mouse. Click where it should go.");
             handler.SendSysMessage("|cffffd000Krook:|r 2. Right-click a piece on the island to pick it up again. The mouse wheel turns it; the window lists the rest.");
             handler.SendSysMessage("|cffffd000Krook:|r 3. Don't like it? Undo. Nothing is ever lost: picked up pieces go back to your Collection.");
@@ -1539,6 +1595,11 @@ bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
 
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
+        if (_pendingTrips.count(player->GetGUID()))
+        {
+            reason = "You're already on your way home.";
+            return false;
+        }
         PendingTrip& trip = _pendingTrips[player->GetGUID()];
         _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
         trip.at = std::time(nullptr) + _keyDelaySeconds;
@@ -1547,7 +1608,36 @@ bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
         trip.z = player->GetPositionZ();
     }
 
+    // Like a hearthstone: the Hearthstone's own cast shows (its bar and animation), without its
+    // cooldown; spell_playerhousing_go_home keeps it from going to the inn, and the trip goes
+    // when it finishes (HomeCastDone). The time left is only a fallback then.
+    // Off the mount first, as a Hearthstone does (not in the air: then it's the plain wait).
+    if (player->IsMounted() && !player->IsFlying())
+        player->RemoveAurasByType(SPELL_AURA_MOUNTED);
+    if (player->CastSpell(player, HEARTHSTONE_SPELL, TRIGGERED_IGNORE_SPELL_AND_CATEGORY_CD) == SPELL_CAST_OK)
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto itr = _pendingTrips.find(player->GetGUID());
+        if (itr != _pendingTrips.end())
+        {
+            itr->second.casting = true;
+            itr->second.at = std::time(nullptr) + 60;
+        }
+        return true;
+    }
+
     reason = Acore::StringFormat("Heading home in {} seconds. Moving cancels.", _keyDelaySeconds);
+    return true;
+}
+
+bool PlayerHousingMgr::HomeCastDone(Player* player)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _pendingTrips.find(player->GetGUID());
+    if (itr == _pendingTrips.end())
+        return false;
+    itr->second.at = 0;
+    itr->second.casting = false;
     return true;
 }
 
@@ -1708,6 +1798,6 @@ bool PlayerHousingMgr::CallSteward(Player* player, std::string& reason)
     Position position;
     position.Relocate(x, y, z + 0.1f, facing);
     SpawnStewardAt(*session, map, position);
-    reason = "Krook hurries over.";
+    KrookSay(player, "*tail wag* Here I am! Krook is never far from his customers.");
     return true;
 }

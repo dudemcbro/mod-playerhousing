@@ -79,7 +79,10 @@ public:
             bool hadOne = sPlayerHousingMgr->HadHouseKey(player);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, hadOne ? "I've lost my House Key." : "I'd like a house of my own.",
                 GOSSIP_SENDER_MAIN, ACTION_KEY);
-            SendGossipMenuFor(player, TEXT_NO_KEY, creature->GetGUID());
+            // His letter's quest is turned in here, before there's a key.
+            if (creature->IsQuestGiver())
+                player->PrepareQuestMenu(creature->GetGUID());
+            SendGossipMenuFor(player, hadOne ? TEXT_LOST_KEY : TEXT_NO_KEY, creature->GetGUID());
             return true;
         }
         if (creature->IsQuestGiver())
@@ -109,6 +112,16 @@ private:
     {
         if (quest->GetQuestId() == QUEST_TOUR_HOME && sPlayerHousingMgr->IsOnOwnIsland(player))
             PlayerHousingMgr::QuestEvent(player, QUEST_TOUR_HOME);
+        return false;
+    }
+
+    // His letter, turned in: the House Key. Returning false lets the core offer the tour's
+    // first quest next, which needs the key just given.
+    bool OnQuestReward(Player* player, Creature* /*creature*/, Quest const* quest, uint32 /*opt*/) override
+    {
+        if (quest->GetQuestId() == QUEST_LETTER && !player->GetSession()->IsBot()
+            && !player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
+            sPlayerHousingMgr->GiveKeyFromKrook(player);
         return false;
     }
 };
@@ -259,6 +272,28 @@ class spell_playerhousing_place : public SpellScript
     void Register() override
     {
         OnCheckCast += SpellCheckCastFn(spell_playerhousing_place::CheckCast);
+    }
+};
+
+// Go home's cast: the Hearthstone's, with no item. When it finishes it doesn't go to the inn:
+// the trip home goes instead. An ordinary Hearthstone (from the item, or with no trip
+// waiting) is left alone.
+class spell_playerhousing_go_home : public SpellScript
+{
+    PrepareSpellScript(spell_playerhousing_go_home);
+
+    void HandleEffect(SpellEffIndex effIndex)
+    {
+        Player* player = GetCaster() ? GetCaster()->ToPlayer() : nullptr;
+        if (!player || GetCastItem() || !sPlayerHousingMgr->HomeCastDone(player))
+            return;
+        PreventHitDefaultEffect(effIndex);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_playerhousing_go_home::HandleEffect, EFFECT_ALL, SPELL_EFFECT_ANY);
+        OnEffectHitTarget += SpellEffectFn(spell_playerhousing_go_home::HandleEffect, EFFECT_ALL, SPELL_EFFECT_ANY);
     }
 };
 
@@ -1188,6 +1223,7 @@ public:
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
     {
         sPlayerHousingMgr->EvaluateUnlocks(player, RULE_LEVEL, 0, true, player->GetLevel());
+        sPlayerHousingMgr->SendKrookLetter(player);
     }
 
     void OnPlayerUpdateSkill(Player* player, uint32 skillId, uint32 /*value*/, uint32 /*max*/, uint32 /*step*/, uint32 newValue) override
@@ -1236,6 +1272,7 @@ void Addmod_playerhousingScripts()
     new item_playerhousing_piece();
     RegisterSpellScript(spell_playerhousing_place);
     RegisterSpellScript(spell_playerhousing_key);
+    RegisterSpellScript(spell_playerhousing_go_home);
     new go_playerhousing_piece();
     new npc_playerhousing_figurine();
     new mod_playerhousing_worldscript();

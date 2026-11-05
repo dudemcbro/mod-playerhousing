@@ -61,6 +61,7 @@ roommates; GM moderation tools.
 | [Client addon](docs/ADDON.md) | The housing window, the mouse and keys, building pictures |
 | [Unlocks](docs/UNLOCKS.md) | Every piece and what unlocks it |
 | [Content](docs/CONTENT.md) | Where the pieces come from, and changing them |
+| [Krook's voice](docs/KROOK.md) | How Krook talks: the rules for any line he says, writes or mails |
 | [Design](docs/DESIGN.md) | The ground rules and the decisions behind them |
 | [How it works](docs/HOW_IT_WORKS.md) | Phases, ghosts, undo, safety rules, load measurements |
 | [Roadmap](docs/ROADMAP.md) | What's planned on the way to 2.0 |
@@ -75,6 +76,7 @@ against `main`. Commit messages follow
 (and `client-addon/test/harness.lua` for addon changes) before opening a pull request.
 Content changes go in `tools/content/pieces.py`; regenerate the SQL, `docs/UNLOCKS.md`
 and the addon lists with `tools/content/build_content.py` rather than editing them by hand.
+Anything Krook says, writes or mails follows his [voice guide](docs/KROOK.md).
 
 ## How this was made
 
