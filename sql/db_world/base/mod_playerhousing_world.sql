@@ -9,6 +9,7 @@ SET @MANNEQUIN := 900201;
 SET @CHEST_BANKER := 900202;
 SET @GHOST := 900203;
 SET @HOUSE_KEY := 902000;
+SET @LETTER := 900500;
 SET @MARKER := 903990;
 SET @RING := 903991;
 
@@ -189,6 +190,14 @@ INSERT INTO `item_template`
 (@HOUSE_KEY, 15, 0, -1, 'House Key', 22071, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 1, 1, 1, 1, 18282, 0, 0, 0, -1,
  'Right-click: the housing window. Go home, decorate, your Collection.', 'item_playerhousing_key', 0);
 
+-- Krook's letter: mailed to a character without a key at PlayerHousing.KrookLetter.Level.
+-- It starts his quest (and goes when the quest is taken); the paper is the game's own.
+DELETE FROM `item_template` WHERE `entry` = @LETTER;
+INSERT INTO `item_template`
+(`entry`, `class`, `subclass`, `SoundOverrideSubclass`, `name`, `displayid`, `Quality`, `Flags`, `FlagsExtra`, `BuyCount`, `BuyPrice`, `SellPrice`, `InventoryType`, `AllowableClass`, `AllowableRace`, `ItemLevel`, `RequiredLevel`, `maxcount`, `stackable`, `bonding`, `startquest`, `description`, `ScriptName`, `VerifiedBuild`) VALUES
+(@LETTER, 12, 0, -1, 'A Letter from Krook', 811, 1, 0, 0, 1, 0, 0, 0, -1, -1, 1, 0, 1, 1, 4, 900405,
+ 'Krook''s handwriting. It smells faintly of wolvar.', '', 0);
+
 -- The key's spell is caught before it casts (as are the old furnishing items' spells, listed in
 -- the content file: one used is turned into a piece in the Collection).
 DELETE FROM `spell_script_names` WHERE `ScriptName` = 'spell_playerhousing_key';
@@ -234,12 +243,12 @@ INSERT INTO `gameobject` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, 
 -- moment the player does the thing (the module reports it as an event), and Krook anywhere,
 -- in a city or on the island, hands them out and takes them back. The last one unlocks
 -- Krook's Picnic Basket (a quest rule in the content list).
-DELETE FROM `creature_queststarter` WHERE `quest` BETWEEN 900400 AND 900404;
-DELETE FROM `creature_questender` WHERE `quest` BETWEEN 900400 AND 900404;
-DELETE FROM `quest_request_items` WHERE `ID` BETWEEN 900400 AND 900404;
-DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900404;
-DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900404;
-DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900404;
+DELETE FROM `creature_queststarter` WHERE `quest` BETWEEN 900400 AND 900405;
+DELETE FROM `creature_questender` WHERE `quest` BETWEEN 900400 AND 900405;
+DELETE FROM `quest_request_items` WHERE `ID` BETWEEN 900400 AND 900405;
+DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 900400 AND 900405;
+DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 900400 AND 900405;
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 900400 AND 900405;
 INSERT INTO `quest_template`
 (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `RewardNextQuest`, `RewardMoney`, `Flags`,
  `LogTitle`, `LogDescription`, `QuestDescription`, `QuestCompletionLog`, `VerifiedBuild`) VALUES
@@ -262,25 +271,33 @@ INSERT INTO `quest_template`
 (900404, 2, -1, 1, 876, 0, 1000, 0, 'Open House',
  'Invite a guest (the Guests tab), or open your island to friends or to everyone (the Island tab).',
  'An island is better with friends. Invite someone in on the Guests tab, or open your island to your friends, your guild or everyone on the Island tab. You decide who comes over, and you can change it whenever you like.$B$BEvery good home needs company. And witnesses.',
- 'Talk to Krook.', 0);
+ 'Talk to Krook.', 0),
+(900405, 2, -1, 1, 876, 900400, 0, 0, 'A Place to Call Home',
+ 'Find Krook beside the innkeeper in any capital city.',
+ 'Dear $N,$B$BWord reaches Krook that you''re making a name for yourself. Good, good! An adventurer like you deserves a home of your own, and I have one ready.$B$BFind me beside the innkeeper in any capital city: Stormwind, Ironforge, Darnassus, the Exodar, Orgrimmar, Thunder Bluff, the Undercity, Silvermoon, Shattrath or Dalaran. I''ll hand over your House Key.$B$BKrook, Housing Steward$B$BP.S. No obligation. None at all. I''ve checked.',
+ 'Talk to Krook beside the innkeeper in any capital city.', 0);
 INSERT INTO `quest_template_addon` (`ID`, `PrevQuestID`, `SpecialFlags`) VALUES
-(900400, 0, 2), (900401, 900400, 2), (900402, 900401, 2), (900403, 900402, 2), (900404, 900403, 2);
+(900400, 0, 2), (900401, 900400, 2), (900402, 900401, 2), (900403, 900402, 2), (900404, 900403, 2),
+(900405, 0, 0);
 INSERT INTO `quest_request_items` (`ID`, `EmoteOnComplete`, `EmoteOnIncomplete`, `CompletionText`, `VerifiedBuild`) VALUES
 (900400, 1, 1, 'Found it? The island, I mean. Krook was waiting. Krook is always waiting.', 0),
 (900401, 1, 1, 'Placed something yet? Anything at all. Krook isn''t picky.', 0),
 (900402, 1, 1, 'Moved something? Go on, nobody''s counting. *scribbles in ledger*', 0),
 (900403, 1, 1, 'Tried the undo? Go on. Krook will wait.', 0),
-(900404, 1, 1, 'Anyone coming over? Krook loves a crowd. More customers.', 0);
+(900404, 1, 1, 'Anyone coming over? Krook loves a crowd. More customers.', 0),
+(900405, 1, 1, '*sniff sniff* You got my letter! Krook remembers his customers. Even the ones he hasn''t met yet.', 0);
 INSERT INTO `quest_offer_reward` (`ID`, `Emote1`, `RewardText`, `VerifiedBuild`) VALUES
 (900400, 4, 'You made it! Sand, sea, and nobody telling you where to put your chairs. Welcome home, $N.$B$BRent? *grrf* ...Never heard of it. Good, good!', 0),
 (900401, 4, 'Now that''s a start! *tail wag* Every piece you place can be picked up again, so don''t be shy.', 0),
 (900402, 4, 'Much better. You''ve got an eye for this. Good, good!', 0),
 (900403, 4, 'See? Mistakes vanish. *grrf* ...Yours, I mean. Nothing lost, and no charge for it either.', 0),
-(900404, 4, 'Company! Good, good! Here, take this basket. For picnics, with your friends. No charge, $N. The previous owner won''t miss it. Probably.$B$BWelcome home.', 0);
+(900404, 4, 'Company! Good, good! Here, take this basket. For picnics, with your friends. No charge, $N. The previous owner won''t miss it. Probably.$B$BWelcome home.', 0),
+(900405, 4, 'Here it is, $N: your very own House Key! No charge... for now. *scribbles in ledger*$B$BRight-click it and choose Go home. I''ll meet you on the beach.', 0);
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
 (@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
-(@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404);
+(@STEWARD, 900400), (@STEWARD, 900401), (@STEWARD, 900402), (@STEWARD, 900403), (@STEWARD, 900404),
+(@STEWARD, 900405);
 -- The tour starts only for someone holding a House Key (bags or bank). Playerbots never get
 -- one, and the core has no other check a bot's quest pickup goes through.
 DELETE FROM `conditions` WHERE `SourceTypeOrReferenceId` = 19 AND `SourceEntry` BETWEEN 900400 AND 900404;

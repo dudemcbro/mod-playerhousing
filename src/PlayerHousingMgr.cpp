@@ -10,6 +10,7 @@
 #include "Group.h"
 #include "Item.h"
 #include "Log.h"
+#include "Mail.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
@@ -107,6 +108,7 @@ void PlayerHousingMgr::LoadConfig()
     _maxFurnishings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxFurnishings", 200), 1, 5000);
     _maxBuildings = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.MaxBuildings", 10), 0, 200);
     _keyDelaySeconds = std::min<uint32>(sConfigMgr->GetOption<uint32>("PlayerHousing.HouseKey.DelaySeconds", 10), 60);
+    _letterLevel = sConfigMgr->GetOption<uint32>("PlayerHousing.KrookLetter.Level", 10);
     _layoutCode = ToLower(sConfigMgr->GetOption<std::string>("PlayerHousing.Layout", "cleared"));
     // It goes into a query: letters, digits and underscores only.
     if (_layoutCode.empty() || _layoutCode.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
@@ -656,6 +658,37 @@ void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
         : "Here is your House Key. Your island is shared by all your characters: the key (or /housing) opens the housing window. Lose it again? Come find me by any capital's innkeeper. No charge... for now.");
 }
 
+void PlayerHousingMgr::SendKrookLetter(Player* player)
+{
+    if (!_enabled || !player || _letterLevel == 0 || player->GetLevel() < _letterLevel || player->GetSession()->IsBot())
+        return;
+
+    // Once a character, and only for one that hasn't found Krook (or the quest) by itself.
+    ObjectGuid::LowType guid = player->GetGUID().GetCounter();
+    if (GetCharacterFlags(guid) & (CHAR_FLAG_KEY_GIVEN | CHAR_FLAG_LETTER_SENT))
+        return;
+    if (player->HasItemCount(HOUSE_KEY_ITEM, 1, true) || player->GetQuestStatus(QUEST_LETTER) != QUEST_STATUS_NONE)
+        return;
+
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    MailDraft draft(Acore::StringFormat("An opportunity, {}!", player->GetName()),
+        Acore::StringFormat("Dear {},\n\n"
+            "Word reaches Krook that you're making a name for yourself. Good, good! An adventurer like you deserves a home of your own, and I have one ready.\n\n"
+            "Find me beside the innkeeper in any capital city and I'll hand over your House Key. Right-click the letter attached here, so you don't forget the way.\n\n"
+            "Krook, Housing Steward\n\n"
+            "P.S. No obligation. None at all. I've checked.", player->GetName()));
+    if (Item* letter = Item::CreateItem(KROOK_LETTER_ITEM, 1, player))
+    {
+        letter->SaveToDB(trans);
+        draft.AddItem(letter);
+    }
+    draft.SendMailTo(trans, MailReceiver(player, guid), MailSender(MAIL_CREATURE, _stewardEntry));
+    CharacterDatabase.CommitTransaction(trans);
+
+    SetCharacterFlag(guid, CHAR_FLAG_LETTER_SENT, false);
+    KrookSay(player, "Psst! I've sent you a letter. Check the nearest mailbox. Good, good!");
+}
+
 bool PlayerHousingMgr::HadHouseKey(Player const* player) const
 {
     return GetCharacterFlags(player->GetGUID().GetCounter()) & CHAR_FLAG_KEY_GIVEN;
@@ -731,6 +764,9 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
             Say(player, Acore::StringFormat("Your past adventures unlocked {} pieces for your Collection.", credited));
     }
     SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_VETERAN_DONE, false);
+
+    // Past the letter level without a key (made before housing, or a Death Knight): the letter.
+    SendKrookLetter(player);
 
     // Lets the optional client addon know this server has housing.
     SendAddonState(player);

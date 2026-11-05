@@ -126,6 +126,15 @@ PlayerHousing.Ghosts = 1
 PlayerHousing.HouseKey.DelaySeconds = 10
 
 ###############################################################################
+# PlayerHousing.KrookLetter.Level
+#    At this level, a character without a House Key gets a letter from Krook by
+#    mail, once: it starts a quest that sends them to him in a capital city.
+#    Characters already past it get theirs at their next login. 0 = no letters.
+#    Default: 10
+###############################################################################
+PlayerHousing.KrookLetter.Level = 10
+
+###############################################################################
 # PlayerHousing.StewardEntry
 # PlayerHousing.StewardDisplayId
 #    Krook, the housing steward, and the model Krook uses (25384: Wolvar orphan).

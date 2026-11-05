@@ -205,5 +205,6 @@ Use these as starting points so the new content matches.
 - **Chat lines:** `KrookSay()` in `src/PlayerHousingMgr.cpp`, which shows them under a gold "Krook:" label. Plain system messages (errors that aren't his, notices about visitors and unlocks) stay on `Say()`, under "Housing:".
 - **Gossip greetings:** `npc_text` 900300 to 900302 in `sql/db_world/base/mod_playerhousing_world.sql` (with a key, a new face, a lost key). `$N` and `$B` (line break) work here.
 - **Welcome tour:** the same file's `quest_template`, `quest_request_items` and `quest_offer_reward` rows for quests 900400 to 900404. The log objectives stay plain; the voice goes in the descriptions and Krook's replies.
-- **Letters:** the `MailDraft` calls in `src/HousingStands.cpp`. Mail sent from code doesn't fill in `$N`.
+- **Letters:** the `MailDraft` calls in `src/HousingStands.cpp` (mannequin gear) and `SendKrookLetter()` in `src/PlayerHousingMgr.cpp` (the level 10 letter). Mail sent from code doesn't fill in `$N`, so the code puts the name in.
+- **The letter's quest:** quest 900405 and item 900500 in `sql/db_world/base/mod_playerhousing_world.sql`. The quest's text is the letter itself, so it shows when the player right-clicks it.
 - **Tests:** the end-to-end test (`tools/test-server/testclient/collection_smoke.py`) checks for "You have a house", "housing window", and the gossip options "I'd like a house" and "I've lost my House Key". Keep those phrases, or change the test with them.
