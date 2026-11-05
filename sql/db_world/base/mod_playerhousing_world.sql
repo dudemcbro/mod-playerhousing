@@ -200,9 +200,12 @@ INSERT INTO `item_template`
 
 -- The key's spell is caught before it casts (as are the old furnishing items' spells, listed in
 -- the content file: one used is turned into a piece in the Collection).
-DELETE FROM `spell_script_names` WHERE `ScriptName` = 'spell_playerhousing_key';
+-- Go home shows the Hearthstone's own cast (8690); its script keeps that one cast from going
+-- to the inn. Hearthstones used from the bags aren't touched.
+DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_key', 'spell_playerhousing_go_home');
 INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
-(18282, 'spell_playerhousing_key');
+(18282, 'spell_playerhousing_key'),
+(8690, 'spell_playerhousing_go_home');
 
 -- The blue rune that sat on tables while decorating (click it, choose what goes on top) went
 -- with the menus: pieces go on a table where the mouse points.

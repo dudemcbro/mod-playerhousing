@@ -119,8 +119,10 @@ PlayerHousing.Ghosts = 1
 
 ###############################################################################
 # PlayerHousing.HouseKey.DelaySeconds
-#    How long "Go home" takes, like a hearthstone: moving or combat cancels it.
-#    0 = instant. GMs and FreeMode always go instantly.
+#    "Go home" casts like a Hearthstone: its 10 second cast bar and animation,
+#    without touching the Hearthstone's cooldown. Moving, combat or Escape
+#    cancels it. This is the wait only if that cast can't start.
+#    0 = instant (no cast). GMs and FreeMode always go instantly.
 #    Default: 10
 ###############################################################################
 PlayerHousing.HouseKey.DelaySeconds = 10

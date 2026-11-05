@@ -64,6 +64,7 @@ namespace Housing
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KROOK_LETTER_ITEM = 900500; // mailed at the letter level; starts QUEST_LETTER
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
+    constexpr uint32 HEARTHSTONE_SPELL = 8690; // Go home casts it (bar and animation), not its teleport
     constexpr uint32 MANNEQUIN_ENTRY = 900201;  // the figure that shows a stand's gear
     constexpr uint32 CHEST_BANKER_ENTRY = 900202;  // unseen banker at an opened Bank Chest
     constexpr uint32 HIGHLIGHT_RING_GO = 903991;  // under the piece chosen in the Placed list
@@ -358,6 +359,9 @@ public:
     bool VisitHouse(Player* player, ObjectGuid::LowType ownerGuid, std::string& reason);
     bool VisitHouseByName(Player* player, std::string const& ownerName, std::string& reason);
     bool RequestGoHome(Player* player, std::string& reason);
+    // Go home's Hearthstone cast finished: the trip goes now. False when no trip is waiting
+    // (an ordinary Hearthstone, left alone).
+    bool HomeCastDone(Player* player);
     bool LeaveHouse(Player* player, std::string& reason);
     bool Unstuck(Player* player, std::string& reason);
     // Krook comes over to the player (the window's Call Krook), on their island.
@@ -761,6 +765,7 @@ private:
         float x{0.0f};
         float y{0.0f};
         float z{0.0f};
+        bool casting{false};  // the Hearthstone cast is showing; it ending early cancels the trip
     };
 
     PlayerHousingMgr() = default;

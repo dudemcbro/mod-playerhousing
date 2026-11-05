@@ -275,6 +275,28 @@ class spell_playerhousing_place : public SpellScript
     }
 };
 
+// Go home's cast: the Hearthstone's, with no item. When it finishes it doesn't go to the inn:
+// the trip home goes instead. An ordinary Hearthstone (from the item, or with no trip
+// waiting) is left alone.
+class spell_playerhousing_go_home : public SpellScript
+{
+    PrepareSpellScript(spell_playerhousing_go_home);
+
+    void HandleEffect(SpellEffIndex effIndex)
+    {
+        Player* player = GetCaster() ? GetCaster()->ToPlayer() : nullptr;
+        if (!player || GetCastItem() || !sPlayerHousingMgr->HomeCastDone(player))
+            return;
+        PreventHitDefaultEffect(effIndex);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_playerhousing_go_home::HandleEffect, EFFECT_ALL, SPELL_EFFECT_ANY);
+        OnEffectHitTarget += SpellEffectFn(spell_playerhousing_go_home::HandleEffect, EFFECT_ALL, SPELL_EFFECT_ANY);
+    }
+};
+
 class spell_playerhousing_key : public SpellScript
 {
     PrepareSpellScript(spell_playerhousing_key);
@@ -1250,6 +1272,7 @@ void Addmod_playerhousingScripts()
     new item_playerhousing_piece();
     RegisterSpellScript(spell_playerhousing_place);
     RegisterSpellScript(spell_playerhousing_key);
+    RegisterSpellScript(spell_playerhousing_go_home);
     new go_playerhousing_piece();
     new npc_playerhousing_figurine();
     new mod_playerhousing_worldscript();

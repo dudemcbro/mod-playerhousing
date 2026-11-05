@@ -22,7 +22,7 @@ DELETE FROM `gameobject_template` WHERE `entry` IN (903990, 903991, 903992) OR `
 DELETE FROM `creature_template_model` WHERE `CreatureID` BETWEEN 931100 AND 932999;
 DELETE FROM `creature_template` WHERE `entry` BETWEEN 931100 AND 932999;
 DELETE FROM `npc_text` WHERE `ID` BETWEEN 900300 AND 900319;
-DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_place', 'spell_playerhousing_key');
+DELETE FROM `spell_script_names` WHERE `ScriptName` IN ('spell_playerhousing_place', 'spell_playerhousing_key', 'spell_playerhousing_go_home');
 DROP TABLE IF EXISTS `mod_playerhousing_piece_rule`;
 DROP TABLE IF EXISTS `mod_playerhousing_piece`;
 DROP TABLE IF EXISTS `mod_playerhousing_layout`;

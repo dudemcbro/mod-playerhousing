@@ -156,7 +156,7 @@ past a few hundred busy islands, lower `MaxFurnishings` (see
 
 | Setting | Default | Range | What it does |
 | --- | --- | --- | --- |
-| `PlayerHousing.HouseKey.DelaySeconds` | 10 | 0 to 60 | How long Go home takes, like a hearthstone cast: moving or combat cancels it. 0 is instant. GMs and FreeMode always go at once. |
+| `PlayerHousing.HouseKey.DelaySeconds` | 10 | 0 to 60 | Go home casts like a Hearthstone: the Hearthstone's own 10 second cast bar and animation, without its cooldown. Moving, combat or Escape cancels it. This is the wait only if that cast can't start. 0 is instant, with no cast. GMs and FreeMode always go at once. |
 | `PlayerHousing.KrookLetter.Level` | 10 | 0 or more | At this level, a character without a House Key gets Krook's letter by mail, once. It starts a quest sending them to him in a capital; turning it in gives the key. Characters already past it get theirs at their next login. 0 turns the letters off. |
 | `PlayerHousing.DefaultPrivacy` | private | private, friends, public | Who may visit a new island: its owner's guest list, friends and guild too, or anyone. Players change their own afterwards. |
 | `PlayerHousing.GmBypassPrivate` | 0 | 0, 1 | GMs in GM mode can visit any island. (`.house inspect <player>` goes to any island regardless.) |

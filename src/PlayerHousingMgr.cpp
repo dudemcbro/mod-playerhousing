@@ -18,6 +18,7 @@
 #include "Player.h"
 #include "QuestDef.h"
 #include "SharedDefines.h"
+#include "Spell.h"
 #include "StringFormat.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
@@ -820,19 +821,27 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
         trip = itr->second;
     }
 
+    // Still showing the Hearthstone cast? (Escape, a stun or a kick ends it early.)
+    Spell const* cast = player->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    bool castShowing = cast && cast->GetSpellInfo()->Id == HEARTHSTONE_SPELL && !cast->m_CastItem;
+
     bool moved = player->GetExactDist(trip.x, trip.y, trip.z) > 1.0f;
-    if (moved || player->IsInCombat() || player->isDead())
+    bool due = std::time(nullptr) >= trip.at;
+    if (moved || player->IsInCombat() || player->isDead() || (trip.casting && !castShowing && !due))
     {
         {
             std::lock_guard<std::recursive_mutex> guard(_lock);
             _pendingTrips.erase(player->GetGUID());
         _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
         }
+        // The cast isn't cancelled by moving by itself (the server cast it), so it stops here.
+        if (castShowing)
+            player->InterruptNonMeleeSpells(false, HEARTHSTONE_SPELL);
         Say(player, "Trip home canceled.");
         return;
     }
 
-    if (std::time(nullptr) < trip.at)
+    if (!due)
         return;
 
     {
@@ -840,6 +849,9 @@ void PlayerHousingMgr::UpdatePendingTrip(Player* player)
         _pendingTrips.erase(player->GetGUID());
         _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
     }
+    // The fallback time came first: the cast stops as the trip goes.
+    if (castShowing)
+        player->InterruptNonMeleeSpells(false, HEARTHSTONE_SPELL);
 
     std::string reason;
     if (!EnterOwnHouse(player, reason))
@@ -1583,6 +1595,11 @@ bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
 
     {
         std::lock_guard<std::recursive_mutex> guard(_lock);
+        if (_pendingTrips.count(player->GetGUID()))
+        {
+            reason = "You're already on your way home.";
+            return false;
+        }
         PendingTrip& trip = _pendingTrips[player->GetGUID()];
         _pendingTripCount.store(uint32(_pendingTrips.size()), std::memory_order_relaxed);
         trip.at = std::time(nullptr) + _keyDelaySeconds;
@@ -1591,7 +1608,36 @@ bool PlayerHousingMgr::RequestGoHome(Player* player, std::string& reason)
         trip.z = player->GetPositionZ();
     }
 
+    // Like a hearthstone: the Hearthstone's own cast shows (its bar and animation), without its
+    // cooldown; spell_playerhousing_go_home keeps it from going to the inn, and the trip goes
+    // when it finishes (HomeCastDone). The time left is only a fallback then.
+    // Off the mount first, as a Hearthstone does (not in the air: then it's the plain wait).
+    if (player->IsMounted() && !player->IsFlying())
+        player->RemoveAurasByType(SPELL_AURA_MOUNTED);
+    if (player->CastSpell(player, HEARTHSTONE_SPELL, TRIGGERED_IGNORE_SPELL_AND_CATEGORY_CD) == SPELL_CAST_OK)
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto itr = _pendingTrips.find(player->GetGUID());
+        if (itr != _pendingTrips.end())
+        {
+            itr->second.casting = true;
+            itr->second.at = std::time(nullptr) + 60;
+        }
+        return true;
+    }
+
     reason = Acore::StringFormat("Heading home in {} seconds. Moving cancels.", _keyDelaySeconds);
+    return true;
+}
+
+bool PlayerHousingMgr::HomeCastDone(Player* player)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto itr = _pendingTrips.find(player->GetGUID());
+    if (itr == _pendingTrips.end())
+        return false;
+    itr->second.at = 0;
+    itr->second.casting = false;
     return true;
 }
 
