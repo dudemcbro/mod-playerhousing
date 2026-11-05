@@ -60,7 +60,7 @@ namespace Housing
         SetRotationAngles(object, z, y, x, 0);
     }
 
-    // Items, objects and texts owned by the module (see sql/db_world).
+    // Items, objects and texts owned by the module (see data/sql/db-world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KROOK_LETTER_ITEM = 900500; // mailed at the letter level; starts QUEST_LETTER
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used

@@ -39,3 +39,6 @@ DROP TABLE IF EXISTS `mod_playerhousing_placement`;
 DROP TABLE IF EXISTS `mod_playerhousing_unlock`;
 DROP TABLE IF EXISTS `mod_playerhousing_acl`;
 DROP TABLE IF EXISTS `mod_playerhousing_house`;
+
+-- The updater's record of the module's files, so a reinstall applies them all again.
+DELETE FROM `updates` WHERE `name` LIKE 'mod\_playerhousing\_%';
