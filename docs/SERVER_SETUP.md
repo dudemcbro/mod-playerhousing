@@ -54,7 +54,9 @@ talks to the server over it.
 Nothing to do: the worldserver applies the module's SQL (`data/sql/`) by itself when it
 starts, like any AzerothCore module's, and again whenever a file changes. This needs the
 updater on for the world and characters databases: `Updates.EnableDatabases` in
-`worldserver.conf` is 7 by default, which is all of them.
+`worldserver.conf` is 7 by default, which is all of them. The folders are named `world` and
+`characters`, which cores from before April 2026 (including older playerbots cores) need as
+well as current ones.
 
 With the updater off, apply it by hand instead, with the worldserver stopped, from the
 module folder:
@@ -199,7 +201,7 @@ past a few hundred busy islands, lower `MaxFurnishings` (see
   Editing the tables directly works until that file is applied again.
 - **Where players land and where Krook stands** on the island: the
   `mod_playerhousing_layout` table (landing point, Krook's offset from it, the island's
-  center and radius), set in `data/sql/db-world/mod_playerhousing_world.sql`.
+  center and radius), set in `data/sql/world/mod_playerhousing_world.sql`.
 - **Fixed limits**, the same on every server: 15 housing commands in any 3 seconds per player
   (GMs exempt), 3 seconds between heavy actions (pack up, set out a layout), 30 undo steps,
   the last 100 guestbook notes, five reports an hour per account.

@@ -69,7 +69,7 @@ public:
     {
         EnsureStewardAppearance(creature);
         // Playerbots don't do housing.
-        if (player->GetSession()->IsBot())
+        if (IsBotSession(player->GetSession()))
             return true;
 
         ClearGossipMenuFor(player);
@@ -95,7 +95,7 @@ public:
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
         CloseGossipMenuFor(player);
-        if (action == ACTION_KEY && !player->GetSession()->IsBot())
+        if (action == ACTION_KEY && !IsBotSession(player->GetSession()))
         {
             sPlayerHousingMgr->GiveKeyFromKrook(player);
             // Now with the key: his quests (the welcome tour starts here).
@@ -119,7 +119,7 @@ private:
     // first quest next, which needs the key just given.
     bool OnQuestReward(Player* player, Creature* /*creature*/, Quest const* quest, uint32 /*opt*/) override
     {
-        if (quest->GetQuestId() == QUEST_LETTER && !player->GetSession()->IsBot()
+        if (quest->GetQuestId() == QUEST_LETTER && !IsBotSession(player->GetSession())
             && !player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
             sPlayerHousingMgr->GiveKeyFromKrook(player);
         return false;
@@ -215,7 +215,13 @@ class mod_playerhousing_serverscript : public ServerScript
 public:
     mod_playerhousing_serverscript() : ServerScript("mod_playerhousing_serverscript", { SERVERHOOK_CAN_PACKET_RECEIVE }) { }
 
-    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    // Stock cores hand the hook the packet as WorldPacket const&, older ones as WorldPacket&:
+    // one of these two is the core's hook (so neither is marked override), and both answer alike.
+    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) { return AnswerMirrorImage(session, packet); }
+    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) { return AnswerMirrorImage(session, packet); }
+
+private:
+    static bool AnswerMirrorImage(WorldSession* session, WorldPacket const& packet)
     {
         if (packet.GetOpcode() != CMSG_GET_MIRRORIMAGE_DATA || packet.size() < sizeof(uint64))
             return true;
