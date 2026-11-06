@@ -106,5 +106,5 @@ Past a few hundred open islands that slows all of Kalimdor.
 - One system per action: no second way to do the same thing.
 - All placing and editing from the mouse; the window lists, it doesn't steer.
 - Every change undoable, nothing lost or duplicated.
-- The addon harness and the end-to-end test pass before a deploy; world SQL deploys apply
-  the base, catalog and content files together.
+- The addon harness and the end-to-end test pass before a deploy; the world SQL files stay
+  safe to apply on their own and in any repeat, since the updater re-runs whichever changed.

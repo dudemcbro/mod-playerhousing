@@ -5,8 +5,8 @@
 -- The worldserver's updater applies the files in this folder by name (this one first) when
 -- the server starts, and again whenever one changes: each one is safe to apply again on its
 -- own. So this file creates the piece tables only when they're missing: the content and
--- catalog files clear and refill their own rows. A change to those tables' columns needs an
--- ALTER here.
+-- catalog files clear and refill their own rows. A column added later needs a guarded ALTER
+-- (like the ones after mod_playerhousing_piece) for databases that already have the table.
 
 SET @STEWARD := 900200;
 SET @MANNEQUIN := 900201;
@@ -82,6 +82,76 @@ CREATE TABLE IF NOT EXISTS `mod_playerhousing_piece` (
   `outline_max_y` float NOT NULL DEFAULT 0,
   PRIMARY KEY (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tables made by older versions: before the figurines there was no creature_entry and hints
+-- were shorter, and before buildings had their real outlines there were no outline columns.
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `creature_entry` int unsigned NOT NULL DEFAULT 0 AFTER `edit_go_entry`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'creature_entry'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 1,
+    'ALTER TABLE `mod_playerhousing_piece` MODIFY COLUMN `hint` varchar(255) NOT NULL DEFAULT \'\'',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'hint'
+    AND character_maximum_length < 255
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_min_x` float NOT NULL DEFAULT 0 AFTER `legacy_catalog_id`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_min_x'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_min_y` float NOT NULL DEFAULT 0 AFTER `outline_min_x`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_min_y'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_max_x` float NOT NULL DEFAULT 0 AFTER `outline_min_y`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_max_x'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
+
+SET @ph_stmt = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `mod_playerhousing_piece` ADD COLUMN `outline_max_y` float NOT NULL DEFAULT 0 AFTER `outline_max_x`',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'mod_playerhousing_piece' AND column_name = 'outline_max_y'
+);
+PREPARE ph_stmt FROM @ph_stmt;
+EXECUTE ph_stmt;
+DEALLOCATE PREPARE ph_stmt;
 
 -- What unlocks a piece. Rules in the same rule_group must all be met; any complete group
 -- unlocks the piece. No rules at all: everyone has it.
