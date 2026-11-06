@@ -31,6 +31,10 @@ struct ItemTemplate;
 
 namespace Housing
 {
+    // Whether a session is a playerbot's: cores with playerbots built in say so with
+    // WorldSession::IsBot(). On a core without it, every session is a player's.
+    bool IsBotSession(WorldSession* session);
+
     // Tilts a game object. Older cores call this SetLocalRotationAngles, newer ones
     // SetWorldRotationAngles; whichever the core has is used.
     template <typename Object>

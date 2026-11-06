@@ -31,6 +31,28 @@ using namespace Housing;
 
 namespace
 {
+    // The core's IsBot() when it has one (picked over the fallback by the int argument),
+    // else no bots. Here, where WorldSession is complete, so the check never misses it.
+    template <typename Session>
+    auto SessionIsBot(Session* session, int) -> decltype(bool(session->IsBot()))
+    {
+        return session->IsBot();
+    }
+
+    template <typename Session>
+    bool SessionIsBot(Session* /*session*/, long)
+    {
+        return false;
+    }
+}
+
+bool Housing::IsBotSession(WorldSession* session)
+{
+    return session && SessionIsBot(session, 0);
+}
+
+namespace
+{
     constexpr uint32 LEGACY_HOUSING_MAPS[] = { 309, 531, 534, 568, 658 };  // earlier instanced houses
     constexpr uint32 STEWARD_DISPLAY_ID = 25384;                           // Wolvar orphan
     // House phases carry this bit and never bit 0 (PHASEMASK_NORMAL), so nothing in the normal
@@ -661,7 +683,7 @@ void PlayerHousingMgr::GiveKeyFromKrook(Player* player)
 
 void PlayerHousingMgr::SendKrookLetter(Player* player)
 {
-    if (!_enabled || !player || _letterLevel == 0 || player->GetLevel() < _letterLevel || player->GetSession()->IsBot())
+    if (!_enabled || !player || _letterLevel == 0 || player->GetLevel() < _letterLevel || IsBotSession(player->GetSession()))
         return;
 
     // Once a character, and only for one that hasn't found Krook (or the quest) by itself.
@@ -722,7 +744,7 @@ void PlayerHousingMgr::OnPlayerLogin(Player* player)
         return;
 
     // Playerbots get no house, items or unlocks; one that logged out on an island still leaves it.
-    bool bot = player->GetSession()->IsBot();
+    bool bot = IsBotSession(player->GetSession());
     if (!bot)
         EnsureHouse(HomeOf(player));
 
@@ -778,7 +800,7 @@ void PlayerHousingMgr::OnPlayerLogout(Player* player)
     if (!_enabled || !player)
         return;
 
-    if (!player->GetSession()->IsBot())
+    if (!IsBotSession(player->GetSession()))
     {
         if (IsOnOwnIsland(player))
             SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_HOME_AT_LOGOUT, false);
@@ -925,7 +947,7 @@ void PlayerHousingMgr::OnPlayerUpdate(Player* player, uint32 diffMs)
         if (!inArea || player->IsGameMaster() || player->GetSession()->GetSecurity() > SEC_PLAYER)
             return;
 
-        if (player->GetSession()->IsBot() && TryAdmitGroupBot(player))
+        if (IsBotSession(player->GetSession()) && TryAdmitGroupBot(player))
             return;
 
         // Only people let in with a House Key or a steward belong on the housing island.
@@ -1014,7 +1036,7 @@ void PlayerHousingMgr::OnArrived(Player* player, ObjectGuid::LowType ownerGuid)
     else
         Say(player, Acore::StringFormat("Welcome to {}'s island.", ownerName));
 
-    if (!player->GetSession()->IsBot())
+    if (!IsBotSession(player->GetSession()))
         if (Player* owner = FindOwnerOnline(ownerGuid))
             if (owner != player)
                 Say(owner, Acore::StringFormat("{} arrived on your island.", player->GetName()));
@@ -1532,7 +1554,7 @@ bool PlayerHousingMgr::EnterHouse(Player* player, ObjectGuid::LowType ownerGuid,
     }
 
     // Kept up to date on the way in too, in case the server stops without logging them out.
-    if (!player->GetSession()->IsBot())
+    if (!IsBotSession(player->GetSession()))
     {
         if (ownerGuid == HomeOf(player))
             SetCharacterFlag(player->GetGUID().GetCounter(), CHAR_FLAG_HOME_AT_LOGOUT, false);
@@ -1696,7 +1718,7 @@ bool PlayerHousingMgr::Unstuck(Player* player, std::string& reason)
 
 void PlayerHousingMgr::SendAddonState(Player* player) const
 {
-    if (!player || !player->GetSession() || player->GetSession()->IsBot())
+    if (!player || !player->GetSession() || IsBotSession(player->GetSession()))
         return;
 
     ObjectGuid::LowType owner = GetIslandOwner(player);

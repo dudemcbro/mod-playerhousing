@@ -69,7 +69,7 @@ public:
     {
         EnsureStewardAppearance(creature);
         // Playerbots don't do housing.
-        if (player->GetSession()->IsBot())
+        if (IsBotSession(player->GetSession()))
             return true;
 
         ClearGossipMenuFor(player);
@@ -95,7 +95,7 @@ public:
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
         CloseGossipMenuFor(player);
-        if (action == ACTION_KEY && !player->GetSession()->IsBot())
+        if (action == ACTION_KEY && !IsBotSession(player->GetSession()))
         {
             sPlayerHousingMgr->GiveKeyFromKrook(player);
             // Now with the key: his quests (the welcome tour starts here).
@@ -119,7 +119,7 @@ private:
     // first quest next, which needs the key just given.
     bool OnQuestReward(Player* player, Creature* /*creature*/, Quest const* quest, uint32 /*opt*/) override
     {
-        if (quest->GetQuestId() == QUEST_LETTER && !player->GetSession()->IsBot()
+        if (quest->GetQuestId() == QUEST_LETTER && !IsBotSession(player->GetSession())
             && !player->HasItemCount(HOUSE_KEY_ITEM, 1, true))
             sPlayerHousingMgr->GiveKeyFromKrook(player);
         return false;
