@@ -215,7 +215,13 @@ class mod_playerhousing_serverscript : public ServerScript
 public:
     mod_playerhousing_serverscript() : ServerScript("mod_playerhousing_serverscript", { SERVERHOOK_CAN_PACKET_RECEIVE }) { }
 
-    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    // Stock cores hand the hook the packet as WorldPacket const&, older ones as WorldPacket&:
+    // one of these two is the core's hook (so neither is marked override), and both answer alike.
+    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) { return AnswerMirrorImage(session, packet); }
+    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) { return AnswerMirrorImage(session, packet); }
+
+private:
+    static bool AnswerMirrorImage(WorldSession* session, WorldPacket const& packet)
     {
         if (packet.GetOpcode() != CMSG_GET_MIRRORIMAGE_DATA || packet.size() < sizeof(uint64))
             return true;
