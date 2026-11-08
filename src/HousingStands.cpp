@@ -80,6 +80,22 @@ namespace
             | (uint64(f.facial & 0x0F) << 28) | (uint64((pose >> 4) & 0x0F) << 32);
     }
 
+    // CharSections.dbc's fields: older cores name them Race, Gender, GenType, Type and Color,
+    // newer ones RaceID, SexID, BaseSection, VariationIndex and ColorIndex. Whichever the
+    // core has is used (the int argument picks the newer name when it's there).
+#define HOUSING_SECTION_FIELD(Getter, NewName, OldName) \
+    template <typename Entry> \
+    auto Getter(Entry const* entry, int) -> decltype(uint32(entry->NewName)) { return entry->NewName; } \
+    template <typename Entry> \
+    uint32 Getter(Entry const* entry, long) { return entry->OldName; }
+
+    HOUSING_SECTION_FIELD(SectionRace, RaceID, Race)
+    HOUSING_SECTION_FIELD(SectionGender, SexID, Gender)
+    HOUSING_SECTION_FIELD(SectionKind, BaseSection, GenType)
+    HOUSING_SECTION_FIELD(SectionVariation, VariationIndex, Type)
+    HOUSING_SECTION_FIELD(SectionColor, ColorIndex, Color)
+#undef HOUSING_SECTION_FIELD
+
     // A random look a character of that race and gender could have at creation: skin, then a
     // face for that skin, a hairstyle and a color it comes in, facial hair in that color.
     Features RandomFeatures(uint8 race, uint8 gender)
@@ -87,27 +103,27 @@ namespace
         std::vector<CharSectionsEntry const*> sections;
         for (uint32 i = 0; i < sCharSectionsStore.GetNumRows(); ++i)
             if (CharSectionsEntry const* entry = sCharSectionsStore.LookupEntry(i))
-                if (entry->Race == race && entry->Gender == gender && (entry->Flags & SECTION_FLAG_PLAYER) && !(entry->Flags & SECTION_FLAG_DEATH_KNIGHT))
+                if (SectionRace(entry, 0) == race && SectionGender(entry, 0) == gender && (entry->Flags & SECTION_FLAG_PLAYER) && !(entry->Flags & SECTION_FLAG_DEATH_KNIGHT))
                     sections.push_back(entry);
         auto pick = [&](uint32 genType, std::function<bool(CharSectionsEntry const*)> fits, bool type) -> int32
         {
             std::vector<uint32> values;
             for (CharSectionsEntry const* entry : sections)
-                if (entry->GenType == genType && fits(entry))
-                    values.push_back(type ? entry->Type : entry->Color);
+                if (SectionKind(entry, 0) == genType && fits(entry))
+                    values.push_back(type ? SectionVariation(entry, 0) : SectionColor(entry, 0));
             return values.empty() ? -1 : int32(values[urand(0, uint32(values.size()) - 1)]);
         };
         auto any = [](CharSectionsEntry const*) { return true; };
         Features f;
         int32 skin = pick(0, any, false);
         f.skin = uint8(std::max(skin, 0));
-        int32 face = pick(1, [&](CharSectionsEntry const* e) { return int32(e->Color) == skin; }, true);
+        int32 face = pick(1, [&](CharSectionsEntry const* e) { return int32(SectionColor(e, 0)) == skin; }, true);
         f.face = uint8(std::max(face >= 0 ? face : pick(1, any, true), 0));
         int32 hair = pick(3, any, true);
         f.hair = uint8(std::max(hair, 0));
-        int32 hairColor = pick(3, [&](CharSectionsEntry const* e) { return int32(e->Type) == hair; }, false);
+        int32 hairColor = pick(3, [&](CharSectionsEntry const* e) { return int32(SectionVariation(e, 0)) == hair; }, false);
         f.hairColor = uint8(std::max(hairColor, 0));
-        int32 facial = pick(2, [&](CharSectionsEntry const* e) { return int32(e->Color) == hairColor; }, true);
+        int32 facial = pick(2, [&](CharSectionsEntry const* e) { return int32(SectionColor(e, 0)) == hairColor; }, true);
         f.facial = uint8(std::max(facial, 0));
         return f;
     }

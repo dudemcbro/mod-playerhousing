@@ -21,11 +21,11 @@ apply() {
     $MYSQL "$1" < "$2" > /dev/null
 }
 
-apply "$WORLD_DB" "$MODULE/data/sql/db-world/mod_playerhousing_world.sql"
-apply "$WORLD_DB" "$MODULE/data/sql/db-world/mod_playerhousing_world_catalog.sql"
-apply "$WORLD_DB" "$MODULE/data/sql/db-world/mod_playerhousing_world_content.sql"
-apply "$CHARACTERS_DB" "$MODULE/data/sql/db-characters/mod_playerhousing_characters.sql"
-apply "$CHARACTERS_DB" "$MODULE/data/sql/db-characters/mod_playerhousing_characters_hotfix.sql"
+apply "$WORLD_DB" "$MODULE/data/sql/world/mod_playerhousing_world.sql"
+apply "$WORLD_DB" "$MODULE/data/sql/world/mod_playerhousing_world_catalog.sql"
+apply "$WORLD_DB" "$MODULE/data/sql/world/mod_playerhousing_world_content.sql"
+apply "$CHARACTERS_DB" "$MODULE/data/sql/characters/mod_playerhousing_characters.sql"
+apply "$CHARACTERS_DB" "$MODULE/data/sql/characters/mod_playerhousing_characters_hotfix.sql"
 
 # shellcheck disable=SC2086
 pieces=$($MYSQL -N "$WORLD_DB" -e "SELECT COUNT(*) FROM mod_playerhousing_piece")

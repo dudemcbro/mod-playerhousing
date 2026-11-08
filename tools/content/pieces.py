@@ -1,6 +1,6 @@
 """Everything a player can place, and what unlocks it.
 
-tools/content/build_content.py turns this list into data/sql/db-world/
+tools/content/build_content.py turns this list into data/sql/world/
 mod_playerhousing_world_content.sql and docs/UNLOCKS.md. Edit here, then run the builder.
 
 Fields:

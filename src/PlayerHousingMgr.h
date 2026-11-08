@@ -31,6 +31,10 @@ struct ItemTemplate;
 
 namespace Housing
 {
+    // Whether a session is a playerbot's: cores with playerbots built in say so with
+    // WorldSession::IsBot(). On a core without it, every session is a player's.
+    bool IsBotSession(WorldSession* session);
+
     // Tilts a game object. Older cores call this SetLocalRotationAngles, newer ones
     // SetWorldRotationAngles; whichever the core has is used.
     template <typename Object>
@@ -60,7 +64,7 @@ namespace Housing
         SetRotationAngles(object, z, y, x, 0);
     }
 
-    // Items, objects and texts owned by the module (see data/sql/db-world).
+    // Items, objects and texts owned by the module (see data/sql/world).
     constexpr uint32 HOUSE_KEY_ITEM = 902000;
     constexpr uint32 KROOK_LETTER_ITEM = 900500; // mailed at the letter level; starts QUEST_LETTER
     constexpr uint32 KEY_SPELL = 18282;        // "Dummy Spell": lets the House Key be used
@@ -868,7 +872,6 @@ private:
     // (someone else's Collection, gear by mail).
     std::string DescribeReturns(bool collectionToo = true) const;
     std::string DescribeItemReturns(bool collectionToo = true) const;
-
 
     // HousingGroups.cpp
     // The group's pieces that nothing else in it carries (the rest move with them), and what
