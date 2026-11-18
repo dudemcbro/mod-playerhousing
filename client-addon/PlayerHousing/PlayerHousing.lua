@@ -226,27 +226,50 @@ local function UpdateButtons()
         local function Lines(rows)
             local text = {}
             for _, row in ipairs(rows) do
-                text[#text + 1] = "|cffffd100" .. row[1] .. "|r  " .. row[2]
+                if row[1] then
+                    text[#text + 1] = "|cffffd100" .. row[1] .. "|r  " .. row[2]
+                end
             end
             return table.concat(text, "\n")
         end
-        if PlayerHousingAPI.HasMouse() then
+        -- The player's own keys (Options.lua), none where they took one away.
+        local API = PlayerHousingAPI
+        local function Key(action)
+            return API.KeyText(API.KeyFor(action))
+        end
+        local function Either(first, second)
+            return first and second and (first .. ", " .. second) or first or second
+        end
+        local middle = {
+            { Key("Straight"), "stand it straight" }, { Key("NormalSize"), "normal size" }, { Key("Grid"), "grid" },
+        }
+        if API.HasMouse() then
             heldHelp:SetText(Lines({
                 { "Left-click", "set it down" }, { "Shift+left-click", "and another" },
-                { "Right-click, Esc", "never mind" }, { "Shift+right-click", "put it away" },
-                { "Middle-click", "stand it straight" }, { "Ctrl+middle", "normal size" }, { "Shift+middle", "grid" },
+                { Either("Right-click", Key("Cancel")), "never mind" }, { "Shift+right-click", "put it away" },
+                middle[1], middle[2], middle[3],
             }))
         else
+            local arrows = API.KeyFor("Forward") == "UP" and API.KeyFor("Back") == "DOWN" and API.KeyFor("Left") == "LEFT"
+                and API.KeyFor("Right") == "RIGHT"
+            local push = {}
+            for _, action in ipairs({ "Forward", "Back", "Left", "Right" }) do
+                push[#push + 1] = Key(action)
+            end
             heldHelp:SetText(Lines({
-                { "G", "set it down" }, { "Shift+G", "and another" }, { "Esc", "never mind" },
-                { "Arrows", "farther, nearer, sideways" },
-                { "Middle-click", "stand it straight" }, { "Ctrl+middle", "normal size" }, { "Shift+middle", "grid" },
+                { Key("SetDown"), "set it down" }, { API.KeyText(API.ShiftKeyFor("SetDown")), "and another" },
+                { Key("Cancel"), "never mind" },
+                { arrows and "Arrows" or (#push > 0 and table.concat(push, ", ") or nil), "farther, nearer, sideways" },
+                middle[1], middle[2], middle[3],
             }))
         end
         heldKeys:SetText(Lines({
-            { "Wheel", "zoom (as ever)" }, { "Shift+wheel", "turn" }, { "Ctrl+wheel", "up, down" },
-            { "Ctrl+Shift+wheel", "turn finely" }, { "Alt+wheel", "tilt forward, back" },
-            { "Alt+Shift+wheel", "tilt to its side" }, { "Ctrl+Alt+wheel", "size" },
+            { "Wheel", "zoom (as ever)" }, { API.WheelPairText("WheelUp", "WheelDown"), "turn" },
+            { API.WheelPairText("RaiseWheelUp", "RaiseWheelDown"), "up, down" },
+            { API.WheelPairText("FineLeft", "FineRight"), "turn finely" },
+            { API.WheelPairText("TiltForward", "TiltBack"), "tilt forward, back" },
+            { API.WheelPairText("TiltRight", "TiltLeft"), "tilt to its side" },
+            { API.WheelPairText("Bigger", "Smaller"), "size" },
         }))
         -- The second row: the ones that apply, side by side.
         local x = 12
@@ -1102,8 +1125,9 @@ end)
 function PlayerHousing_Help()
     Print("Placing: click a piece in the Collection and it goes on your mouse. Left-click sets it down, right-click or Escape puts it back.")
     Print("Moving: right-click a piece on your island and it goes on your mouse the same way. Buildings: the Placed tab's Move.")
-    Print("While you hold it, the wheel zooms as ever, and with a key it changes the piece: turn (Shift), up and down (Ctrl), fine turn (Ctrl+Shift), tilt forward and back (Alt), tilt to its side (Alt+Shift), size (Ctrl+Alt).")
+    Print("While you hold it, the wheel zooms as ever, and with a key it changes the piece: by default turn (Shift), up and down (Ctrl), fine turn (Ctrl+Shift), tilt forward and back (Alt), tilt to its side (Alt+Shift), size (Ctrl+Alt). The held panel shows your keys.")
     Print("Middle-click stands it straight, Ctrl+middle-click: normal size, Shift+middle-click: grid. Shift+right-click puts it away. Undo takes back anything.")
+    Print("Your own keys: Interface > AddOns > Player Housing.")
     Print("Ctrl-right-click pieces to select several, then right-click one of them to move them all.")
     Print("/housing opens this window; /housing <command> runs any .house command; .house help lists them; /housing check says what's missing.")
 end
@@ -1311,6 +1335,8 @@ PlayerHousingAPI = {
         return "piece"
     end,
     RefreshPin = function() UpdateDetails() end,
+    -- The held panel again (its keys changed, Options.lua).
+    RefreshHeld = function() if frame then UpdateButtons() end end,
     -- Window.lua fills this in: function(item) returning { category, building, unlocked,
     -- hint, cost, owned, placed }.
     DescribePiece = nil,

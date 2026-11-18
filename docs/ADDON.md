@@ -46,7 +46,7 @@ and buildings with ordinary models are see-through copies of themselves; world-m
 on a piece, or is inside a building, comes along. Turning your character turns the held piece
 with you.
 
-| Mouse or key | Does |
+| Mouse or key (defaults) | Does |
 | --- | --- |
 | Move the mouse (with the DLL) | It follows the cursor: floor, table top, a wall (facing out), under a ceiling |
 | Left-click, Shift-click | Set it down; Shift: then another of the same |
@@ -64,6 +64,13 @@ While you hold a piece the window steps aside and a small panel at the bottom of
 shows what you're holding, its size and tilt, which way its front points, and the keys above.
 The keys are bound only while you hold a piece, so the usual ones come back afterwards;
 bindings can't change in combat, so they wait for it to end.
+
+Every key in the table except the left and right clicks can be changed under Interface >
+AddOns > Player Housing, which lists each with its default: click a key, then press the new
+one (with any of Ctrl, Alt and Shift), turn the wheel or click the middle or a side mouse
+button; right-click it for no key. A key another action had leaves that one without; the
+game's Defaults button puts them all back. Set it down's key with Shift sets down another.
+The held panel shows your own keys.
 
 It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over
 (held higher, it floats). A building always stands on the ground, wherever the mouse is. The
