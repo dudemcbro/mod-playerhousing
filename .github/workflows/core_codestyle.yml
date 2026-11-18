@@ -4,7 +4,24 @@ on:
     branches:
       - 'main'
   pull_request:
+  workflow_dispatch:
 
 jobs:
   codestyle:
     uses: azerothcore/reusable-workflows/.github/workflows/codestyle_modules.yml@main
+
+  cppcheck:
+    runs-on: ubuntu-latest
+    name: C++ Advanced
+    steps:
+      - uses: actions/checkout@v7
+      - name: C++ Advanced
+        run: |
+          sudo apt update -y
+          sudo apt install -y cppcheck
+          cppcheck --force --inline-suppr src/ --output-file=report.txt
+
+          if [ -s report.txt ]; then  # if file is not empty
+            cat report.txt
+            exit 1 # let github action fails
+          fi
