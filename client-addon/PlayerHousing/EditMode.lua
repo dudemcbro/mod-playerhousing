@@ -1,5 +1,6 @@
 -- The mouse while a piece is held (on the mouse, or following you until it's set down): the
--- plain wheel zooms the camera as ever; every change to the piece is the wheel with a modifier:
+-- plain wheel zooms the camera as ever; every change to the piece is, by default, the wheel
+-- with a modifier (each can be changed under Interface > AddOns > Player Housing, Options.lua):
 --
 --   Shift+wheel        turn it                 Alt+wheel          tilt it forward or back
 --   Ctrl+wheel         raise or lower it       Alt+Shift+wheel    tilt it to its side
@@ -28,22 +29,72 @@ local bound = false
 local held = {}   -- action -> { next = time of the next step, stop = time it gives up }
 local ctrlSent = false      -- what the server last heard about Ctrl
 
--- With the mouse: the wheel, the middle button and Escape. Following you (no DLL): the arrows
--- and G as well.
-local KEYS = {
-    ["SHIFT-MOUSEWHEELUP"] = "WheelUp", ["SHIFT-MOUSEWHEELDOWN"] = "WheelDown",
-    ["CTRL-MOUSEWHEELUP"] = "RaiseWheelUp", ["CTRL-MOUSEWHEELDOWN"] = "RaiseWheelDown",
-    ["CTRL-SHIFT-MOUSEWHEELUP"] = "FineLeft", ["CTRL-SHIFT-MOUSEWHEELDOWN"] = "FineRight",
-    ["ALT-MOUSEWHEELUP"] = "TiltForward", ["ALT-MOUSEWHEELDOWN"] = "TiltBack",
-    ["ALT-SHIFT-MOUSEWHEELUP"] = "TiltRight", ["ALT-SHIFT-MOUSEWHEELDOWN"] = "TiltLeft",
-    ["ALT-CTRL-MOUSEWHEELUP"] = "Bigger", ["ALT-CTRL-MOUSEWHEELDOWN"] = "Smaller",
-    BUTTON3 = "Straight", ["SHIFT-BUTTON3"] = "Grid", ["CTRL-BUTTON3"] = "NormalSize",
-    ESCAPE = "Cancel",
+-- Every key, in the order the options page lists them (Options.lua): the action, what it does,
+-- its default. "follow" ones are bound only without PlayerHousing.dll. A player's own keys are
+-- in PlayerHousingDB.keys (action -> key, "" for none); the rest keep their defaults.
+local ACTIONS = {
+    { "WheelUp", "Turn left", "SHIFT-MOUSEWHEELUP" },
+    { "WheelDown", "Turn right", "SHIFT-MOUSEWHEELDOWN" },
+    { "FineLeft", "Turn left finely (1\194\176)", "CTRL-SHIFT-MOUSEWHEELUP" },
+    { "FineRight", "Turn right finely (1\194\176)", "CTRL-SHIFT-MOUSEWHEELDOWN" },
+    { "RaiseWheelUp", "Raise", "CTRL-MOUSEWHEELUP" },
+    { "RaiseWheelDown", "Lower", "CTRL-MOUSEWHEELDOWN" },
+    { "TiltForward", "Tilt forward", "ALT-MOUSEWHEELUP" },
+    { "TiltBack", "Tilt back", "ALT-MOUSEWHEELDOWN" },
+    { "TiltRight", "Tilt to the right", "ALT-SHIFT-MOUSEWHEELUP" },
+    { "TiltLeft", "Tilt to the left", "ALT-SHIFT-MOUSEWHEELDOWN" },
+    { "Bigger", "Bigger", "ALT-CTRL-MOUSEWHEELUP" },
+    { "Smaller", "Smaller", "ALT-CTRL-MOUSEWHEELDOWN" },
+    { "Straight", "Stand it straight", "BUTTON3" },
+    { "NormalSize", "Normal size", "CTRL-BUTTON3" },
+    { "Grid", "Grid: off, 1/4, 1/2, 1, 2 yd", "SHIFT-BUTTON3" },
+    { "Cancel", "Never mind (put it back)", "ESCAPE" },
+    { "Forward", "Farther", "UP", follow = true },
+    { "Back", "Nearer", "DOWN", follow = true },
+    { "Left", "To the left", "LEFT", follow = true },
+    { "Right", "To the right", "RIGHT", follow = true },
+    { "SetDown", "Set it down (with Shift: and another)", "G", follow = true },
 }
+local ACTION = {}
+for _, entry in ipairs(ACTIONS) do
+    ACTION[entry[1]] = entry
+end
+
+-- A key's modifiers and the rest; and back, in the game's order (ALT-CTRL-SHIFT-), or the
+-- binding never fires.
+local MODIFIERS = { "ALT", "CTRL", "SHIFT" }
+local function SplitKey(key)
+    local mods, rest = {}, key
+    for _, mod in ipairs(MODIFIERS) do
+        if rest:sub(1, #mod + 1) == mod .. "-" and #rest > #mod + 1 then
+            mods[mod], rest = true, rest:sub(#mod + 2)
+        end
+    end
+    return mods, rest
+end
+local function JoinKey(mods, base)
+    return (mods.ALT and "ALT-" or "") .. (mods.CTRL and "CTRL-" or "") .. (mods.SHIFT and "SHIFT-" or "") .. base
+end
+
+local function KeyFor(action)
+    local keys = PlayerHousingDB and PlayerHousingDB.keys
+    local key = keys and keys[action]
+    if key == nil then
+        key = ACTION[action][3]
+    end
+    return key
+end
+
+-- SetDown with Shift places another: its key with Shift as well (none if it has Shift already).
+local function ShiftOf(key)
+    local mods, base = SplitKey(key)
+    if key == "" or mods.SHIFT then
+        return nil
+    end
+    mods.SHIFT = true
+    return JoinKey(mods, base)
+end
 local TILT_STEP, GRID_SIZES = 15, { 0, 0.25, 0.5, 1, 2 }
-local FOLLOW_KEYS = {
-    UP = "Forward", DOWN = "Back", LEFT = "Left", RIGHT = "Right", G = "SetDown", ["SHIFT-G"] = "SetDown",
-}
 
 local function Step(action)
     local flat = API.state.grid > 0 and API.state.grid or 0.25
@@ -132,26 +183,107 @@ owner:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
--- Keys follow the server's word on what's held, except in combat, when bindings can't change.
+-- Keys follow the server's word on what's held, except in combat, when bindings can't change;
+-- a changed key (the options page) binds again the same way.
+local dirty = false
 local function SyncKeys()
     local want = API.state.ghostItem > 0 and API.CanEdit()
-    if want == bound or InCombatLockdown() then
+    if (want == bound and not dirty) or InCombatLockdown() then
         return
     end
+    ClearOverrideBindings(owner)
     if want then
-        for key, action in pairs(KEYS) do
-            SetOverrideBindingClick(owner, true, key, "PlayerHousingEdit" .. action)
+        local follow = not API.HasMouse()
+        -- SetDown's Shift key first, so a key of another action's own wins over it.
+        local another = follow and ShiftOf(KeyFor("SetDown"))
+        if another then
+            SetOverrideBindingClick(owner, true, another, "PlayerHousingEditSetDown")
         end
-        if not API.HasMouse() then
-            for key, action in pairs(FOLLOW_KEYS) do
-                SetOverrideBindingClick(owner, true, key, "PlayerHousingEdit" .. action)
+        for _, entry in ipairs(ACTIONS) do
+            local key = KeyFor(entry[1])
+            if key ~= "" and (follow or not entry.follow) then
+                SetOverrideBindingClick(owner, true, key, "PlayerHousingEdit" .. entry[1])
             end
         end
     else
-        ClearOverrideBindings(owner)
         wipe(held)
     end
-    bound = want
+    bound, dirty = want, false
+end
+
+-- For Options.lua and the held panel.
+API.KEY_ACTIONS = ACTIONS
+API.SplitKey, API.JoinKey, API.KeyFor = SplitKey, JoinKey, KeyFor
+API.ShiftKeyFor = function(action) return ShiftOf(KeyFor(action)) end
+
+local function KeysChanged()
+    dirty = true
+    SyncKeys()
+    if API.RefreshHeld then
+        API.RefreshHeld()
+    end
+end
+
+-- A new key for an action ("" for none). An action that had the key loses it; its name is
+-- returned.
+API.SetKey = function(action, key)
+    PlayerHousingDB = PlayerHousingDB or {}
+    PlayerHousingDB.keys = PlayerHousingDB.keys or {}
+    local keys, taken = PlayerHousingDB.keys, nil
+    if key ~= "" then
+        for _, entry in ipairs(ACTIONS) do
+            if entry[1] ~= action and KeyFor(entry[1]) == key then
+                keys[entry[1]], taken = "", entry[1]
+            end
+        end
+    end
+    keys[action] = (key ~= ACTION[action][3]) and key or nil
+    if next(keys) == nil then
+        PlayerHousingDB.keys = nil
+    end
+    KeysChanged()
+    return taken
+end
+
+API.ResetKeys = function()
+    if PlayerHousingDB then
+        PlayerHousingDB.keys = nil
+    end
+    KeysChanged()
+end
+
+-- How a key reads: "Ctrl+Shift+wheel up", "Middle-click", "G"; nil for none.
+local KEY_NAMES = {
+    MOUSEWHEELUP = "wheel up", MOUSEWHEELDOWN = "wheel down", BUTTON3 = "middle-click",
+    BUTTON4 = "mouse button 4", BUTTON5 = "mouse button 5", ESCAPE = "Esc", SPACE = "Space",
+    UP = "Up arrow", DOWN = "Down arrow", LEFT = "Left arrow", RIGHT = "Right arrow",
+    ENTER = "Enter", TAB = "Tab", BACKSPACE = "Backspace", DELETE = "Delete", INSERT = "Insert",
+    HOME = "Home", END = "End", PAGEUP = "Page Up", PAGEDOWN = "Page Down",
+}
+local function Capital(text)
+    return text:sub(1, 1):upper() .. text:sub(2)
+end
+API.KeyText = function(key)
+    if not key or key == "" then
+        return nil
+    end
+    local mods, base = SplitKey(key)
+    local name = KEY_NAMES[base] or base
+    local text = (mods.CTRL and "Ctrl+" or "") .. (mods.ALT and "Alt+" or "") .. (mods.SHIFT and "Shift+" or "") .. name
+    return Capital(text)
+end
+-- Two actions on the wheel's two ways with the same modifiers read as one: "Shift+wheel".
+API.WheelPairText = function(up, down)
+    local upKey, downKey = KeyFor(up), KeyFor(down)
+    local upMods, upBase = SplitKey(upKey)
+    local downMods, downBase = SplitKey(downKey)
+    if upBase == "MOUSEWHEELUP" and downBase == "MOUSEWHEELDOWN" and JoinKey(upMods, "") == JoinKey(downMods, "") then
+        return Capital(API.KeyText(JoinKey(upMods, "X")):sub(1, -2) .. "wheel")
+    end
+    local parts = {}
+    parts[#parts + 1] = API.KeyText(upKey)
+    parts[#parts + 1] = API.KeyText(downKey)
+    return #parts > 0 and table.concat(parts, ", ") or nil
 end
 
 API.OnState(function()

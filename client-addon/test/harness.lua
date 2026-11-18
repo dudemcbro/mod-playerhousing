@@ -85,6 +85,8 @@ function CreateFrame(kind, name, parent, template)
   return f
 end
 UIParent = CreateFrame("Frame", "UIParent")
+local optionPages = {}
+function InterfaceOptions_AddCategory(panel) optionPages[#optionPages + 1] = panel end
 local screenshots = 0
 function Screenshot() screenshots = screenshots + 1 end
 date = os.date
@@ -394,6 +396,65 @@ assert(not overrides.TAB and not overrides.DELETE and not overrides.R and not ov
 -- No DLL: it follows you, so the arrows and G drive it too.
 assert(overrides.G == "PlayerHousingEditSetDown" and overrides.UP == "PlayerHousingEditForward", "follow keys without the mouse")
 -- Binding names keep the game's modifier order (ALT-CTRL-SHIFT-), or they never fire.
+for key in pairs(overrides) do
+  assert(not key:find("CTRL%-ALT") and not key:find("SHIFT%-ALT") and not key:find("SHIFT%-CTRL"), "modifier order: " .. key)
+end
+-- Your own keys (Interface > AddOns > Player Housing): each with its default, bound at once
+-- while a piece is held, and the held panel says the new ones.
+local options = PlayerHousingOptions
+assert(optionPages[1] == options and options.name == "Player Housing", "the options page is added")
+options.refresh()
+local function keyButton(action) return _G["PlayerHousingOptionsKey" .. action] end
+assert(keyButton("WheelUp").text == "Shift+wheel up" and keyButton("Straight").text == "Middle-click"
+  and keyButton("Bigger").text == "Ctrl+Alt+wheel up" and keyButton("SetDown").text == "G", keyButton("WheelUp").text)
+assert(PlayerHousingHeldKeys.text:find("Shift%+wheel|r  turn") and PlayerHousingHeldHelp.text:find("Shift%+G|r  and another"), PlayerHousingHeldKeys.text)
+local function withCtrl(fn) local plain = IsControlKeyDown; IsControlKeyDown = function() return true end; fn(); IsControlKeyDown = plain end
+local function rebind(action, fn) keyButton(action).scripts.OnClick(keyButton(action), "LeftButton"); fn() end
+rebind("WheelUp", function()
+  assert(keyButton("WheelUp").text:find("Press a key"), "waiting for the key")
+  withCtrl(function()
+    options.scripts.OnKeyDown(options, "LCTRL")
+    assert(keyButton("WheelUp").text:find("Press a key"), "a modifier alone: still waiting")
+    options.scripts.OnKeyDown(options, "Q")
+  end)
+end)
+assert(PlayerHousingDB.keys.WheelUp == "CTRL-Q" and overrides["CTRL-Q"] == "PlayerHousingEditWheelUp"
+  and not overrides["SHIFT-MOUSEWHEELUP"] and keyButton("WheelUp").text == "Ctrl+Q", "a new key, bound at once")
+assert(PlayerHousingHeldKeys.text:find("Ctrl%+Q, Shift%+wheel down|r  turn"), PlayerHousingHeldKeys.text)
+options.scripts.OnKeyDown(options, "W")
+assert(not overrides.W, "no longer waiting: keys go to the game")
+-- A key another action had: that one has none, and the page says so.
+rebind("Bigger", function() withCtrl(function() options.scripts.OnKeyDown(options, "Q") end) end)
+assert(overrides["CTRL-Q"] == "PlayerHousingEditBigger" and PlayerHousingDB.keys.WheelUp == "" and keyButton("WheelUp").text:find("none")
+  and PlayerHousingOptionsNote.text:find("Turn left"), PlayerHousingOptionsNote.text)
+-- The wheel and the side buttons; Shift too for setting down another.
+rebind("WheelUp", function() keyButton("WheelUp").scripts.OnMouseWheel(keyButton("WheelUp"), 1) end)
+assert(overrides.MOUSEWHEELUP == "PlayerHousingEditWheelUp" and PlayerHousingHeldKeys.text:find("Wheel up, Shift%+wheel down|r  turn"), PlayerHousingHeldKeys.text)
+rebind("SetDown", function() keyButton("SetDown").scripts.OnClick(keyButton("SetDown"), "Button4") end)
+assert(overrides.BUTTON4 == "PlayerHousingEditSetDown" and overrides["SHIFT-BUTTON4"] == "PlayerHousingEditSetDown" and not overrides.G
+  and PlayerHousingHeldHelp.text:find("Mouse button 4|r  set it down"), PlayerHousingHeldHelp.text)
+-- Set it down can't have Shift: Shift with its key sets down another.
+local plainShift = IsShiftKeyDown
+IsShiftKeyDown = function() return true end
+rebind("SetDown", function() options.scripts.OnKeyDown(options, "H") end)
+IsShiftKeyDown = plainShift
+assert(overrides.BUTTON4 == "PlayerHousingEditSetDown" and not overrides["SHIFT-H"] and PlayerHousingDB.keys.SetDown == "BUTTON4"
+  and PlayerHousingOptionsNote.text:find("can't have Shift"), PlayerHousingOptionsNote.text)
+-- Left and right are the mouse's own: a click while waiting stops waiting.
+rebind("Grid", function() keyButton("Grid").scripts.OnClick(keyButton("Grid"), "RightButton") end)
+assert(overrides["SHIFT-BUTTON3"] == "PlayerHousingEditGrid" and keyButton("Grid").text == "Shift+middle-click", "right-click while waiting: no change")
+-- A right-click: no key.
+keyButton("Cancel").scripts.OnClick(keyButton("Cancel"), "RightButton")
+assert(not overrides.ESCAPE and not PlayerHousingHeldHelp.text:find("never mind"), PlayerHousingHeldHelp.text)
+-- In combat bindings can't change: the keys wait for it to end. Defaults puts them all back.
+combat = true
+options.default()
+assert(overrides["CTRL-Q"] and PlayerHousingDB.keys == nil, "in combat: saved, not bound yet")
+combat = false
+PlayerHousingEditKeys.scripts.OnEvent(PlayerHousingEditKeys, "PLAYER_REGEN_ENABLED")
+assert(not overrides["CTRL-Q"] and not overrides.BUTTON4 and overrides["SHIFT-MOUSEWHEELUP"] == "PlayerHousingEditWheelUp"
+  and overrides.G == "PlayerHousingEditSetDown" and overrides["SHIFT-G"] == "PlayerHousingEditSetDown"
+  and overrides.ESCAPE == "PlayerHousingEditCancel", "after combat: the defaults")
 for key in pairs(overrides) do
   assert(not key:find("CTRL%-ALT") and not key:find("SHIFT%-ALT") and not key:find("SHIFT%-CTRL"), "modifier order: " .. key)
 end

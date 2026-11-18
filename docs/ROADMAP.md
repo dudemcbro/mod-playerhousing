@@ -38,7 +38,6 @@ Past a few hundred open islands that slows all of Kalimdor.
   (the `match` and `row` commands exist; this brings them to the mouse).
 - Mirror a selection or set.
 - The Placed-list ring seen only by whoever chose it.
-- A keybinding page in the addon's options, defaults shown.
 
 ## 1.3: progression and people
 

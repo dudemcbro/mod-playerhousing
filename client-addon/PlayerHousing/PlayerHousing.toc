@@ -12,6 +12,7 @@ PreviewFix.lua
 PreviewTask.lua
 PlayerHousing.lua
 EditMode.lua
+Options.lua
 Mouse.lua
 Window.lua
 Minimap.lua
