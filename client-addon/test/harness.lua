@@ -433,6 +433,13 @@ assert(overrides.MOUSEWHEELUP == "PlayerHousingEditWheelUp" and PlayerHousingHel
 rebind("SetDown", function() keyButton("SetDown").scripts.OnClick(keyButton("SetDown"), "Button4") end)
 assert(overrides.BUTTON4 == "PlayerHousingEditSetDown" and overrides["SHIFT-BUTTON4"] == "PlayerHousingEditSetDown" and not overrides.G
   and PlayerHousingHeldHelp.text:find("Mouse button 4|r  set it down"), PlayerHousingHeldHelp.text)
+-- Set it down can't have Shift: Shift with its key sets down another.
+local plainShift = IsShiftKeyDown
+IsShiftKeyDown = function() return true end
+rebind("SetDown", function() options.scripts.OnKeyDown(options, "H") end)
+IsShiftKeyDown = plainShift
+assert(overrides.BUTTON4 == "PlayerHousingEditSetDown" and not overrides["SHIFT-H"] and PlayerHousingDB.keys.SetDown == "BUTTON4"
+  and PlayerHousingOptionsNote.text:find("can't have Shift"), PlayerHousingOptionsNote.text)
 -- Left and right are the mouse's own: a click while waiting stops waiting.
 rebind("Grid", function() keyButton("Grid").scripts.OnClick(keyButton("Grid"), "RightButton") end)
 assert(overrides["SHIFT-BUTTON3"] == "PlayerHousingEditGrid" and keyButton("Grid").text == "Shift+middle-click", "right-click while waiting: no change")

@@ -69,7 +69,8 @@ Every key in the table except the left and right clicks can be changed under Int
 AddOns > Player Housing, which lists each with its default: click a key, then press the new
 one (with any of Ctrl, Alt and Shift), turn the wheel or click the middle or a side mouse
 button; right-click it for no key. A key another action had leaves that one without; the
-game's Defaults button puts them all back. Set it down's key with Shift sets down another.
+game's Defaults button puts them all back. Set it down's key with Shift sets down another, so it
+can't have Shift itself.
 The held panel shows your own keys.
 
 It lands on the grid when the grid is on (not on a wall), and stands on a table top it's over

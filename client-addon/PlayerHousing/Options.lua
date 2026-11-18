@@ -48,6 +48,12 @@ end
 local function Take(base)
     local action = waiting
     local key = API.JoinKey({ ALT = IsAltKeyDown(), CTRL = IsControlKeyDown(), SHIFT = IsShiftKeyDown() }, base)
+    -- Setting down with Shift held sets down another: its own key can't have Shift.
+    if action == "SetDown" and IsShiftKeyDown() then
+        note:SetText(("|cffff6060%s can't have Shift:|r Shift with its key sets down another."):format(LabelOf(action)))
+        StopWaiting()
+        return
+    end
     local taken = API.SetKey(action, key)
     note:SetText(taken and ("%s is now %s; |cffff6060%s|r has no key."):format(API.KeyText(key), LabelOf(action), LabelOf(taken)) or "")
     StopWaiting()
