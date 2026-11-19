@@ -5,8 +5,10 @@
 -- button puts them all back. The keys are EditMode.lua's.
 
 local API = PlayerHousingAPI
-local ROW_HEIGHT, ROWS_TOP = 18, -96
-local LABEL_X, KEY_X, KEY_WIDTH, DEFAULT_X = 16, 196, 150, 352
+-- The page is about 400 by 420 at 1024x768: the rows scroll. Each row is the action with its
+-- default under it, and its key on a button to the right.
+local ROW_HEIGHT, HEADER_HEIGHT, LIST_WIDTH = 30, 20, 360
+local LABEL_X, KEY_X, KEY_WIDTH = 4, 200, 150
 
 local panel = CreateFrame("Frame", "PlayerHousingOptions", UIParent)
 panel.name = "Player Housing"
@@ -50,7 +52,7 @@ local function Take(base)
     local key = API.JoinKey({ ALT = IsAltKeyDown(), CTRL = IsControlKeyDown(), SHIFT = IsShiftKeyDown() }, base)
     -- Setting down with Shift held sets down another: its own key can't have Shift.
     if action == "SetDown" and IsShiftKeyDown() then
-        note:SetText(("|cffff6060%s can't have Shift:|r Shift with its key sets down another."):format(LabelOf(action)))
+        note:SetText("|cffff6060Set it down can't have Shift:|r Shift with its key sets down another.")
         StopWaiting()
         return
     end
@@ -71,40 +73,54 @@ title:SetPoint("TOPLEFT", 16, -16)
 title:SetText("Player Housing")
 local help = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-help:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
+help:SetWidth(LIST_WIDTH)
+help:SetHeight(40)
 help:SetJustifyH("LEFT")
+help:SetJustifyV("TOP")
 help:SetText("The keys that change a piece while you hold it; the rest of the time they're the game's own. "
     .. "Click a key, then press the new one, turn the wheel or click a mouse button. Right-click: no key.")
 note = panel:CreateFontString("PlayerHousingOptionsNote", "ARTWORK", "GameFontHighlightSmall")
-note:SetPoint("TOPLEFT", help, "BOTTOMLEFT", 0, -6)
+note:SetPoint("TOPLEFT", help, "BOTTOMLEFT", 0, -2)
+note:SetWidth(LIST_WIDTH)
+note:SetHeight(24)
+note:SetJustifyH("LEFT")
+note:SetJustifyV("TOP")
 note:SetText("")
 
-local function Header(text, y)
-    local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local scroll = CreateFrame("ScrollFrame", "PlayerHousingOptionsScroll", panel, "UIPanelScrollFrameTemplate")
+scroll:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -4)
+scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 10)
+local list = CreateFrame("Frame", "PlayerHousingOptionsList", scroll)
+list:SetWidth(LIST_WIDTH)
+scroll:SetScrollChild(list)
+
+local y = 0
+local function Header(text)
+    local header = list:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     header:SetPoint("TOPLEFT", LABEL_X, y)
     header:SetText(text)
-    local default = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    default:SetPoint("TOPLEFT", DEFAULT_X, y)
-    default:SetText("Default")
+    y = y - HEADER_HEIGHT
 end
 
-local y = ROWS_TOP
-Header("Holding a piece", y)
-y = y - ROW_HEIGHT
+Header("Holding a piece")
 for index, entry in ipairs(API.KEY_ACTIONS) do
     local action = entry[1]
     if entry.follow and not API.KEY_ACTIONS[index - 1].follow then
         y = y - 6
-        Header("Without PlayerHousing.dll (the piece follows you)", y)
-        y = y - ROW_HEIGHT
+        Header("Without PlayerHousing.dll (it follows you)")
     end
-    local label = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    label:SetPoint("TOPLEFT", LABEL_X, y - 3)
+    local label = list:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    label:SetPoint("TOPLEFT", LABEL_X, y - 1)
     label:SetText(entry[2])
-    local button = CreateFrame("Button", "PlayerHousingOptionsKey" .. action, panel, "UIPanelButtonTemplate")
-    button:SetPoint("TOPLEFT", KEY_X, y)
+    local default = list:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    default:SetPoint("TOPLEFT", LABEL_X, y - 15)
+    default:SetText("Default: " .. API.KeyText(entry[3]))
+    local button = CreateFrame("Button", "PlayerHousingOptionsKey" .. action, list, "UIPanelButtonTemplate")
+    button:SetPoint("TOPLEFT", KEY_X, y - 3)
     button:SetWidth(KEY_WIDTH)
-    button:SetHeight(ROW_HEIGHT)
+    button:SetHeight(22)
+    button:SetNormalFontObject(GameFontHighlightSmall)
+    button:SetHighlightFontObject(GameFontHighlightSmall)
     button:RegisterForClicks("AnyUp")
     button:EnableMouseWheel(true)
     button:SetScript("OnClick", function(self, mouseButton)
@@ -125,17 +141,21 @@ for index, entry in ipairs(API.KEY_ACTIONS) do
             Refresh()
         end
     end)
+    -- Turning the wheel over a key: its new key while waiting, else the list scrolls.
     button:SetScript("OnMouseWheel", function(self, delta)
         if waiting == action then
             Take(delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN")
+        else
+            local scrollBar = PlayerHousingOptionsScrollScrollBar
+            if scrollBar then
+                scrollBar:SetValue(scrollBar:GetValue() - delta * ROW_HEIGHT * 2)
+            end
         end
     end)
     rows[action] = button
-    local default = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    default:SetPoint("TOPLEFT", DEFAULT_X, y - 3)
-    default:SetText(API.KeyText(entry[3]))
     y = y - ROW_HEIGHT
 end
+list:SetHeight(-y)
 
 panel.refresh = Refresh
 panel.default = function()

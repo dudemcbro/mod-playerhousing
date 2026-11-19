@@ -35,8 +35,8 @@ local ctrlSent = false      -- what the server last heard about Ctrl
 local ACTIONS = {
     { "WheelUp", "Turn left", "SHIFT-MOUSEWHEELUP" },
     { "WheelDown", "Turn right", "SHIFT-MOUSEWHEELDOWN" },
-    { "FineLeft", "Turn left finely (1\194\176)", "CTRL-SHIFT-MOUSEWHEELUP" },
-    { "FineRight", "Turn right finely (1\194\176)", "CTRL-SHIFT-MOUSEWHEELDOWN" },
+    { "FineLeft", "Turn left finely", "CTRL-SHIFT-MOUSEWHEELUP" },
+    { "FineRight", "Turn right finely", "CTRL-SHIFT-MOUSEWHEELDOWN" },
     { "RaiseWheelUp", "Raise", "CTRL-MOUSEWHEELUP" },
     { "RaiseWheelDown", "Lower", "CTRL-MOUSEWHEELDOWN" },
     { "TiltForward", "Tilt forward", "ALT-MOUSEWHEELUP" },
@@ -47,13 +47,13 @@ local ACTIONS = {
     { "Smaller", "Smaller", "ALT-CTRL-MOUSEWHEELDOWN" },
     { "Straight", "Stand it straight", "BUTTON3" },
     { "NormalSize", "Normal size", "CTRL-BUTTON3" },
-    { "Grid", "Grid: off, 1/4, 1/2, 1, 2 yd", "SHIFT-BUTTON3" },
-    { "Cancel", "Never mind (put it back)", "ESCAPE" },
+    { "Grid", "Grid size", "SHIFT-BUTTON3" },
+    { "Cancel", "Never mind", "ESCAPE" },
     { "Forward", "Farther", "UP", follow = true },
     { "Back", "Nearer", "DOWN", follow = true },
     { "Left", "To the left", "LEFT", follow = true },
     { "Right", "To the right", "RIGHT", follow = true },
-    { "SetDown", "Set it down (with Shift: and another)", "G", follow = true },
+    { "SetDown", "Set it down (Shift: another)", "G", follow = true },
 }
 local ACTION = {}
 for _, entry in ipairs(ACTIONS) do
