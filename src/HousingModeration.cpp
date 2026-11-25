@@ -1,4 +1,5 @@
 #include "PlayerHousingMgr.h"
+#include "HousingEventsInternal.h"
 
 #include "Chat.h"
 #include "DatabaseEnv.h"
@@ -185,9 +186,14 @@ bool PlayerHousingMgr::GmPackUp(Player* gm, ObjectGuid::LowType ownerGuid, std::
         for (auto const& [slot, gear] : placement.gear)
             ReturnGear(nullptr, ownerGuid, itemOwner, id, slot, gear);
         if (session)
+        {
             DespawnPlacement(*session, map, id);
+            session->placements.erase(id);  // gone before the listeners hear of it
+        }
         DeletePlacement(ownerGuid, id);
         AddToStorage(itemOwner, placement.itemEntry, 1);
+        if (session || _pieces.count(placement.itemEntry))
+            Housing::Events::PieceRemoved(ownerGuid, id);
     }
 
     if (session)

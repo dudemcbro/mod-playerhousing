@@ -1,4 +1,5 @@
 #include "PlayerHousingMgr.h"
+#include "HousingEventsInternal.h"
 
 #include "CharacterCache.h"
 #include "DatabaseEnv.h"
@@ -113,8 +114,9 @@ void PlayerHousingMgr::MoveHousing(ObjectGuid::LowType from, ObjectGuid::LowType
         // Two islands become one: the other island's pieces are put away (into the shared
         // counts), and what mannequins wore goes back to whoever dressed them.
         std::map<uint32, Placement> placements;
+        std::vector<uint32> removed;
         if (QueryResult result = CharacterDatabase.Query(
-                "SELECT placement_id, source_item_entry, placed_by FROM mod_playerhousing_placement WHERE owner_guid={}", from))
+                "SELECT placement_id, source_item_entry, placed_by, map_id FROM mod_playerhousing_placement WHERE owner_guid={}", from))
         {
             do
             {
@@ -123,6 +125,9 @@ void PlayerHousingMgr::MoveHousing(ObjectGuid::LowType from, ObjectGuid::LowType
                 placement.itemEntry = (*result)[1].Get<uint32>();
                 placement.placedBy = (*result)[2].Get<uint32>();
                 placements[placement.id] = placement;
+                // The listeners only ever heard of pieces on this layout's map that are defined.
+                if ((*result)[3].Get<uint32>() == _layout.mapId && _pieces.count(placement.itemEntry))
+                    removed.push_back(placement.id);
             } while (result->NextRow());
         }
         LoadGear(from, placements);
@@ -135,15 +140,34 @@ void PlayerHousingMgr::MoveHousing(ObjectGuid::LowType from, ObjectGuid::LowType
         }
         CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_placement WHERE owner_guid={}", from);
         CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", from);
+        for (uint32 id : removed)
+            Housing::Events::PieceRemoved(from, id);
     }
     else
     {
+        // For the listeners: what the other island had goes, and this one's pieces are taken
+        // off it and placed on the other, under their new owner.
+        std::map<uint32, Placement> replaced;
+        std::map<uint32, Placement> moving;
+        if (Housing::Events::Wanted())
+        {
+            replaced = LoadPlacedPieces(to);
+            moving = LoadPlacedPieces(from);
+        }
+
         // The island itself moves over, as it is (its home character was deleted).
         CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", to);
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET owner_guid={} WHERE owner_guid={}", to, from);
         CharacterDatabase.DirectExecute("DELETE FROM mod_playerhousing_placement WHERE owner_guid={}", to);
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_placement SET owner_guid={} WHERE owner_guid={}", to, from);
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_placement_gear SET owner_guid={} WHERE owner_guid={}", to, from);
+
+        for (auto const& [id, placement] : replaced)
+            Housing::Events::PieceRemoved(to, id);
+        for (auto const& [id, placement] : moving)
+            Housing::Events::PieceRemoved(from, id);
+        for (auto const& [id, placement] : moving)
+            Housing::Events::PiecePlaced(to, placement);
     }
     // Pieces it put on roommates' islands are the account's.
     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_placement SET placed_by={} WHERE placed_by={}", to, from);

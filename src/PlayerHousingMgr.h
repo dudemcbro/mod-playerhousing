@@ -31,6 +31,8 @@ struct ItemTemplate;
 
 namespace Housing
 {
+    struct IslandInfo;  // HousingEvents.h
+
     // Tilts a game object. Older cores call this SetLocalRotationAngles, newer ones
     // SetWorldRotationAngles; whichever the core has is used.
     template <typename Object>
@@ -347,6 +349,19 @@ public:
     uint32 GetStewardDisplayId() const { return _stewardDisplayId; }
     bool IsStewardEntry(uint32 entry) const { return _enabled && entry == _stewardEntry; }
     static bool IsHousingPhase(uint32 phaseMask);
+
+    // ---- for other modules (public API since 1.1.0: docs/API.md; events in HousingEvents.h).
+    // owner is always the house owner: the account's home character (HomeOfCharacter).
+    // The phase the owner's island is in: an exact phase of its own, see IsHousingPhase.
+    uint32 GetHousePhase(ObjectGuid::LowType owner) const;
+    // Its session has spawned its objects, and hasn't closed since (OnIslandOpened).
+    bool IsIslandOpen(ObjectGuid::LowType owner) const;
+    std::vector<ObjectGuid::LowType> GetOpenIslands() const;
+    // Phase, map, centre and radius of the owner's island; false if they have no house.
+    bool GetIslandInfo(ObjectGuid::LowType owner, Housing::IslandInfo& out) const;
+    // The pieces placed on the island now: from its session while it's open, otherwise
+    // read from the database.
+    std::vector<Housing::Placement> GetPlacements(ObjectGuid::LowType owner) const;
 
     // ---- travel (PlayerHousingMgr.cpp)
     bool EnterOwnHouse(Player* player, std::string& reason);
@@ -700,6 +715,7 @@ private:
         uint32 phaseMask{0};
         uint32 mapId{0};
         bool initialized{false};
+        bool open{false};  // told the listeners it opened (HousingEvents.h)
         bool decorating{false};
         uint32 nextPlacementId{1};
         std::unordered_map<ObjectGuid::LowType, uint32> selected;  // per player decorating
@@ -766,6 +782,12 @@ private:
     bool EnsureSession(ObjectGuid::LowType ownerGuid);
     bool InitializeSession(ObjectGuid::LowType ownerGuid, std::string& reason);
     void DespawnSessionObjects(Session& session, Map* map);
+    // The listeners of HousingEvents.h hear the island close (if they heard it open).
+    void CloseSession(Session& session);
+    Housing::IslandInfo MakeIslandInfo(ObjectGuid::LowType ownerGuid) const;
+    // An island's pieces as the database has them: those on this layout's map whose piece is
+    // still defined (what a session would load).
+    std::map<uint32, Housing::Placement> LoadPlacedPieces(ObjectGuid::LowType ownerGuid) const;
     // Rings under chosen pieces: one player's, or every one under a piece.
     void RemoveHighlight(Session& session, Map* map, ObjectGuid::LowType player);
     void RemoveHighlightsOf(Session& session, Map* map, uint32 placementId);

@@ -63,6 +63,7 @@ roommates; GM moderation tools.
 | [Content](docs/CONTENT.md) | Where the pieces come from, and changing them |
 | [Design](docs/DESIGN.md) | The ground rules and the decisions behind them |
 | [How it works](docs/HOW_IT_WORKS.md) | Phases, ghosts, undo, safety rules, load measurements |
+| [API](docs/API.md) | For other modules: island and piece events, the island's phase and bounds |
 | [Roadmap](docs/ROADMAP.md) | What's planned on the way to 2.0 |
 | [Test server](tools/test-server/README.md) | A complete server in a container, and the end-to-end tests |
 

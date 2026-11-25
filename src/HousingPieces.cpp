@@ -1,4 +1,5 @@
 #include "PlayerHousingMgr.h"
+#include "HousingEventsInternal.h"
 
 #include "Bag.h"
 #include "Chat.h"
@@ -471,6 +472,7 @@ void PlayerHousingMgr::PlaceStarterWreckage(Session& session, Map* map)
         session.placements[placement.id] = placement;
         SavePlacement(session.ownerGuid, placement, session.mapId);
         SpawnPlacement(session, map, placement);
+        Housing::Events::PiecePlaced(session.ownerGuid, placement);
     }
 }
 
@@ -487,6 +489,7 @@ bool PlayerHousingMgr::AddNewPlacement(Player* player, Session& session, Placeme
     session.placements[placement.id] = placement;
     SelectOne(session, player->GetGUID().GetCounter(), placement.id);
     SavePlacement(session.ownerGuid, placement, session.mapId);
+    Housing::Events::PiecePlaced(session.ownerGuid, placement);
 
     Record(player, "placed " + piece->name, { Change{ placement.id, std::nullopt, placement } });
     // It's there to see: said only when the island is nearly full.
@@ -520,6 +523,7 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
                 selected = 0;
         for (auto& [who, group] : session.groups)
             group.erase(std::remove(group.begin(), group.end(), placementId), group.end());
+        Housing::Events::PieceRemoved(session.ownerGuid, placementId);
 
         // A piece goes back to the Collection of whoever placed it: the owner, or a roommate.
         if (itemOwner != HomeOf(player))
@@ -572,6 +576,7 @@ bool PlayerHousingMgr::ApplyState(Player* player, Session& session, Map* map, ui
         SpawnPlacement(session, map, placed);
         session.selected[player->GetGUID().GetCounter()] = placementId;
         ++_report.placed;
+        Housing::Events::PiecePlaced(session.ownerGuid, placed);
         return true;
     }
 

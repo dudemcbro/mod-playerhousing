@@ -1,4 +1,5 @@
 #include "PlayerHousingMgr.h"
+#include "HousingEventsInternal.h"
 
 #include "CharacterCache.h"
 #include "Chat.h"
@@ -124,6 +125,7 @@ void PlayerHousingMgr::LoadConfig()
     if (catalog != "everything" && catalog != "curated")
         LOG_WARN("module", "mod-playerhousing: PlayerHousing.Catalog = \"{}\" is neither curated nor everything; using curated.", catalog);
     _ghosts = sConfigMgr->GetOption<bool>("PlayerHousing.Ghosts", true);
+    Housing::Events::SetDebug(sConfigMgr->GetOption<bool>("PlayerHousing.Debug.Events", false));
 }
 
 bool PlayerHousingMgr::LoadDefinitions()
@@ -298,6 +300,8 @@ void PlayerHousingMgr::ConvertLegacyData()
                     if (_pieces.count(itemEntry))
                         AddToStorage(owner, itemEntry, 1);
                     DeletePlacement(owner, fields[1].Get<uint32>());
+                    if (_pieces.count(itemEntry))
+                        Housing::Events::PieceRemoved(owner, fields[1].Get<uint32>());
                     CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_house SET flags = flags | {} WHERE owner_guid={}", uint32(HOUSE_FLAG_HALL_NOTICE), owner);
                 } while (hallResult->NextRow());
             }
@@ -336,12 +340,111 @@ bool PlayerHousingMgr::IsHousingPhase(uint32 phaseMask)
     return (phaseMask & HOUSING_PHASE_FLAG) && !(phaseMask & PHASEMASK_NORMAL);
 }
 
-namespace
+uint32 PlayerHousingMgr::GetHousePhase(ObjectGuid::LowType owner) const
 {
-    uint32 GetHousePhase(ObjectGuid::LowType ownerGuid)
+    return HOUSING_PHASE_FLAG | ((owner & 0x3FFFFFFF) << 1);
+}
+
+bool PlayerHousingMgr::IsIslandOpen(ObjectGuid::LowType owner) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto sessionItr = _sessionsByOwner.find(owner);
+    return sessionItr != _sessionsByOwner.end() && sessionItr->second.open;
+}
+
+std::vector<ObjectGuid::LowType> PlayerHousingMgr::GetOpenIslands() const
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::vector<ObjectGuid::LowType> owners;
+    for (auto const& [owner, session] : _sessionsByOwner)
+        if (session.open)
+            owners.push_back(owner);
+    return owners;
+}
+
+IslandInfo PlayerHousingMgr::MakeIslandInfo(ObjectGuid::LowType ownerGuid) const
+{
+    IslandInfo island;
+    island.owner = ownerGuid;
+    island.phaseMask = GetHousePhase(ownerGuid);
+    island.mapId = _layout.mapId;
+    island.centerX = _layout.centerX;
+    island.centerY = _layout.centerY;
+    island.centerZ = _layout.landing.GetPositionZ();  // the layout has no height of its own: the beach's
+    island.radius = _layout.radius;
+    return island;
+}
+
+bool PlayerHousingMgr::GetIslandInfo(ObjectGuid::LowType owner, IslandInfo& out) const
+{
+    if (!owner)
+        return false;
+
     {
-        return HOUSING_PHASE_FLAG | ((ownerGuid & 0x3FFFFFFF) << 1);
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        auto sessionItr = _sessionsByOwner.find(owner);
+        if (sessionItr != _sessionsByOwner.end())
+        {
+            out = MakeIslandInfo(owner);
+            out.phaseMask = sessionItr->second.phaseMask;
+            out.mapId = sessionItr->second.mapId;
+            return true;
+        }
     }
+
+    HouseRecord house;
+    if (!GetHouseRecord(owner, house))
+        return false;
+    out = MakeIslandInfo(owner);
+    return true;
+}
+
+std::vector<Placement> PlayerHousingMgr::GetPlacements(ObjectGuid::LowType owner) const
+{
+    std::vector<Placement> placed;
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    auto sessionItr = _sessionsByOwner.find(owner);
+    if (sessionItr != _sessionsByOwner.end() && sessionItr->second.initialized)
+    {
+        for (auto const& [id, placement] : sessionItr->second.placements)
+            placed.push_back(placement);
+        return placed;
+    }
+
+    for (auto const& [id, placement] : LoadPlacedPieces(owner))
+        placed.push_back(placement);
+    return placed;
+}
+
+std::map<uint32, Placement> PlayerHousingMgr::LoadPlacedPieces(ObjectGuid::LowType ownerGuid) const
+{
+    std::map<uint32, Placement> placements;
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT placement_id, source_item_entry, pos_x, pos_y, pos_z, orientation, scale, look, parent_id, pitch, roll, placed_by FROM mod_playerhousing_placement "
+            "WHERE owner_guid={} AND map_id={} ORDER BY placement_id", ownerGuid, _layout.mapId))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            Placement placement;
+            placement.id = fields[0].Get<uint32>();
+            placement.itemEntry = fields[1].Get<uint32>();
+            placement.x = fields[2].Get<float>();
+            placement.y = fields[3].Get<float>();
+            placement.z = fields[4].Get<float>();
+            placement.o = fields[5].Get<float>();
+            placement.scale = std::max(0.05f, fields[6].Get<float>());
+            placement.look = fields[7].Get<uint64>();
+            placement.parent = fields[8].Get<uint32>();
+            placement.pitch = fields[9].Get<float>();
+            placement.roll = fields[10].Get<float>();
+            placement.placedBy = fields[11].Get<uint32>();
+            if (_pieces.count(placement.itemEntry))
+                placements[placement.id] = placement;
+        } while (result->NextRow());
+    }
+    LoadGear(ownerGuid, placements);
+    return placements;
 }
 
 void PlayerHousingMgr::OnBeforeSetPhaseMask(uint32 oldPhaseMask, uint32 newPhaseMask, bool& useCombinedPhases) const
@@ -1011,6 +1114,7 @@ void PlayerHousingMgr::OnPlayerDelete(ObjectGuid guid)
     {
         if (Map* map = GetHousingMap())
             DespawnSessionObjects(sessionItr->second, map);
+        CloseSession(sessionItr->second);
 
         for (ObjectGuid const& occupant : sessionItr->second.occupants)
         {
@@ -1043,6 +1147,10 @@ void PlayerHousingMgr::RemoveHousingOf(ObjectGuid::LowType guidLow)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     ReturnRoommatePieces(guidLow);
+    // What is left on the island (its own pieces), for the listeners once it's gone.
+    std::map<uint32, Placement> removed;
+    if (Housing::Events::Wanted())
+        removed = LoadPlacedPieces(guidLow);
 
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     trans->Append("DELETE FROM mod_playerhousing_acl WHERE owner_guid={} OR guest_guid={}", guidLow, guidLow);
@@ -1065,14 +1173,17 @@ void PlayerHousingMgr::RemoveHousingOf(ObjectGuid::LowType guidLow)
     trans->Append("DELETE FROM mod_playerhousing_house WHERE owner_guid={}", guidLow);
     CharacterDatabase.CommitTransaction(trans);
     _knownHouses.erase(guidLow);
+    for (auto const& [id, placement] : removed)
+        Housing::Events::PieceRemoved(guidLow, id);
 }
 
 void PlayerHousingMgr::ReturnRoommatePieces(ObjectGuid::LowType ownerGuid)
 {
     std::lock_guard<std::recursive_mutex> guard(_lock);
     std::map<uint32, Placement> theirs;
+    std::set<uint32> unheard;
     if (QueryResult result = CharacterDatabase.Query(
-            "SELECT placement_id, source_item_entry, placed_by FROM mod_playerhousing_placement WHERE owner_guid={} AND placed_by NOT IN (0, {})",
+            "SELECT placement_id, source_item_entry, placed_by, map_id FROM mod_playerhousing_placement WHERE owner_guid={} AND placed_by NOT IN (0, {})",
             ownerGuid, ownerGuid))
     {
         do
@@ -1082,6 +1193,9 @@ void PlayerHousingMgr::ReturnRoommatePieces(ObjectGuid::LowType ownerGuid)
             placement.itemEntry = (*result)[1].Get<uint32>();
             placement.placedBy = (*result)[2].Get<uint32>();
             theirs[placement.id] = placement;
+            // The listeners only ever heard of pieces on this layout's map that are defined.
+            if ((*result)[3].Get<uint32>() != _layout.mapId || !_pieces.count(placement.itemEntry))
+                unheard.insert(placement.id);
         } while (result->NextRow());
     }
     if (theirs.empty())
@@ -1096,6 +1210,8 @@ void PlayerHousingMgr::ReturnRoommatePieces(ObjectGuid::LowType ownerGuid)
         DeletePlacement(ownerGuid, id);
         CharacterDatabase.DirectExecute("UPDATE mod_playerhousing_placement SET parent_id=0 WHERE owner_guid={} AND parent_id={}", ownerGuid, id);
         AddToStorage(placement.placedBy, placement.itemEntry, 1);
+        if (!unheard.count(id))
+            Housing::Events::PieceRemoved(ownerGuid, id);
     }
     LOG_INFO("module", "mod-playerhousing: The island of {} closed: {} pieces went back to the roommates who placed them.", ownerGuid, theirs.size());
 }
@@ -1226,7 +1342,29 @@ bool PlayerHousingMgr::InitializeSession(ObjectGuid::LowType ownerGuid, std::str
     }
 
     session.initialized = true;
+    // A reload of an island already open (the owner stopped decorating, the grid came back)
+    // respawns the same pieces: the listeners heard it open the first time.
+    if (!session.open)
+    {
+        session.open = true;
+        IslandInfo island = MakeIslandInfo(ownerGuid);
+        island.phaseMask = session.phaseMask;
+        island.mapId = session.mapId;
+        Housing::Events::IslandOpened(island);
+    }
     return true;
+}
+
+void PlayerHousingMgr::CloseSession(Session& session)
+{
+    if (!session.open)
+        return;
+
+    session.open = false;
+    IslandInfo island = MakeIslandInfo(session.ownerGuid);
+    island.phaseMask = session.phaseMask;
+    island.mapId = session.mapId;
+    Housing::Events::IslandClosed(island);
 }
 
 void PlayerHousingMgr::DespawnSessionObjects(Session& session, Map* map)
@@ -1264,6 +1402,7 @@ void PlayerHousingMgr::EndSessionIfEmpty(ObjectGuid::LowType ownerGuid)
 
     if (Map* map = GetHousingMap())
         DespawnSessionObjects(sessionItr->second, map);
+    CloseSession(sessionItr->second);
 
     _sessionsByOwner.erase(sessionItr);
 }

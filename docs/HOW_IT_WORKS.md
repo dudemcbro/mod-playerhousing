@@ -9,7 +9,8 @@ How the module is built: islands and phases, pieces, ghosts, undo, mannequins, t
   (`GLOBALHOOK_ON_BEFORE_WORLDOBJECT_SET_PHASEMASK`), so each phase value is its own ID.
   The owner's guests share the owner's phase.
 - An island's pieces are spawned when the first person arrives and removed when the last
-  one leaves. Anyone found on the island without going through the House Key (other than
+  one leaves (other modules hear both, and every piece placed or taken away: see
+  [API](API.md)). Anyone found on the island without going through the House Key (other than
   GMs) is sent back where they came from. Logging out on your own island logs you back in
   there; logging out on someone else's brings you back where you came from.
 - **Pieces.** Each piece has an item entry (901100 to 901199 and 902001 to 902999; the House

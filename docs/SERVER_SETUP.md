@@ -167,6 +167,7 @@ past a few hundred busy islands, lower `MaxFurnishings` (see
 | `PlayerHousing.Catalog` | curated | curated, everything | `curated`: the ~340 pieces earned by playing. `everything`: also about 2,000 more, every other object model in the game, which everyone has from the start (a sandbox; needs the catalog SQL, which `apply_sql.sh` applies). |
 | `PlayerHousing.FreeMode` | 0 | 0, 1 | Test servers: extra copies cost nothing and Go home is instant. |
 | `PlayerHousing.UnlockAll` | 0 | 0, 1 | Test servers: every piece is unlocked for everyone, with "one of everything". |
+| `PlayerHousing.Debug.Events` | 0 | 0, 1 | Tests: a log line for every event other modules can listen to (`HousingEvents: opened owner=<n> phase=<p> map=<m>`, and closed, placed, removed). See [API](API.md). |
 
 ### Krook
 

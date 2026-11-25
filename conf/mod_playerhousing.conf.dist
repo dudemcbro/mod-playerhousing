@@ -132,3 +132,13 @@ PlayerHousing.HouseKey.DelaySeconds = 10
 ###############################################################################
 PlayerHousing.StewardEntry = 900200
 PlayerHousing.StewardDisplayId = 25384
+
+###############################################################################
+# PlayerHousing.Debug.Events
+#    1  logs every event other modules can listen to (docs/API.md), one line
+#       each, for tests: "HousingEvents: opened owner=<n> phase=<p> map=<m>",
+#       closed, placed and removed likewise.
+#    0  no log lines.
+#    Default: 0
+###############################################################################
+PlayerHousing.Debug.Events = 0
